@@ -16,8 +16,11 @@ import {
   filterThreadOccurrencesForDisplay,
   isOccurrenceInBounds,
 } from "@/lib/incidents/incident-planning-class"
-import type { DateRangeBounds, IncidentDateField } from "@/lib/incidents/incident-date-filter"
+import type { DateRangeBounds } from "@/lib/incidents/incident-date-filter"
 import type { ThreadDateMode } from "@/lib/incidents/incident-list-filters"
+import {
+  summarizeThreadDates,
+} from "@/lib/incidents/incident-thread-dates"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
@@ -82,7 +85,6 @@ interface IncidentsOTLookupProps {
   incidents: Record<string, unknown>[]
   assets: Record<string, unknown>[]
   dateBounds?: DateRangeBounds | null
-  dateField?: IncidentDateField
   threadDateMode?: ThreadDateMode
 }
 
@@ -90,7 +92,6 @@ export function IncidentsOTLookup({
   incidents,
   assets,
   dateBounds = null,
-  dateField = "event",
   threadDateMode = "thread_in_period",
 }: IncidentsOTLookupProps) {
   const router = useRouter()
@@ -227,7 +228,8 @@ export function IncidentsOTLookup({
             {!isCollapsed && (
               <div className="divide-y divide-border/30">
                 <div className="hidden sm:flex items-center gap-4 px-4 py-1.5 bg-muted/30 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                  <span className="w-20 shrink-0">Fecha</span>
+                  <span className="w-24 shrink-0">Creación</span>
+                  <span className="w-24 shrink-0">Última</span>
                   <span className="w-[9.5rem] shrink-0">Estado</span>
                   <span className="flex-1 min-w-0">Problema</span>
                   <span className="w-32 shrink-0 text-right hidden md:block">Reportante</span>
@@ -239,13 +241,12 @@ export function IncidentsOTLookup({
                   const planningInfo = classifyThreadPlanning(
                     thread.incidents,
                     dateBounds,
-                    dateField,
                   )
+                  const threadDates = summarizeThreadDates(thread.incidents)
                   const displayIncidents = isThreadExpanded
                     ? filterThreadOccurrencesForDisplay(
                         thread.incidents,
                         dateBounds,
-                        dateField,
                         threadDateMode,
                       )
                     : [thread.primaryIncident]
@@ -261,10 +262,14 @@ export function IncidentsOTLookup({
                             : thread.workOrderId
                         const dateStr = (incident.date ?? incident.created_at) as string | undefined
                         const createdAtStr = incident.created_at as string | undefined
-                        const inBounds = isOccurrenceInBounds(incident, dateBounds, dateField)
+                        const inBounds = isOccurrenceInBounds(incident, dateBounds)
                         const status = String(incident.status ?? "")
                         const resolved = isResolved(status)
-                        const days = getDaysSinceCreated(dateStr ?? "")
+                        const days = getDaysSinceCreated(
+                          isPrimaryRow
+                            ? new Date(threadDates.latestObservedMs).toISOString()
+                            : (dateStr ?? ""),
+                        )
                         const statusLabel = getStatusInfo(status).label
                         const priority = getPriorityInfo(status, days)
                         const PriorityIcon = priority.icon
@@ -282,21 +287,51 @@ export function IncidentsOTLookup({
                             onClick={() => incidentId && router.push(`/incidentes/${incidentId}`)}
                           >
                             <div className="flex items-center gap-2 sm:contents">
-                              <span className="shrink-0 text-xs text-muted-foreground w-20 whitespace-nowrap">
-                                <span className={cn(inBounds && dateBounds && "font-medium text-foreground")}>
-                                  {formatDate(dateStr)}
-                                </span>
-                                {createdAtStr &&
-                                  incident.date &&
-                                  Math.abs(
-                                    new Date(createdAtStr).getTime() -
-                                      new Date(String(incident.date)).getTime(),
-                                  ) >
-                                    24 * 60 * 60 * 1000 && (
-                                    <span className="block text-[10px] text-muted-foreground/80">
-                                      Reg: {formatDate(createdAtStr)}
+                              <span className="shrink-0 text-xs text-muted-foreground w-24 whitespace-nowrap">
+                                {isPrimaryRow ? (
+                                  <>
+                                    <span className="block">
+                                      {Number.isFinite(threadDates.firstCreatedMs)
+                                        ? formatDate(
+                                            new Date(threadDates.firstCreatedMs).toISOString(),
+                                          )
+                                        : "—"}
                                     </span>
-                                  )}
+                                  </>
+                                ) : (
+                                  formatDate(createdAtStr ?? dateStr)
+                                )}
+                              </span>
+                              <span className="shrink-0 text-xs w-24 whitespace-nowrap">
+                                {isPrimaryRow ? (
+                                  <span
+                                    className={cn(
+                                      "font-medium",
+                                      dateBounds &&
+                                        Number.isFinite(threadDates.latestObservedMs) &&
+                                        threadDates.latestObservedMs >= dateBounds.fromMs &&
+                                        threadDates.latestObservedMs <= dateBounds.toMs
+                                        ? "text-foreground"
+                                        : "text-muted-foreground",
+                                    )}
+                                  >
+                                    {Number.isFinite(threadDates.latestObservedMs)
+                                      ? formatDate(
+                                          new Date(threadDates.latestObservedMs).toISOString(),
+                                        )
+                                      : "—"}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={cn(
+                                      inBounds && dateBounds
+                                        ? "font-medium text-foreground"
+                                        : "text-muted-foreground",
+                                    )}
+                                  >
+                                    {formatDate(dateStr)}
+                                  </span>
+                                )}
                               </span>
                               <div className="flex flex-wrap items-center gap-1.5 sm:w-[9.5rem] sm:shrink-0">
                                 <Badge
@@ -330,8 +365,8 @@ export function IncidentsOTLookup({
                                     }}
                                   >
                                     {dateBounds && planningInfo.inCohortCount > 0
-                                      ? `${planningInfo.inCohortCount} en revisión · ${thread.occurrenceCount} total`
-                                      : `${thread.occurrenceCount} ocurrencias`}
+                                      ? `${planningInfo.inCohortCount} en periodo · ${thread.occurrenceCount} reapariciones`
+                                      : `${thread.occurrenceCount} reapariciones`}
                                   </button>
                                 )}
                                 {isPrimaryRow &&

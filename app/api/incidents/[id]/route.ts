@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import {
+  attachWorkOrderLabels,
+  fetchIncidentThreadById,
+} from '@/lib/incidents/fetch-incident-thread'
 
 export async function GET(
   _request: Request,
@@ -78,7 +82,19 @@ export async function GET(
       work_order_order_id: workOrderOrderId
     }
 
-    return NextResponse.json(processed)
+    let thread_incidents: Awaited<ReturnType<typeof attachWorkOrderLabels>> = []
+    if (incident.asset_id) {
+      const { thread } = await fetchIncidentThreadById(supabase, id)
+      if (thread.length > 0) {
+        thread_incidents = await attachWorkOrderLabels(supabase, thread)
+      }
+    }
+
+    return NextResponse.json({
+      ...processed,
+      thread_incidents,
+      thread_count: thread_incidents.length,
+    })
   } catch (err) {
     console.error('Error fetching incident:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

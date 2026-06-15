@@ -35,6 +35,8 @@ import { WorkOrderRelationshipHub } from "@/components/work-orders/details/work-
 import { WorkOrderDetailsRouter } from "@/components/work-orders/work-order-details-router"
 import { WorkOrderContextBand } from "@/components/work-orders/details/work-order-context-band"
 import { isTaskMarkedCompleted, parseCompletedTasksJson } from "@/lib/work-orders/parse-completed-tasks"
+import { fetchIncidentThreadForWorkOrder, attachWorkOrderLabels } from "@/lib/incidents/fetch-incident-thread"
+import { IncidentThreadHistory } from "@/components/incidents/incident-thread-history"
 
 // Extended type for work order with completed_at field and recurrence data
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -215,15 +217,24 @@ export default async function WorkOrderDetailsPage({
   // Fetch incident if this WO originated from one (also for ORIGEN fecha)
   let incidentAssetId: string | null = null
   let incidentCreatedAt: string | null = null
+  let incidentDescription: string | null = null
   if (extendedWorkOrder.incident_id) {
     const { data: incident } = await supabase
       .from("incident_history")
-      .select("asset_id, created_at")
+      .select("asset_id, created_at, description")
       .eq("id", extendedWorkOrder.incident_id)
       .single()
     incidentAssetId = incident?.asset_id ?? null
     incidentCreatedAt = incident?.created_at ?? null
+    incidentDescription = incident?.description ?? null
   }
+
+  const threadRows = await fetchIncidentThreadForWorkOrder(
+    supabase,
+    id,
+    extendedWorkOrder.incident_id ?? null,
+  )
+  const incidentThreadHistory = await attachWorkOrderLabels(supabase, threadRows)
 
   // ORIGEN: Fetch checklist name (corrective) or maintenance plan (preventive)
   let checklistName: string | null = null
@@ -585,6 +596,13 @@ export default async function WorkOrderDetailsPage({
               }
             />
           )}
+
+          <IncidentThreadHistory
+            items={incidentThreadHistory}
+            currentIncidentId={extendedWorkOrder.incident_id ?? undefined}
+            highlightWorkOrderId={id}
+            coreItemLabel={incidentDescription ?? undefined}
+          />
           
           {requiredParts.length > 0 && (
             <Card>

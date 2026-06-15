@@ -1,6 +1,30 @@
 /**
  * Mirrors SQL `normalize_issue_core_item` for client-side grouping and previews.
  */
+
+/** Checklist template suffixes stripped after the core item label. */
+const CHECKLIST_CORE_SUFFIXES: RegExp[] = [
+  /\s+EN\s+BUEN\s+ESTADO$/i,
+  /\s+FUNCIONANDO$/i,
+  /\s+FUNCIONAN$/i,
+]
+
+function stripChecklistBoilerplateSuffixes(core: string): string {
+  let text = core
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const pattern of CHECKLIST_CORE_SUFFIXES) {
+      const next = text.replace(pattern, "").trim()
+      if (next !== text) {
+        text = next
+        changed = true
+      }
+    }
+  }
+  return text
+}
+
 export function normalizeIssueCoreItem(description: string | null | undefined): string {
   if (!description?.trim()) return ""
 
@@ -10,7 +34,8 @@ export function normalizeIssueCoreItem(description: string | null | undefined): 
     text = text.slice(0, dashIdx).trim()
   }
 
-  return text.replace(/\s+/g, " ").trim().toUpperCase()
+  text = text.replace(/\s+/g, " ").trim().toUpperCase()
+  return stripChecklistBoilerplateSuffixes(text)
 }
 
 export function generateCanonicalIssueKey(

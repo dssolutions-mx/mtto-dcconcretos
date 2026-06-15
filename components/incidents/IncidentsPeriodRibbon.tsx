@@ -15,7 +15,6 @@ import {
 import type { IncidentesPageFilters } from "@/lib/incidents/incident-list-filters"
 import { classifyThreadPlanning } from "@/lib/incidents/incident-planning-class"
 import { groupIncidentsIntoThreads } from "@/lib/incidents/incident-thread-grouping"
-import { REPORTS_CALENDAR_TIMEZONE } from "@/lib/reports/mexico-city-report-window"
 import { ArrowRight, FileDown, MapPin } from "lucide-react"
 import { useMemo } from "react"
 
@@ -38,21 +37,21 @@ export function IncidentsPeriodRibbon({
 }: IncidentsPeriodRibbonProps) {
   const metrics: CohortFunnelMetrics | null = useMemo(() => {
     if (!bounds) return null
-    return computeCohortFunnelMetrics(incidents, bounds, filters.dateField)
-  }, [incidents, bounds, filters.dateField])
+    return computeCohortFunnelMetrics(incidents, bounds)
+  }, [incidents, bounds])
 
   const reincidenteCount = useMemo(() => {
     if (!bounds) return 0
     const threads = groupIncidentsIntoThreads(incidents)
     let count = 0
     for (const t of threads) {
-      const info = classifyThreadPlanning(t.incidents, bounds, filters.dateField)
+      const info = classifyThreadPlanning(t.incidents, bounds)
       if (info.planningClass === "reincidente" || info.planningClass === "mixto") {
         count += 1
       }
     }
     return count
-  }, [incidents, bounds, filters.dateField])
+  }, [incidents, bounds])
 
   if (!bounds || !metrics) return null
 
@@ -168,8 +167,7 @@ export function IncidentsPeriodRibbon({
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
         <span>
-          {formatDateRangeLabel(bounds)} · {REPORTS_CALENDAR_TIMEZONE} ·{" "}
-          {filters.dateField === "event" ? "Fecha del hecho" : "Fecha de registro"}
+          {formatDateRangeLabel(bounds)} · Hilos con actividad en el periodo
         </span>
         <div className="flex flex-wrap gap-2">
           <Button

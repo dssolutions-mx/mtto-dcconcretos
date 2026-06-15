@@ -14,6 +14,7 @@ import {
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { getIncidentEvidence } from "./incident-utils"
+import { IncidentThreadHistory, type IncidentThreadHistoryItem } from "./incident-thread-history"
 import {
   cohortToBounds,
   incidentInCohort,
@@ -100,11 +101,13 @@ interface IncidentReviewContentProps {
     documents?: unknown
     created_at?: string
   }
+  threadIncidents?: IncidentThreadHistoryItem[]
   onWorkOrderGenerated?: () => void
 }
 
 export function IncidentReviewContent({
   incident,
+  threadIncidents = [],
   onWorkOrderGenerated,
 }: IncidentReviewContentProps) {
   const { toast } = useToast()
@@ -163,7 +166,6 @@ export function IncidentReviewContent({
     incidentInCohort(
       { date: incident.date, created_at: incident.created_at },
       juneCohortBounds,
-      "event",
     )
   let partsParsed: Array<{ name: string; partNumber?: string; quantity: number; cost?: string }> = []
   try {
@@ -174,6 +176,11 @@ export function IncidentReviewContent({
 
   return (
     <div className="space-y-6">
+      <IncidentThreadHistory
+        items={threadIncidents}
+        currentIncidentId={incident.id}
+      />
+
       {/* Información General + Impacto */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
@@ -182,21 +189,16 @@ export function IncidentReviewContent({
           </CardHeader>
           <CardContent className="space-y-2">
             <div>
-              <span className="text-sm font-medium">Fecha del hecho:</span>
+              <span className="text-sm font-medium">Primera registración:</span>
               <p className="text-sm text-muted-foreground">
-                {formatDate(incident.date ?? null)}
+                {formatDate(incident.created_at ?? null)}
               </p>
-              {incident.created_at &&
-                incident.date &&
-                Math.abs(
-                  new Date(String(incident.created_at)).getTime() -
-                    new Date(String(incident.date)).getTime(),
-                ) >
-                  24 * 60 * 60 * 1000 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Registrado: {formatDate(String(incident.created_at))}
-                  </p>
-                )}
+            </div>
+            <div>
+              <span className="text-sm font-medium">Última observación:</span>
+              <p className="text-sm text-muted-foreground">
+                {formatDate(incident.date ?? incident.created_at ?? null)}
+              </p>
             </div>
             <div>
               <span className="text-sm font-medium">Tipo:</span>

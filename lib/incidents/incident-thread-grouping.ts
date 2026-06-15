@@ -16,12 +16,11 @@ export type IncidentThread = {
 }
 
 export function incidentCanonicalKey(incident: Record<string, unknown>): string {
-  const stored = incident.canonical_issue_key
-  if (typeof stored === "string" && stored.length > 0) return stored
-
   const assetId = typeof incident.asset_id === "string" ? incident.asset_id : ""
   const description = String(incident.description ?? "")
   if (!assetId) return `__no_asset__:${normalizeIssueCoreItem(description)}`
+  // Always derive from description so UI grouping matches improved normalization
+  // (stored canonical_issue_key may be stale until DB backfill runs).
   return generateCanonicalIssueKey(assetId, description)
 }
 

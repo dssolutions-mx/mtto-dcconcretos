@@ -1,10 +1,9 @@
 import { getAssetName, getAssetFullName, getReporterName } from "@/components/incidents/incidents-list-utils"
 import { isIncidentResolvedForDashboard } from "@/lib/incident-dashboard-metrics"
 import {
-  incidentEffectiveMs,
+  incidentObservedMs,
   resolveDatePresetBounds,
   type DateRangeBounds,
-  type IncidentDateField,
   type IncidentDatePreset,
 } from "@/lib/incidents/incident-date-filter"
 import {
@@ -15,6 +14,7 @@ import {
 import { groupIncidentsIntoThreads } from "@/lib/incidents/incident-thread-grouping"
 import type { InspectionCohortId } from "@/lib/incidents/inspection-cohort"
 import { cohortToBounds } from "@/lib/incidents/inspection-cohort"
+import { incidentObservedMs } from "@/lib/incidents/incident-thread-dates"
 
 export type LifecycleFilter = "all" | "open" | "resolved"
 
@@ -31,7 +31,8 @@ export type IncidentesPageFilters = {
   statusFilter: string
   typeFilter: string
   searchTerm: string
-  dateField: IncidentDateField
+  /** @deprecated Always uses observation date (date ?? created_at). Kept for URL compat. */
+  dateField: "event"
   datePreset: IncidentDatePreset
   fromDate?: Date
   toDate?: Date
@@ -127,13 +128,12 @@ export function filterIncidentsForIncidentesPage(
         !threadVisibleInPeriod(
           thread.incidents,
           bounds,
-          f.dateField,
           f.threadDateMode,
         )
       ) {
         continue
       }
-      const info = classifyThreadPlanning(thread.incidents, bounds, f.dateField)
+      const info = classifyThreadPlanning(thread.incidents, bounds)
       if (!matchesPlanningClassFilter(info.planningClass, f.planningClassFilter)) {
         continue
       }
@@ -169,11 +169,11 @@ export function filterIncidentsForIncidentesPage(
         const key = threads[0]?.canonicalKey
         if (!key || !visibleThreadKeys.has(key)) return false
         if (f.threadDateMode === "occurrences_only") {
-          const ms = incidentEffectiveMs(incident, f.dateField)
+          const ms = incidentObservedMs(incident)
           if (!Number.isFinite(ms) || ms < bounds.fromMs || ms > bounds.toMs) return false
         }
       } else {
-        const ms = incidentEffectiveMs(incident, f.dateField)
+        const ms = incidentObservedMs(incident)
         if (!Number.isFinite(ms) || ms < bounds.fromMs || ms > bounds.toMs) return false
       }
     }

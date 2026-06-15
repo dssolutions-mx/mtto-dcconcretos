@@ -10,7 +10,41 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { IncidentReviewContent } from "@/components/incidents/incident-review-content"
+import type { IncidentThreadHistoryItem } from "@/components/incidents/incident-thread-history"
 import { BreadcrumbSetter } from "@/components/navigation/breadcrumb-setter"
+import { pickThreadFromIncidentList } from "@/lib/incidents/incident-thread-utils"
+
+async function resolveThreadIncidents(
+  incident: Record<string, unknown>,
+): Promise<IncidentThreadHistoryItem[]> {
+  const fromApi = (incident.thread_incidents as IncidentThreadHistoryItem[] | undefined) ?? []
+  if (fromApi.length > 1) return fromApi
+
+  const assetId = incident.asset_id as string | undefined
+  const description = incident.description as string | undefined
+  if (!assetId || !description) return fromApi
+
+  try {
+    const allRes = await fetch("/api/incidents")
+    if (!allRes.ok) return fromApi
+    const all = (await allRes.json()) as Record<string, unknown>[]
+    const picked = pickThreadFromIncidentList(
+      all,
+      assetId,
+      description,
+      typeof incident.canonical_issue_key === "string"
+        ? incident.canonical_issue_key
+        : null,
+    )
+    if (picked.length > fromApi.length) {
+      return picked as IncidentThreadHistoryItem[]
+    }
+  } catch {
+    // keep API result
+  }
+
+  return fromApi
+}
 
 export default function IncidentReviewPage({
   params,
@@ -20,6 +54,7 @@ export default function IncidentReviewPage({
   const resolvedParams = use(params)
   const incidentId = resolvedParams.id
   const [incident, setIncident] = useState<Record<string, unknown> | null>(null)
+  const [threadIncidents, setThreadIncidents] = useState<IncidentThreadHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,9 +70,11 @@ export default function IncidentReviewPage({
         }
         const data = await res.json()
         setIncident(data)
+        setThreadIncidents(await resolveThreadIncidents(data))
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al cargar el incidente")
         setIncident(null)
+        setThreadIncidents([])
       } finally {
         setLoading(false)
       }
@@ -89,7 +126,16 @@ export default function IncidentReviewPage({
       ) : incident ? (
         <IncidentReviewContent
           incident={incident as Parameters<typeof IncidentReviewContent>[0]["incident"]}
-          onWorkOrderGenerated={() => setIncident(null)}
+          threadIncidents={threadIncidents}
+          onWorkOrderGenerated={() => {
+            void (async () => {
+              const res = await fetch(`/api/incidents/${incidentId}`)
+              if (!res.ok) return
+              const data = await res.json()
+              setIncident(data)
+              setThreadIncidents(await resolveThreadIncidents(data))
+            })()
+          }}
         />
       ) : null}
     </DashboardShell>

@@ -3,6 +3,10 @@ import {
   mexicoCityMonthWindowFromYm,
   REPORTS_CALENDAR_TIMEZONE,
 } from "@/lib/reports/mexico-city-report-window"
+import {
+  incidentCreatedMs,
+  incidentObservedMs,
+} from "@/lib/incidents/incident-thread-dates"
 
 export type IncidentDateField = "event" | "registered"
 
@@ -26,18 +30,15 @@ export type IncidentLike = {
   created_at?: string | null
 }
 
-/** Effective timestamp for filtering / age (business date preferred). */
+/** Observation date used for period filters (date ?? created_at). */
 export function incidentEffectiveMs(
   incident: IncidentLike,
   dateField: IncidentDateField = "event",
 ): number {
-  const raw =
-    dateField === "registered"
-      ? incident.created_at ?? incident.date
-      : incident.date ?? incident.created_at
-  if (!raw) return NaN
-  const t = new Date(raw).getTime()
-  return Number.isFinite(t) ? t : NaN
+  if (dateField === "registered") {
+    return incidentCreatedMs(incident)
+  }
+  return incidentObservedMs(incident)
 }
 
 export function incidentEffectiveDateOnly(

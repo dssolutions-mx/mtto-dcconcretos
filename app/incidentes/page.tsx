@@ -323,7 +323,6 @@ function IncidentsPageContent() {
           incidents={filteredIncidents}
           assets={assets}
           dateBounds={dateBounds}
-          dateField={filters.dateField}
           threadDateMode={filters.threadDateMode}
         />
 

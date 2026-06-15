@@ -14,7 +14,6 @@ import {
 import {
   parseDateParam,
   dateToParam,
-  type IncidentDateField,
   type IncidentDatePreset,
 } from "@/lib/incidents/incident-date-filter"
 import type { InspectionCohortId } from "@/lib/incidents/inspection-cohort"
@@ -85,8 +84,8 @@ function filtersFromSearchParams(searchParams: URLSearchParams): IncidentesPageF
     pc === "nuevo" || pc === "reincidente" || pc === "mixto" ? pc : "all"
 
   const dateFieldParam = searchParams.get("dateField")
-  const dateField: IncidentDateField =
-    dateFieldParam === "registered" ? "registered" : "event"
+  // Legacy URL param ignored — filtering always uses observation date.
+  void dateFieldParam
 
   return {
     ...DEFAULT_INCIDENT_FILTERS,
@@ -95,7 +94,7 @@ function filtersFromSearchParams(searchParams: URLSearchParams): IncidentesPageF
     lifecycleFilter,
     statusFilter: searchParams.get("status") ?? "all",
     typeFilter: searchParams.get("type") ?? "all",
-    dateField,
+    dateField: "event",
     datePreset,
     fromDate: parseDateParam(searchParams.get("from")),
     toDate: parseDateParam(searchParams.get("to")),
@@ -147,7 +146,7 @@ export function useIncidentFilters() {
 
       set("from", dateToParam(next.fromDate))
       set("to", dateToParam(next.toDate))
-      set("dateField", next.dateField === "registered" ? "registered" : "")
+      params.delete("dateField")
       set("threadMode", next.threadDateMode === "occurrences_only" ? "occurrences_only" : "")
       set("lifecycle", next.lifecycleFilter !== "all" ? next.lifecycleFilter : "")
       set("status", next.statusFilter)
@@ -179,7 +178,6 @@ export function useIncidentFilters() {
           "lifecycleFilter",
           "statusFilter",
           "typeFilter",
-          "dateField",
           "datePreset",
           "fromDate",
           "toDate",

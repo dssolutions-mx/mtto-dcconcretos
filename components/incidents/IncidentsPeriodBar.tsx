@@ -10,7 +10,6 @@ import {
 import { cn } from "@/lib/utils"
 import {
   DATE_PRESET_LABELS,
-  type IncidentDateField,
   type IncidentDatePreset,
 } from "@/lib/incidents/incident-date-filter"
 import type { IncidentesPageFilters, ThreadDateMode } from "@/lib/incidents/incident-list-filters"
@@ -59,9 +58,14 @@ export function IncidentsPeriodBar({ filters, onFiltersChange }: IncidentsPeriod
   return (
     <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-          Periodo
-        </span>
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Periodo
+          </span>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Muestra hilos con al menos una observación en el rango (reapariciones incluidas).
+          </p>
+        </div>
         <div className="flex flex-wrap gap-1" role="tablist" aria-label="Periodo">
           {PRESET_SEGMENTS.map((preset) => (
             <Button
@@ -117,50 +121,31 @@ export function IncidentsPeriodBar({ filters, onFiltersChange }: IncidentsPeriod
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-muted-foreground">Fecha:</span>
-        {(["event", "registered"] as IncidentDateField[]).map((field) => (
-          <button
-            key={field}
-            type="button"
-            className={cn(
-              "rounded-md border px-2 py-1 transition-colors cursor-pointer",
-              filters.dateField === field
-                ? "border-primary bg-primary/10 text-foreground font-medium"
-                : "border-border text-muted-foreground hover:bg-muted",
-            )}
-            onClick={() => onFiltersChange({ dateField: field })}
-          >
-            {field === "event" ? "Fecha del hecho" : "Fecha de registro"}
-          </button>
-        ))}
-
-        {filters.datePreset !== "all" && (
-          <>
-            <span className="text-muted-foreground ml-2">Hilos:</span>
-            {(
-              [
-                ["thread_in_period", "Incluir historial"],
-                ["occurrences_only", "Solo en periodo"],
-              ] as [ThreadDateMode, string][]
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                className={cn(
-                  "rounded-md border px-2 py-1 transition-colors cursor-pointer",
-                  filters.threadDateMode === mode
-                    ? "border-primary bg-primary/10 text-foreground font-medium"
-                    : "border-border text-muted-foreground hover:bg-muted",
-                )}
-                onClick={() => onFiltersChange({ threadDateMode: mode })}
-              >
-                {label}
-              </button>
-            ))}
-          </>
-        )}
-      </div>
+      {filters.datePreset !== "all" && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Vista del hilo:</span>
+          {(
+            [
+              ["thread_in_period", "Hilo completo"],
+              ["occurrences_only", "Solo observaciones del periodo"],
+            ] as [ThreadDateMode, string][]
+          ).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className={cn(
+                "rounded-md border px-2 py-1 transition-colors cursor-pointer",
+                filters.threadDateMode === mode
+                  ? "border-primary bg-primary/10 text-foreground font-medium"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+              onClick={() => onFiltersChange({ threadDateMode: mode })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
