@@ -265,15 +265,15 @@ export function IncidentsOTLookup({
                         const inBounds = isOccurrenceInBounds(incident, dateBounds)
                         const status = String(incident.status ?? "")
                         const resolved = isResolved(status)
+                        const isPrimaryRow = idx === 0 && !isThreadExpanded
                         const days = getDaysSinceCreated(
-                          isPrimaryRow
+                          isPrimaryRow && Number.isFinite(threadDates.latestObservedMs)
                             ? new Date(threadDates.latestObservedMs).toISOString()
                             : (dateStr ?? ""),
                         )
                         const statusLabel = getStatusInfo(status).label
                         const priority = getPriorityInfo(status, days)
                         const PriorityIcon = priority.icon
-                        const isPrimaryRow = idx === 0 && !isThreadExpanded
 
                         return (
                           <div

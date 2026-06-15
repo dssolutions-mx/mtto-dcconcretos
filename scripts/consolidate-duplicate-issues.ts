@@ -1,6 +1,7 @@
 /**
  * Merge duplicate open incidents / work orders sharing the same canonical issue key.
  * Only consolidates groups with Pendiente work orders — never reopens Completada WOs.
+ * Skips any WO that already has a purchase order (OC); those incidents stay untouched.
  *
  * Run:
  *   npx tsx scripts/consolidate-duplicate-issues.ts
@@ -26,13 +27,29 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 type DuplicateGroup = {
   asset_id: string
   canonical_issue_key: string
+  /** All open incidents in the thread (for logging) */
   incident_ids: string[]
+  /** Incidents safe to consolidate (not tied to a WO with OC) */
+  mergeable_incident_ids: string[]
   work_order_ids: string[]
   canonical_wo_id: string
   canonical_incident_id: string
+  /** WOs skipped because they already have purchase orders */
+  skipped_wo_ids?: string[]
+}
+
+async function loadWorkOrderIdsWithPurchaseOrders(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("work_order_id")
+    .not("work_order_id", "is", null)
+
+  if (error) throw error
+  return new Set((data ?? []).map((row) => row.work_order_id as string))
 }
 
 async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
+  const woIdsWithPo = await loadWorkOrderIdsWithPurchaseOrders()
   const { data: openIncidents, error: incError } = await supabase
     .from("incident_history")
     .select("id, asset_id, canonical_issue_key, work_order_id, status, created_at")
@@ -69,19 +86,36 @@ async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
     const uniqueWos = [...new Set(withWo.map((i) => i.work_order_id!))]
     if (uniqueWos.length < 2 && incidents.length < 2) continue
 
-    const sorted = [...incidents].sort(
+    const skippedWoIds = uniqueWos.filter((id) => woIdsWithPo.has(id))
+    const mergeableWos = uniqueWos.filter((id) => !woIdsWithPo.has(id))
+    if (mergeableWos.length < 2) continue
+
+    const skippedWoSet = new Set(skippedWoIds)
+    const mergeableIncidents = incidents.filter(
+      (i) => !i.work_order_id || !skippedWoSet.has(i.work_order_id),
+    )
+    if (mergeableIncidents.length < 2) continue
+
+    const sorted = [...mergeableIncidents].sort(
       (a, b) =>
         new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime(),
     )
-    const canonical = sorted.find((i) => i.work_order_id && pendingWoSet.has(i.work_order_id)) ?? sorted[0]
+    const canonical =
+      sorted.find((i) => i.work_order_id && mergeableWos.includes(i.work_order_id)) ??
+      sorted[0]
 
     duplicates.push({
       asset_id: canonical.asset_id!,
       canonical_issue_key: canonical.canonical_issue_key!,
       incident_ids: incidents.map((i) => i.id),
-      work_order_ids: uniqueWos,
-      canonical_wo_id: canonical.work_order_id ?? uniqueWos[0] ?? "",
+      mergeable_incident_ids: mergeableIncidents.map((i) => i.id),
+      work_order_ids: mergeableWos,
+      canonical_wo_id:
+        canonical.work_order_id && mergeableWos.includes(canonical.work_order_id)
+          ? canonical.work_order_id
+          : mergeableWos[0] ?? "",
       canonical_incident_id: canonical.id,
+      skipped_wo_ids: skippedWoIds.length > 0 ? skippedWoIds : undefined,
     })
   }
 
@@ -89,7 +123,7 @@ async function findDuplicateGroups(): Promise<DuplicateGroup[]> {
 }
 
 async function mergeGroup(group: DuplicateGroup): Promise<void> {
-  const extras = group.incident_ids.filter((id) => id !== group.canonical_incident_id)
+  const extras = group.mergeable_incident_ids.filter((id) => id !== group.canonical_incident_id)
   const extraWos = group.work_order_ids.filter((id) => id !== group.canonical_wo_id)
 
   if (extras.length === 0 && extraWos.length === 0) return
@@ -112,10 +146,7 @@ async function mergeGroup(group: DuplicateGroup): Promise<void> {
     const { error: ciError } = await supabase
       .from("checklist_issues")
       .update({ work_order_id: group.canonical_wo_id })
-      .in(
-        "incident_id",
-        group.incident_ids,
-      )
+      .in("incident_id", group.mergeable_incident_ids)
 
     if (ciError) console.warn("checklist_issues relink:", ciError.message)
   }
@@ -145,13 +176,18 @@ async function main() {
   let cancelledWos = 0
 
   for (const group of groups) {
-    const extraIncidents = group.incident_ids.length - 1
+    const extraIncidents = group.mergeable_incident_ids.length - 1
     const extraWos = group.work_order_ids.length - (group.canonical_wo_id ? 1 : 0)
     mergedIncidents += extraIncidents
     cancelledWos += extraWos
 
     console.log(`• ${group.canonical_issue_key.split("_").slice(1).join("_")}`)
-    console.log(`  incidents: ${group.incident_ids.length}, WOs: ${group.work_order_ids.length}`)
+    console.log(
+      `  incidents: ${group.incident_ids.length} open (${group.mergeable_incident_ids.length} mergeable), mergeable WOs: ${group.work_order_ids.length}`,
+    )
+    if (group.skipped_wo_ids?.length) {
+      console.log(`  skipped WOs with OC: ${group.skipped_wo_ids.join(", ")}`)
+    }
     console.log(`  keep incident ${group.canonical_incident_id}, WO ${group.canonical_wo_id || "—"}`)
 
     if (apply) {
