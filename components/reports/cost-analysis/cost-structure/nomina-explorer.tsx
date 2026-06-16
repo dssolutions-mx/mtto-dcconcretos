@@ -240,7 +240,6 @@ function ConceptView({
   onSelectConcept: (id: NominaConceptId) => void
   apoyoTrend: Array<{ month: string; pct: number; amount: number }>
 }) {
-  const max = concepts[0]?.current || 0
   const chartRows = months.map(m => ({
     month: formatMonthShort(m),
     value: active.monthlyTotals[m] || 0,
@@ -254,6 +253,8 @@ function ConceptView({
     }))
     .filter(d => d.current > 0)
     .sort((a, b) => b.current - a.current)
+
+  const max = deptRows[0]?.current || 0
 
   return (
     <div className="space-y-4">
