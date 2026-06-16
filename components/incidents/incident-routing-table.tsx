@@ -6,6 +6,7 @@ import { es } from "date-fns/locale"
 import { AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -36,9 +37,15 @@ function canonicalLabel(slug: CanonicalRoutingDepartmentSlug | null | undefined)
 export function IncidentRoutingTable({
   incidents,
   compact = false,
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
 }: {
   incidents: RoutingIncidentRow[]
   compact?: boolean
+  selectable?: boolean
+  selectedIds?: Set<string>
+  onSelectionChange?: (ids: Set<string>) => void
 }) {
   if (incidents.length === 0) {
     return (
@@ -48,11 +55,51 @@ export function IncidentRoutingTable({
     )
   }
 
+  const allPageSelected =
+    selectable &&
+    selectedIds &&
+    incidents.length > 0 &&
+    incidents.every((i) => selectedIds.has(i.id))
+
+  const somePageSelected =
+    selectable &&
+    selectedIds &&
+    incidents.some((i) => selectedIds.has(i.id)) &&
+    !allPageSelected
+
+  const toggleAllOnPage = () => {
+    if (!onSelectionChange || !selectedIds) return
+    const next = new Set(selectedIds)
+    if (allPageSelected) {
+      for (const incident of incidents) next.delete(incident.id)
+    } else {
+      for (const incident of incidents) next.add(incident.id)
+    }
+    onSelectionChange(next)
+  }
+
+  const toggleOne = (id: string) => {
+    if (!onSelectionChange || !selectedIds) return
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectionChange(next)
+  }
+
   return (
     <div className="rounded-md border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40 hover:bg-muted/40">
+            {selectable && (
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
+                  onCheckedChange={toggleAllOnPage}
+                  aria-label="Seleccionar página"
+                />
+              </TableHead>
+            )}
             <TableHead className="w-[88px]">Activo</TableHead>
             <TableHead className="w-[100px]">Tipo</TableHead>
             {!compact && <TableHead className="w-[88px]">Depto</TableHead>}
@@ -72,18 +119,31 @@ export function IncidentRoutingTable({
                   (Date.now() - new Date(incident.created_at).getTime()) / (1000 * 60 * 60 * 24),
                 )
               : null
+            const isSelected = selectable && selectedIds?.has(incident.id)
 
             return (
               <TableRow
                 key={incident.id}
+                data-state={isSelected ? "selected" : undefined}
                 className={
-                  incident.sla_breached
-                    ? "bg-red-50/60"
-                    : days != null && days >= 7
-                      ? "bg-amber-50/40"
-                      : undefined
+                  isSelected
+                    ? "bg-primary/5"
+                    : incident.sla_breached
+                      ? "bg-red-50/60"
+                      : days != null && days >= 7
+                        ? "bg-amber-50/40"
+                        : undefined
                 }
               >
+                {selectable && (
+                  <TableCell className="py-2">
+                    <Checkbox
+                      checked={!!isSelected}
+                      onCheckedChange={() => toggleOne(incident.id)}
+                      aria-label={`Seleccionar incidente ${incident.asset_code ?? incident.id}`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-mono text-xs py-2">
                   {incident.asset_code ?? "—"}
                 </TableCell>

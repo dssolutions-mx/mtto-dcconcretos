@@ -1,12 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Loader2, RefreshCw, Search } from "lucide-react"
+import { Loader2, RefreshCw, Search, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { IncidentRoutingTable } from "@/components/incidents/incident-routing-table"
+import { useToast } from "@/hooks/use-toast"
 import {
   CANONICAL_ROUTING_DEPARTMENTS,
   type CanonicalRoutingDepartmentSlug,
@@ -33,9 +34,10 @@ type ListResponse = {
 const PAGE_SIZE = 50
 
 export function DepartmentInboxTab() {
+  const { toast } = useToast()
   const [summary, setSummary] = useState<SummaryResponse | null>(null)
   const [activeSlug, setActiveSlug] = useState<CanonicalRoutingDepartmentSlug | "unrouted" | "all">(
-    "mantenimiento",
+    "unrouted",
   )
   const [items, setItems] = useState<RoutedIncident[]>([])
   const [total, setTotal] = useState(0)
@@ -44,6 +46,8 @@ export function DepartmentInboxTab() {
   const [searchDraft, setSearchDraft] = useState("")
   const [loading, setLoading] = useState(true)
   const [loadingList, setLoadingList] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkAssigning, setBulkAssigning] = useState(false)
 
   const loadSummary = useCallback(async () => {
     const res = await fetch("/api/incidents/routed?summary=true")
@@ -90,6 +94,7 @@ export function DepartmentInboxTab() {
 
   useEffect(() => {
     setOffset(0)
+    setSelectedIds(new Set())
   }, [activeSlug, search])
 
   const activeLabel = useMemo(() => {
@@ -103,6 +108,51 @@ export function DepartmentInboxTab() {
     return summary.canonical_departments.filter((d) => d.primaryDepartmentId).length
   }, [summary])
 
+  const bulkAssign = async (canonical: CanonicalRoutingDepartmentSlug) => {
+    if (selectedIds.size === 0) return
+
+    const bucket = summary?.canonical_departments.find((d) => d.slug === canonical)
+    if (!bucket?.primaryDepartmentId) {
+      toast({
+        title: "Departamento no configurado",
+        description: `No hay fila en BD para ${CANONICAL_ROUTING_DEPARTMENTS.find((d) => d.slug === canonical)?.label}.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    setBulkAssigning(true)
+    try {
+      const res = await fetch("/api/incidents/routed/bulk-assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          incident_ids: Array.from(selectedIds),
+          canonical,
+          reason: `Clasificación masiva → ${CANONICAL_ROUTING_DEPARTMENTS.find((d) => d.slug === canonical)?.label}`,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Error en clasificación masiva")
+
+      toast({
+        title: "Clasificación aplicada",
+        description: `${data.succeeded ?? 0} incidente(s) asignados${data.failed ? ` · ${data.failed} fallidos` : ""}.`,
+      })
+      setSelectedIds(new Set())
+      await loadSummary()
+      await loadList()
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo clasificar",
+        variant: "destructive",
+      })
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -110,6 +160,8 @@ export function DepartmentInboxTab() {
       </div>
     )
   }
+
+  const showBulkBar = selectedIds.size > 0
 
   return (
     <div className="space-y-4">
@@ -189,6 +241,37 @@ export function DepartmentInboxTab() {
         </button>
       </div>
 
+      {showBulkBar && (
+        <div className="sticky top-0 z-10 flex flex-col gap-3 rounded-lg border bg-background/95 p-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <Badge variant="secondary">{selectedIds.size} seleccionados</Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="mr-1 h-3.5 w-3.5" />
+              Limpiar
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {CANONICAL_ROUTING_DEPARTMENTS.map((dept) => (
+              <Button
+                key={dept.slug}
+                size="sm"
+                variant="secondary"
+                disabled={bulkAssigning}
+                className={cn("text-xs", dept.colorClass)}
+                onClick={() => void bulkAssign(dept.slug)}
+              >
+                → {dept.shortLabel}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -197,6 +280,7 @@ export function DepartmentInboxTab() {
               <CardDescription>
                 Vista compacta para alto volumen ({total.toLocaleString("es-MX")} coincidencias).
                 Mostrando {items.length} por página.
+                {activeSlug === "unrouted" && " Selecciona filas y asigna departamento en bloque."}
               </CardDescription>
             </div>
             <form
@@ -240,7 +324,13 @@ export function DepartmentInboxTab() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <IncidentRoutingTable incidents={items} compact={activeSlug !== "all"} />
+            <IncidentRoutingTable
+              incidents={items}
+              compact={activeSlug !== "all"}
+              selectable
+              selectedIds={selectedIds}
+              onSelectionChange={setSelectedIds}
+            />
           )}
 
           <div className="flex items-center justify-between pt-2">
