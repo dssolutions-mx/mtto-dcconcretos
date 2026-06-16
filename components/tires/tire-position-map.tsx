@@ -3,20 +3,22 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { formatTirePrimaryId, formatTireSecondaryDot } from "@/lib/tires/display"
 import {
   getTireHealthStatus,
   treadFraction,
   TIRE_STATUS_VISUALS,
 } from "@/lib/tires/status"
-import type { AssetTireInstallation, TirePosition } from "@/types/tires"
+import type { AssetTireInstallation, TirePosition, TireThresholds } from "@/types/tires"
 import { AlertTriangle } from "lucide-react"
 
 interface TirePositionMapProps {
   positions: TirePosition[]
   activeInstallations: AssetTireInstallation[]
+  thresholds?: TireThresholds
 }
 
-export function TirePositionMap({ positions, activeInstallations }: TirePositionMapProps) {
+export function TirePositionMap({ positions, activeInstallations, thresholds }: TirePositionMapProps) {
   const byPosition = new Map(activeInstallations.map((i) => [i.position_code, i]))
 
   return (
@@ -25,7 +27,8 @@ export function TirePositionMap({ positions, activeInstallations }: TirePosition
         const inst = byPosition.get(pos.code)
         const tire = inst?.tire
         const reading = inst?.latest_reading
-        const status = getTireHealthStatus(inst)
+        const dot = tire ? formatTireSecondaryDot(tire) : null
+        const status = getTireHealthStatus(inst, thresholds)
         const visual = TIRE_STATUS_VISUALS[status]
         const attention = status === "warning" || status === "critical"
         const frac = treadFraction(reading?.tread_depth_mm)
@@ -60,11 +63,14 @@ export function TirePositionMap({ positions, activeInstallations }: TirePosition
             <CardContent className="px-4 pb-3 pt-0 text-sm">
               {inst && tire ? (
                 <div className="space-y-2">
-                  <p className="font-medium">
+                  <p className="font-mono text-sm font-medium">{formatTirePrimaryId(tire)}</p>
+                  <p className="text-sm text-muted-foreground">
                     {tire.brand} {tire.size}
                   </p>
-                  {tire.serial_number && (
-                    <p className="font-mono text-xs text-muted-foreground">DOT: {tire.serial_number}</p>
+                  {dot && (
+                    <p className="font-mono text-xs text-muted-foreground">
+                      DOT: {dot}
+                    </p>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     <Badge variant="outline" className="capitalize">

@@ -270,7 +270,7 @@ export function FleetHubPage() {
             <Button variant="outline" size="sm" asChild>
               <Link href="/activos/llantas/importar">
                 <Upload className="mr-2 h-4 w-4" />
-                Importar CSV
+                Importar Excel
               </Link>
             </Button>
           )}
@@ -370,7 +370,7 @@ export function FleetHubPage() {
                       <Link href="/compras">Importar desde recepción de OC</Link>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <Link href="/activos/llantas/importar">Importar CSV (plantilla)</Link>
+                      <Link href="/activos/llantas/importar">Importar Excel (plantilla)</Link>
                     </Button>
                   </div>
                 </CollapsibleContent>

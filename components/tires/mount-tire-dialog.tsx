@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2 } from "lucide-react"
+import { formatTireSelectOption } from "@/lib/tires/display"
 import type { Tire, TirePosition } from "@/types/tires"
 
 interface MountTireDialogProps {
@@ -118,7 +119,7 @@ export function MountTireDialog({
                 ) : (
                   tires.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
-                      {t.brand} {t.size} {t.serial_number ? `(${t.serial_number})` : ""}
+                      {formatTireSelectOption(t)}
                     </SelectItem>
                   ))
                 )}

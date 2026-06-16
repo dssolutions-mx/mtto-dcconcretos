@@ -32,14 +32,17 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer'
-import { isPressureOutOfRange, isTreadLow } from '@/lib/tires/positions'
+import { isPressureOutOfRange, isTreadLow, resolveMinTreadMm } from '@/lib/tires/positions'
+import { formatThresholdSummary } from '@/lib/tires/thresholds-ui'
+import { formatTirePrimaryId, formatTireSecondaryDot, formatTireSelectOption } from '@/lib/tires/display'
 import {
   getTireHealthStatus,
   treadFraction,
   TIRE_STATUS_VISUALS,
+  TREAD_WARNING_MARGIN_MM,
 } from '@/lib/tires/status'
 import { cn } from '@/lib/utils'
-import type { AssetTireInstallation, Tire, TirePosition } from '@/types/tires'
+import type { AssetTireInstallation, Tire, TirePosition, TireThresholds } from '@/types/tires'
 
 export type TirePositionSheetMode = 'mount' | 'detail'
 
@@ -54,6 +57,7 @@ interface TirePositionSheetProps {
   positions: TirePosition[]
   occupiedPositions: string[]
   isMobile?: boolean
+  thresholds?: TireThresholds
   onMounted: () => void
   onReading?: (installation: AssetTireInstallation) => void
   onUnmount?: (installationId: string, retire?: boolean) => void
@@ -71,6 +75,7 @@ export function TirePositionSheet({
   positions,
   occupiedPositions,
   isMobile = false,
+  thresholds,
   onMounted,
   onReading,
   onUnmount,
@@ -87,7 +92,7 @@ export function TirePositionSheet({
     mode === 'mount'
       ? 'Seleccione una llanta del almacén para esta posición.'
       : installation?.tire
-        ? `${installation.tire.brand} ${installation.tire.size}`
+        ? `${installation.tire.brand} ${installation.tire.size}${formatTirePrimaryId(installation.tire) !== `${installation.tire.brand} ${installation.tire.size}` ? ` · ${formatTirePrimaryId(installation.tire)}` : ''}`
         : undefined
 
   const body =
@@ -107,6 +112,7 @@ export function TirePositionSheet({
     ) : (
       <DetailPositionPanel
         installation={installation}
+        thresholds={thresholds}
         onReading={onReading}
         onUnmount={onUnmount}
         onRotate={onRotate}
@@ -238,7 +244,7 @@ function MountPositionForm({
             ) : (
               tires.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  {t.brand} {t.size} {t.serial_number ? `(${t.serial_number})` : ''}
+                  {formatTireSelectOption(t)}
                 </SelectItem>
               ))
             )}
@@ -277,6 +283,7 @@ function MountPositionForm({
 
 interface DetailPositionPanelProps {
   installation?: AssetTireInstallation | null
+  thresholds?: TireThresholds
   onReading?: (installation: AssetTireInstallation) => void
   onUnmount?: (installationId: string, retire?: boolean) => void
   onRotate?: (installation: AssetTireInstallation) => void
@@ -285,6 +292,7 @@ interface DetailPositionPanelProps {
 
 function DetailPositionPanel({
   installation,
+  thresholds,
   onReading,
   onUnmount,
   onRotate,
@@ -296,11 +304,19 @@ function DetailPositionPanel({
 
   const tire = installation.tire
   const reading = installation.latest_reading
-  const treadLow = isTreadLow(reading?.tread_depth_mm, tire.min_tread_mm)
-  const pressureBad = isPressureOutOfRange(reading?.pressure_psi)
-  const status = getTireHealthStatus(installation)
+  const minTread = resolveMinTreadMm(tire.min_tread_mm, thresholds)
+  const treadCritical = isTreadLow(reading?.tread_depth_mm, minTread)
+  const treadWarn =
+    reading?.tread_depth_mm != null &&
+    !treadCritical &&
+    reading.tread_depth_mm <= minTread + TREAD_WARNING_MARGIN_MM
+  const pressureBad = isPressureOutOfRange(reading?.pressure_psi, thresholds)
+  const status = getTireHealthStatus(installation, thresholds)
   const visual = TIRE_STATUS_VISUALS[status]
   const frac = treadFraction(reading?.tread_depth_mm)
+  const primaryId = formatTirePrimaryId(tire)
+  const dot = formatTireSecondaryDot(tire)
+  const thresholdLine = formatThresholdSummary(thresholds, tire.min_tread_mm)
 
   return (
     <div className="space-y-4">
@@ -315,16 +331,20 @@ function DetailPositionPanel({
         {visual.label}
       </div>
 
+      <p className="text-xs text-muted-foreground leading-snug">{thresholdLine}</p>
+
       <div className="space-y-2">
-        <p className="font-medium">
+        <p className="font-mono text-base font-semibold">{primaryId}</p>
+        <p className="text-sm text-muted-foreground">
           {tire.brand} {tire.size}
         </p>
-        {tire.serial_number && (
-          <p className="font-mono text-sm text-muted-foreground">DOT: {tire.serial_number}</p>
+        {dot && (
+          <p className="font-mono text-xs text-muted-foreground">DOT / serial: {dot}</p>
         )}
         <div className="flex flex-wrap gap-1">
           <Badge variant="outline" className="capitalize">{tire.condition}</Badge>
-          {treadLow && <Badge variant="destructive">Banda baja</Badge>}
+          {treadCritical && <Badge variant="destructive">Banda crítica</Badge>}
+          {treadWarn && <Badge variant="default">Banda baja</Badge>}
           {pressureBad && <Badge variant="destructive">Presión fuera de rango</Badge>}
         </div>
       </div>

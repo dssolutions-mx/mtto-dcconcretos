@@ -1,4 +1,4 @@
-import { isPressureOutOfRange, isTreadLow, resolvePressureRange } from '@/lib/tires/positions'
+import { isPressureOutOfRange, isTreadLow, resolveMinTreadMm, resolvePressureRange } from '@/lib/tires/positions'
 import type { AssetTireInstallation, TireThresholds } from '@/types/tires'
 
 /**
@@ -132,7 +132,7 @@ export function getTireHealthStatus(
   const age = daysSince(reading?.read_at)
   if (age != null && age > staleDays && tread == null) return 'no-reading'
 
-  const minTread = thresholds?.min_tread_mm ?? installation.tire.min_tread_mm
+  const minTread = resolveMinTreadMm(installation.tire.min_tread_mm, thresholds)
 
   if (isTreadLow(tread, minTread)) return 'critical'
 

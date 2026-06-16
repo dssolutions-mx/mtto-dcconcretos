@@ -83,6 +83,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ tire: data }, { status: 201 })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Error interno'
+    if (
+      msg.includes('internal_code') ||
+      msg.includes('idx_tires_internal_code') ||
+      msg.includes('23505')
+    ) {
+      return NextResponse.json(
+        { error: 'El código interno ya existe. Use otro código o active la auto-generación.' },
+        { status: 409 }
+      )
+    }
+    if (msg.includes('DOT / serial') || msg.includes('Indique DOT')) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

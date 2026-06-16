@@ -145,10 +145,10 @@ export function TireDiagramSvg({
             stroke="hsl(var(--border))"
             strokeWidth={1.5}
           />
-          {/* Subtle center frame rail */}
+          {/* Subtle center frame rail — starts below cab / front label */}
           <line
             x1={geometry.chassis.x + geometry.chassis.width / 2}
-            y1={geometry.chassis.y + 8}
+            y1={geometry.cab.y + geometry.cab.height + 6}
             x2={geometry.chassis.x + geometry.chassis.width / 2}
             y2={geometry.chassis.y + geometry.chassis.height - 8}
             stroke="hsl(var(--border))"
@@ -180,7 +180,7 @@ export function TireDiagramSvg({
           />
           {/* Front direction chevron + label */}
           <path
-            d={`M ${geometry.frontLabel.x - 7} ${geometry.cab.y - 5} L ${geometry.frontLabel.x} ${geometry.cab.y - 12} L ${geometry.frontLabel.x + 7} ${geometry.cab.y - 5}`}
+            d={`M ${geometry.frontLabel.x - 7} ${geometry.cab.y - 2} L ${geometry.frontLabel.x} ${geometry.cab.y - 9} L ${geometry.frontLabel.x + 7} ${geometry.cab.y - 2}`}
             fill="none"
             stroke="hsl(var(--muted-foreground))"
             strokeWidth={1.5}
@@ -188,10 +188,22 @@ export function TireDiagramSvg({
             strokeLinejoin="round"
             opacity={0.7}
           />
+          <rect
+            x={geometry.frontLabel.x - 26}
+            y={geometry.frontLabel.y - 9}
+            width={52}
+            height={14}
+            rx={4}
+            fill="hsl(var(--background))"
+            stroke="hsl(var(--border))"
+            strokeWidth={0.75}
+            opacity={0.95}
+          />
           <text
             x={geometry.frontLabel.x}
-            y={geometry.frontLabel.y}
+            y={geometry.frontLabel.y + 1}
             textAnchor="middle"
+            dominantBaseline="middle"
             className="fill-muted-foreground text-[10px] font-semibold uppercase tracking-wide"
           >
             Frente

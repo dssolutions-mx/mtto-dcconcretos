@@ -14,7 +14,7 @@ import type { Tire, TireEvent } from '@/types/tires'
 
 test('generateCsvTemplate includes header and example row', () => {
   const template = generateCsvTemplate()
-  assert.match(template, /^marca,medida/)
+  assert.match(template, /^codigo_interno,dot,marca,medida/)
   assert.match(template, /Michelin,11R22\.5/)
 })
 
@@ -24,15 +24,53 @@ test('parseCsvText handles quoted commas', () => {
   assert.equal(rows[1][0], 'Michelin, SA')
 })
 
-test('validateCsvImportRows accepts valid row', () => {
+test('validateCsvImportRows accepts valid row with readings', () => {
   const rows = [
-    ['marca', 'medida', 'modelo', 'dot', 'condicion', 'costo_compra', 'fecha_compra'],
-    ['Michelin', '11R22.5', 'XDA2', 'DOT123', 'nueva', '18500', '2026-06-01'],
+    [
+      'codigo_interno',
+      'dot',
+      'marca',
+      'medida',
+      'modelo',
+      'condicion',
+      'costo_compra',
+      'fecha_compra',
+      'almacen',
+      'banda_mm',
+      'presion_psi',
+    ],
+    [
+      'LL-P1-001',
+      'DOT123',
+      'Michelin',
+      '11R22.5',
+      'XDA2',
+      'nueva',
+      '18500',
+      '2026-06-01',
+      '',
+      '14.5',
+      '100',
+    ],
   ]
   const result = validateCsvImportRows(rows)
   assert.equal(result.valid_rows.length, 1)
   assert.equal(result.errors.length, 0)
   assert.equal(result.valid_rows[0].marca, 'Michelin')
+  assert.equal(result.valid_rows[0].banda_mm, 14.5)
+  assert.equal(result.valid_rows[0].presion_psi, 100)
+  assert.equal(result.valid_rows[0].codigo_interno, 'LL-P1-001')
+})
+
+test('validateCsvImportRows accepts tread_mm alias', () => {
+  const rows = [
+    ['marca', 'medida', 'tread_mm', 'pressure_psi'],
+    ['Michelin', '11R22.5', '12', '95'],
+  ]
+  const result = validateCsvImportRows(rows)
+  assert.equal(result.valid_rows.length, 1)
+  assert.equal(result.valid_rows[0].banda_mm, 12)
+  assert.equal(result.valid_rows[0].presion_psi, 95)
 })
 
 test('validateCsvImportRows rejects duplicate DOT in file', () => {
@@ -46,14 +84,58 @@ test('validateCsvImportRows rejects duplicate DOT in file', () => {
   assert.ok(result.duplicate_dots_in_file.includes('DOT999'))
 })
 
+test('validateCsvImportRows rejects duplicate internal code in file', () => {
+  const rows = [
+    ['marca', 'medida', 'codigo_interno'],
+    ['A', '11R22.5', 'LL-001'],
+    ['B', '11R22.5', 'll-001'],
+  ]
+  const result = validateCsvImportRows(rows)
+  assert.equal(result.valid_rows.length, 0)
+  assert.ok(result.duplicate_internal_codes_in_file.includes('LL-001'))
+})
+
 test('validateCsvImportRows rejects existing DOT', () => {
   const rows = [
     ['marca', 'medida', 'dot'],
     ['A', '11R22.5', 'DOTEXIST'],
   ]
-  const result = validateCsvImportRows(rows, new Set(['DOTEXIST']))
+  const result = validateCsvImportRows(rows, { existingDots: new Set(['DOTEXIST']) })
   assert.equal(result.valid_rows.length, 0)
   assert.ok(result.errors.some((e) => e.field === 'dot'))
+})
+
+test('validateCsvImportRows enforces dot_required from id rules', () => {
+  const rows = [
+    ['marca', 'medida'],
+    ['A', '11R22.5'],
+  ]
+  const result = validateCsvImportRows(rows, { idRules: { dot_required: true } })
+  assert.equal(result.valid_rows.length, 0)
+  assert.ok(result.errors.some((e) => e.field === 'dot'))
+})
+
+test('validateCsvImportRows resolves warehouse code', () => {
+  const rows = [
+    ['marca', 'medida', 'almacen'],
+    ['A', '11R22.5', 'ALM-01'],
+  ]
+  const result = validateCsvImportRows(rows, {
+    warehouseCodes: new Map([['ALM-01', 'uuid-warehouse-1']]),
+    warehouseIds: new Set(['uuid-warehouse-1']),
+  })
+  assert.equal(result.valid_rows.length, 1)
+  assert.equal(result.valid_rows[0].almacen_id, 'uuid-warehouse-1')
+})
+
+test('validateCsvImportRows rejects invalid tread', () => {
+  const rows = [
+    ['marca', 'medida', 'banda_mm'],
+    ['A', '11R22.5', '999'],
+  ]
+  const result = validateCsvImportRows(rows)
+  assert.equal(result.valid_rows.length, 0)
+  assert.ok(result.errors.some((e) => e.field === 'banda_mm'))
 })
 
 test('validateCsvImportRows enforces max rows', () => {

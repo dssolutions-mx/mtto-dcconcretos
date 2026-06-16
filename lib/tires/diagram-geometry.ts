@@ -81,14 +81,14 @@ const TEMPLATE_CHASSIS: Record<
     viewBox: '0 0 400 450',
     chassis: { x: 150, y: 66, width: 100, height: 330 },
     cab: { x: 158, y: 24, width: 84, height: 46 },
-    frontLabel: { x: 200, y: 16 },
+    frontLabel: { x: 200, y: 8 },
     bodyType: 'truck',
   },
   vehicle_4wheel: {
     viewBox: '0 0 300 400',
     chassis: { x: 110, y: 60, width: 80, height: 300 },
     cab: { x: 118, y: 24, width: 64, height: 42 },
-    frontLabel: { x: 150, y: 16 },
+    frontLabel: { x: 150, y: 8 },
     bodyType: 'vehicle',
   },
 }
@@ -217,7 +217,7 @@ function buildAutoGeometry(positions: TirePosition[]): DiagramGeometry {
     bodyType: 'generic',
     chassis: { x: chassisX, y: 68, width: chassisW, height: height - 68 - 16 },
     cab: { x: centerX - 42, y: 24, width: 84, height: 44 },
-    frontLabel: { x: centerX, y: 16 },
+    frontLabel: { x: centerX, y: 8 },
     axles: [],
     tires,
   }

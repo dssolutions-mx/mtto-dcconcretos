@@ -46,8 +46,25 @@ export function getPositionByCode(code: string): TirePosition | undefined {
   return getAllKnownPositions().find((p) => p.code === code)
 }
 
+/**
+ * Default operating band for truck tires (psi). Aligns with common TMC / fleet
+ * practice for heavy-duty radial tires; override per plant in Ajustes de llantas.
+ */
 export const PRESSURE_RANGE_PSI = { min: 80, max: 120 } as const
+
+/**
+ * Legal / safety minimum tread (mm) before scrap. Industry and TMC guidance
+ * often cites ~2–3 mm; we default to 3 mm until fleet settings override it.
+ */
 export const DEFAULT_MIN_TREAD_MM = 3.0
+
+/** Effective minimum tread for alerts: fleet setting, then per-tire, then default. */
+export function resolveMinTreadMm(
+  tireMinTreadMm: number | null | undefined,
+  thresholds?: TireThresholds
+): number {
+  return thresholds?.min_tread_mm ?? tireMinTreadMm ?? DEFAULT_MIN_TREAD_MM
+}
 
 export function isTreadLow(treadMm: number | null | undefined, minMm: number): boolean {
   if (treadMm == null) return false

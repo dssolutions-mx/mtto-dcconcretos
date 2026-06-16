@@ -55,11 +55,23 @@ export function StepIdRules({
       <CardHeader>
         <CardTitle>Reglas de identificación</CardTitle>
         <CardDescription>
-          Defina cómo se identificarán las llantas: DOT obligatorio, prefijo interno o
-          numeración automática.
+          Cada llanta tiene dos identificadores distintos: el <strong>código interno</strong>{' '}
+          (generado o asignado por su flota) y el <strong>DOT / serial</strong> del fabricante
+          impreso en la pared. Configure ambos antes de cargar inventario.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground space-y-1">
+          <p>
+            <strong className="text-foreground">Código interno:</strong> ID operativo en almacén,
+            montajes y reportes (ej. DC-LL-P1-2026-00421).
+          </p>
+          <p>
+            <strong className="text-foreground">DOT / serial:</strong> código legal del fabricante;
+            se captura al dar de alta cada llanta, no se auto-genera.
+          </p>
+        </div>
+
         <div className="flex items-center gap-2">
           <Checkbox
             id="dot-required"
@@ -70,12 +82,12 @@ export function StepIdRules({
         </div>
 
         <div className="space-y-1">
-          <Label htmlFor="prefix">Prefijo interno (opcional)</Label>
+          <Label htmlFor="prefix">Prefijo del código interno (opcional)</Label>
           <Input
             id="prefix"
             value={internalPrefix}
             onChange={(e) => setInternalPrefix(e.target.value)}
-            placeholder="LL"
+            placeholder="DC-LL"
           />
         </div>
 
@@ -85,12 +97,15 @@ export function StepIdRules({
             checked={autoGenerate}
             onCheckedChange={(v) => setAutoGenerate(v === true)}
           />
-          <Label htmlFor="auto-gen">Auto-generar ID secuencial con prefijo</Label>
+          <Label htmlFor="auto-gen">Auto-generar código interno secuencial (planta + año)</Label>
         </div>
 
-        <div className="rounded-lg border bg-muted/40 px-4 py-3">
-          <p className="text-sm text-muted-foreground">Vista previa</p>
+        <div className="rounded-lg border bg-muted/40 px-4 py-3 space-y-1">
+          <p className="text-sm text-muted-foreground">Vista previa del próximo código interno</p>
           <p className="font-mono text-sm font-medium">{previewId}</p>
+          <p className="text-xs text-muted-foreground">
+            El DOT se registra manualmente en inventario o importación Excel, columna aparte.
+          </p>
         </div>
 
         <div className="flex flex-wrap justify-between gap-2">

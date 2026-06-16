@@ -42,7 +42,7 @@ describe('previewInternalCode', () => {
   it('shows manual prefix when auto_generate is off', () => {
     assert.equal(
       previewInternalCode({ rules: { internal_prefix: 'DC-LL', auto_generate: false } }),
-      'DC-LL-12345'
+      'DC-LL-12345 (manual)'
     )
   })
 

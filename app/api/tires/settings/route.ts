@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
+import { normalizeTireThresholds, validateTireThresholds } from '@/lib/tires/thresholds-ui'
 import { NextRequest, NextResponse } from 'next/server'
-import type { UpsertTireFleetSettingsInput } from '@/types/tires'
+import type { TireThresholds, UpsertTireFleetSettingsInput } from '@/types/tires'
 
 const DEFAULT_SETTINGS = {
   id_rules: {},
@@ -66,10 +67,19 @@ export async function PUT(request: NextRequest) {
     const body = (await request.json()) as UpsertTireFleetSettingsInput
     const plantId = body.plant_id ?? null
 
+    let thresholds: TireThresholds = DEFAULT_SETTINGS.thresholds
+    if (body.thresholds) {
+      const validationError = validateTireThresholds(body.thresholds)
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 })
+      }
+      thresholds = normalizeTireThresholds(body.thresholds)
+    }
+
     const row = {
       plant_id: plantId,
       id_rules: body.id_rules ?? DEFAULT_SETTINGS.id_rules,
-      thresholds: body.thresholds ?? DEFAULT_SETTINGS.thresholds,
+      thresholds,
       checklist_defaults: body.checklist_defaults ?? DEFAULT_SETTINGS.checklist_defaults,
       updated_at: new Date().toISOString(),
     }

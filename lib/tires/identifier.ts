@@ -63,9 +63,9 @@ export function previewInternalCode({
 }: PreviewInternalCodeInput): string {
   if (!rules.auto_generate) {
     if (rules.internal_prefix?.trim()) {
-      return `${rules.internal_prefix.trim().toUpperCase()}-12345`
+      return `${rules.internal_prefix.trim().toUpperCase()}-12345 (manual)`
     }
-    return 'DOT1234567890'
+    return 'Sin auto-ID — capture DOT o ID interno al registrar'
   }
   return formatInternalCode({
     prefix: rules.internal_prefix?.trim() || 'LL',

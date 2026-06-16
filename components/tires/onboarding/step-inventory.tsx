@@ -17,8 +17,9 @@ export function StepInventory({ saving, onBack, onComplete }: StepInventoryProps
       <CardHeader>
         <CardTitle>Inventario inicial</CardTitle>
         <CardDescription>
-          Elija cómo cargar las primeras llantas en almacén. Puede combinar métodos en fases
-          posteriores.
+          Elija cómo cargar las primeras llantas en almacén. Al registrar cada una, capture la
+          marca/medida, el <strong>DOT / serial</strong> del fabricante y — si activó auto-ID — el
+          sistema asignará el <strong>código interno</strong> automáticamente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -30,9 +31,9 @@ export function StepInventory({ saving, onBack, onComplete }: StepInventoryProps
           >
             <Link href="/activos/llantas/importar">
               <Upload className="h-6 w-6" />
-              <span>Importar CSV</span>
+              <span>Importar Excel</span>
               <span className="text-xs font-normal text-muted-foreground">
-                Lote con validación
+                Lote con plantilla .xlsx
               </span>
             </Link>
           </Button>

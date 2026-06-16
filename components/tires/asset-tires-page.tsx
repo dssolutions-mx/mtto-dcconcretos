@@ -34,7 +34,7 @@ import { TireEmptyState } from '@/components/tires/tire-empty-state'
 import { RotationDialog } from '@/components/tires/rotation-dialog'
 import { getTireUiRole, type AssetTireSubState } from '@/lib/tires/fleet-status'
 import { findOrphanedPositionCodes } from '@/lib/tires/coverage'
-import { DEFAULT_TIRE_POSITIONS } from '@/lib/tires/positions'
+import { DEFAULT_MIN_TREAD_MM, DEFAULT_TIRE_POSITIONS, PRESSURE_RANGE_PSI } from '@/lib/tires/positions'
 import { useAuthZustand } from '@/hooks/use-auth-zustand'
 import { ArrowLeft, CircleDot, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
@@ -45,6 +45,7 @@ import type {
   TireEvent,
   TireLayoutTemplateKey,
   TirePosition,
+  TireThresholds,
 } from '@/types/tires'
 
 interface AssetTiresPageProps {
@@ -94,14 +95,29 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
   const [selectedInstallation, setSelectedInstallation] =
     useState<AssetTireInstallation | null>(null)
   const [rotateInst, setRotateInst] = useState<AssetTireInstallation | null>(null)
+  const [fleetThresholds, setFleetThresholds] = useState<TireThresholds>({
+    min_tread_mm: DEFAULT_MIN_TREAD_MM,
+    pressure_min_psi: PRESSURE_RANGE_PSI.min,
+    pressure_max_psi: PRESSURE_RANGE_PSI.max,
+    days_without_reading: 14,
+  })
   const positionDeepLinkHandled = useRef(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/assets/${assetId}/tires`)
-      const data = (await res.json()) as AssetTireApiResponse
-      if (res.ok) {
+      const [tiresRes, settingsRes] = await Promise.all([
+        fetch(`/api/assets/${assetId}/tires`),
+        fetch('/api/tires/settings'),
+      ])
+      const data = (await tiresRes.json()) as AssetTireApiResponse
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json()
+        if (settingsData.settings?.thresholds) {
+          setFleetThresholds((prev) => ({ ...prev, ...settingsData.settings.thresholds }))
+        }
+      }
+      if (tiresRes.ok) {
         setInstallations(data.installations ?? [])
         setEvents(data.events ?? [])
         setSubState(data.asset_sub_state ?? 'complete')
@@ -348,6 +364,7 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
                       positions={layoutPositions}
                       activeInstallations={active}
                       bodyType={tireBodyTypeFromCategory(modelCategory, templateKey)}
+                      thresholds={fleetThresholds}
                       selectedPositionCode={selectedPosition?.code}
                       onPositionClick={handlePositionClick}
                     />
@@ -365,7 +382,11 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <TirePositionMap positions={layoutPositions} activeInstallations={active} />
+                    <TirePositionMap
+                      positions={layoutPositions}
+                      activeInstallations={active}
+                      thresholds={fleetThresholds}
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -560,6 +581,7 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
         positions={layoutPositions}
         occupiedPositions={occupied}
         isMobile={isMobile}
+        thresholds={fleetThresholds}
         onMounted={load}
         onReading={(inst) => {
           setSheetOpen(false)
