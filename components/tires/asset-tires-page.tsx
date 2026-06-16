@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -31,6 +32,8 @@ interface AssetTiresPageProps {
 }
 
 export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps) {
+  const searchParams = useSearchParams()
+  const workOrderId = searchParams.get("workOrderId")
   const [loading, setLoading] = useState(true)
   const [installations, setInstallations] = useState<AssetTireInstallation[]>([])
   const [events, setEvents] = useState<TireEvent[]>([])
@@ -65,7 +68,12 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
     const res = await fetch(`/api/assets/${assetId}/tires`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "unmount", installation_id: installationId, retire_tire: retire }),
+      body: JSON.stringify({
+        action: "unmount",
+        installation_id: installationId,
+        retire_tire: retire,
+        work_order_id: workOrderId ?? undefined,
+      }),
     })
     if (!res.ok) {
       const err = await res.json()
@@ -79,7 +87,11 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
     <DashboardShell>
       <DashboardHeader
         heading={assetName ? `Llantas — ${assetName}` : "Llantas del activo"}
-        text="Mapa de posiciones, lecturas de banda/presión e historial de montajes."
+        text={
+          workOrderId
+            ? `Vinculado a OT ${workOrderId.slice(0, 8)}… — montajes y eventos se registrarán en la orden.`
+            : "Mapa de posiciones, lecturas de banda/presión e historial de montajes."
+        }
       >
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" asChild>
@@ -310,6 +322,7 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
         open={mountOpen}
         onOpenChange={setMountOpen}
         assetId={assetId}
+        workOrderId={workOrderId}
         occupiedPositions={occupied}
         onMounted={load}
       />

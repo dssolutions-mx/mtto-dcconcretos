@@ -34,7 +34,7 @@ export interface ChecklistSection {
   id?: string
   title: string
   order_index: number
-  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk"
+  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings"
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig

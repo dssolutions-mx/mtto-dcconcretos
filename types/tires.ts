@@ -20,6 +20,12 @@ export interface Tire {
   status: TireStatus
   min_tread_mm: number
   notes: string | null
+  purchase_order_id: string | null
+  supplier_id: string | null
+  po_line_index: number | null
+  inventory_part_id: string | null
+  warehouse_id: string | null
+  plant_id: string | null
   created_at: string
   updated_at: string
 }
@@ -38,6 +44,7 @@ export interface AssetTireInstallation {
   km_at_remove: number | null
   hours_at_remove: number | null
   installed_by: string | null
+  work_order_id: string | null
   notes: string | null
   created_at: string
   tire?: Tire
@@ -55,6 +62,8 @@ export interface TireReading {
   odometer_km: number | null
   horometer_hours: number | null
   recorded_by: string | null
+  checklist_id: string | null
+  position_code: string | null
   notes: string | null
   created_at: string
 }
@@ -72,6 +81,7 @@ export interface TireEvent {
   odometer_km: number | null
   horometer_hours: number | null
   notes: string | null
+  work_order_id: string | null
   created_by: string | null
   created_at: string
 }
@@ -101,6 +111,7 @@ export interface MountTireInput {
   position_label: string
   axle_number?: number
   notes?: string
+  work_order_id?: string
 }
 
 export interface TireReadingInput {

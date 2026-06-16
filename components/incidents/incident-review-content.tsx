@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Wrench,
   ShoppingCart,
+  CircleDot,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -20,6 +21,7 @@ import {
   incidentInCohort,
   INSPECTION_COHORTS,
 } from "@/lib/incidents/inspection-cohort"
+import { classifyIssueTheme } from "@/lib/maintenance/issue-theme-taxonomy"
 
 function formatDate(dateString: string | null): string {
   if (!dateString) return "No disponible"
@@ -160,6 +162,8 @@ export function IncidentReviewContent({
   }
 
   const evidence = getIncidentEvidence(incident)
+  const isTireIncident =
+    classifyIssueTheme(incident.description ?? "") === "tires"
   const juneCohortBounds = cohortToBounds("june_2026_inspection")
   const inJuneCohort =
     juneCohortBounds &&
@@ -354,6 +358,20 @@ export function IncidentReviewContent({
                     : ""}
                 </Link>
               </Button>
+              {isTireIncident && incident.asset_id && (
+                <Button variant="outline" asChild className="w-full cursor-pointer">
+                  <Link
+                    href={`/activos/${incident.asset_id}/llantas${
+                      incident.work_order_id
+                        ? `?workOrderId=${incident.work_order_id}`
+                        : ""
+                    }`}
+                  >
+                    <CircleDot className="h-4 w-4 mr-2" />
+                    Abrir trabajo de llantas
+                  </Link>
+                </Button>
+              )}
               {incident.purchase_order_id && (
                 <Button variant="outline" asChild className="w-full cursor-pointer">
                   <Link href={`/compras/${incident.purchase_order_id}`}>

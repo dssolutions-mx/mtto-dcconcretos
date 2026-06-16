@@ -41,7 +41,8 @@ import {
   CheckSquare,
   Camera,
   Sparkles,
-  Shield
+  Shield,
+  CircleDot
 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase'
@@ -83,7 +84,7 @@ interface ChecklistSection {
   _clientId?: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig
@@ -198,7 +199,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [sectionTypeChangeConfirm, setSectionTypeChangeConfirm] = useState<{
     sectionIndex: number
-    newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+    newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
   } | null>(null)
   const [previewVersion, setPreviewVersion] = useState<TemplateVersion | null>(null)
 
@@ -540,6 +541,29 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       [newSectionIndex]: newTitle 
     }))
     
+    setTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }))
+    setHasChanges(true)
+  }
+
+  const addTireReadingsSection = () => {
+    const newTitle = `Lecturas de Llantas ${template.sections.filter(s => s.section_type === 'tire_readings').length + 1}`
+    const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
+      title: newTitle,
+      order_index: template.sections.length,
+      section_type: 'tire_readings',
+      items: []
+    }
+
+    const newSectionIndex = template.sections.length
+    setSectionTitles(prev => ({
+      ...prev,
+      [newSectionIndex]: newTitle
+    }))
+
     setTemplate(prev => ({
       ...prev,
       sections: [...prev.sections, newSection]
@@ -1117,9 +1141,9 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setCleanlinessAreasStr(newCleanlinessAreasStr)
   }
 
-  const handleSectionTypeChange = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
+  const handleSectionTypeChange = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => {
     const section = template.sections[sectionIndex]
-    const wouldLoseItems = (newType === 'evidence' || newType === 'security_talk') && (section?.items?.length ?? 0) > 0
+    const wouldLoseItems = (newType === 'evidence' || newType === 'security_talk' || newType === 'tire_readings') && (section?.items?.length ?? 0) > 0
     if (wouldLoseItems) {
       setSectionTypeChangeConfirm({ sectionIndex, newType })
     } else {
@@ -1127,7 +1151,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }
   }
 
-  const updateSectionType = useCallback((sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => {
+  const updateSectionType = useCallback((sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => {
     setTemplate(prev => {
       const section = prev.sections[sectionIndex]
       const updates: Partial<ChecklistSection> = {
@@ -1154,7 +1178,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           require_reflection: true,
           allow_evidence: false
         } : section?.security_config,
-        items: newType === 'evidence' || newType === 'security_talk' ? [] : (section?.items ?? [])
+        items: newType === 'evidence' || newType === 'security_talk' || newType === 'tire_readings' ? [] : (section?.items ?? [])
       }
       const newSections = prev.sections.map((s, i) => i === sectionIndex ? { ...s, ...updates } : s)
       return { ...prev, sections: newSections }
@@ -2274,6 +2298,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     <Shield className="h-4 w-4 mr-2" />
                     Charla de Seguridad
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addTireReadingsSection}>
+                    <CircleDot className="h-4 w-4 mr-2" />
+                    Lecturas de Llantas
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -2294,6 +2322,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                 <Shield className="h-4 w-4 mr-2" />
                 Seguridad
               </Button>
+              <Button variant="outline" size="sm" onClick={addTireReadingsSection} className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">
+                <CircleDot className="h-4 w-4 mr-2" />
+                Llantas
+              </Button>
             </div>
           </div>
         </div>
@@ -2302,7 +2334,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           <Card key={section.id ?? section._clientId ?? sectionIndex} className={`[content-visibility:auto] [contain-intrinsic-size:auto_120px] ${
             section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : 
             section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' :
-            section.section_type === 'security_talk' ? 'border-orange-200 bg-orange-50/50' : ''
+            section.section_type === 'security_talk' ? 'border-orange-200 bg-orange-50/50' :
+            section.section_type === 'tire_readings' ? 'border-purple-200 bg-purple-50/50' : ''
           }`}>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
@@ -2310,7 +2343,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="flex items-center gap-3">
                     <Select
                       value={section.section_type || 'checklist'}
-                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk') => handleSectionTypeChange(sectionIndex, value)}
+                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => handleSectionTypeChange(sectionIndex, value)}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue />
@@ -2338,6 +2371,12 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                           <div className="flex items-center gap-2">
                             <Shield className="h-4 w-4" />
                             Charla de Seguridad
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="tire_readings">
+                          <div className="flex items-center gap-2">
+                            <CircleDot className="h-4 w-4" />
+                            Lecturas de Llantas
                           </div>
                         </SelectItem>
                       </SelectContent>
@@ -2382,6 +2421,19 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                 renderEvidenceSection(section, sectionIndex)
               ) : section.section_type === 'security_talk' ? (
                 renderSecuritySection(section, sectionIndex)
+              ) : section.section_type === 'tire_readings' ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 border-l-4 border-purple-500 pl-4">
+                    <CircleDot className="h-5 w-5 text-purple-600" />
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                      Lecturas de Llantas (mm / psi por posición)
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Al ejecutar el checklist, el operador registrará profundidad de banda y presión
+                    para cada posición montada en el activo.
+                  </p>
+                </div>
               ) : section.section_type === 'cleanliness_bonus' ? (
                 // Render cleanliness section - hybrid of checklist items + evidence photos
                 <div className="space-y-4">

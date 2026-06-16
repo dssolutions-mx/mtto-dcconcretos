@@ -2,6 +2,11 @@ import { createClient } from '@/lib/supabase-server'
 import { MovementService } from './movement-service'
 import { StockService } from './stock-service'
 import { InventoryService } from './inventory-service'
+import {
+  createTiresFromReceipt,
+  isTireSkuLabel,
+  type TireReceiptUnit,
+} from '@/lib/tires/inventory-integration'
 
 export interface ReceiptItem {
   po_item_id?: string // ID from PO items array
@@ -12,6 +17,9 @@ export interface ReceiptItem {
   quantity: number
   unit_cost: number
   notes?: string
+  /** When true or auto-detected from part_name, spawn serialized tire rows */
+  is_tire_sku?: boolean
+  tire_units?: TireReceiptUnit[]
 }
 
 export interface ReceiveToInventoryRequest {
@@ -29,6 +37,7 @@ export interface ReceiptResult {
   success: boolean
   error_message?: string
   part_created?: boolean
+  tires_created?: string[]
 }
 
 export class InventoryReceiptService {
@@ -141,6 +150,33 @@ export class InventoryReceiptService {
           
           console.log(`Movement created:`, movement.id)
           movements_created.push(movement.id)
+
+          let tires_created: string[] = []
+          const tireSku = item.is_tire_sku ?? isTireSkuLabel(item.part_name)
+          if (tireSku) {
+            try {
+              const { data: warehouse } = await supabase
+                .from('inventory_warehouses')
+                .select('plant_id')
+                .eq('id', item.warehouse_id)
+                .maybeSingle()
+
+              tires_created = await createTiresFromReceipt(supabase, {
+                purchase_order_id: request.purchase_order_id,
+                supplier_id: po.supplier_id ?? null,
+                part_id,
+                warehouse_id: item.warehouse_id,
+                plant_id: warehouse?.plant_id ?? null,
+                unit_cost: item.unit_cost,
+                quantity: item.quantity,
+                part_name: item.part_name,
+                tire_units: item.tire_units,
+                user_id,
+              })
+            } catch (tireErr) {
+              console.error('Non-critical: tire catalog rows from receipt', tireErr)
+            }
+          }
           
           results.push({
             movement_id: movement.id,
@@ -148,7 +184,8 @@ export class InventoryReceiptService {
             stock_id: stock.id,
             quantity: item.quantity,
             success: true,
-            part_created: parts_created.includes(part_id)
+            part_created: parts_created.includes(part_id),
+            tires_created,
           })
         } catch (error) {
           console.error(`Error receiving item ${item.part_name}:`, error)

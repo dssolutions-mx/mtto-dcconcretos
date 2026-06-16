@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckSquare, Camera, Sparkles, Shield, Plus } from "lucide-react"
+import { CheckSquare, Camera, Sparkles, Shield, Plus, CircleDot } from "lucide-react"
 import { CollapsibleSectionCard } from "./collapsible-section-card"
 import { SectionEditorBody } from "./section-editor-body"
 import type { ChecklistTemplate, ChecklistSection, ChecklistItem } from "./types"
@@ -44,10 +44,17 @@ const SECTION_TYPES = [
     icon: Shield,
     className: "border-orange-200 bg-orange-50/50 hover:bg-orange-100/50",
   },
+  {
+    type: "tire_readings" as const,
+    label: "Lecturas de llantas",
+    description: "Captura de banda (mm) y presión (psi) por posición montada",
+    icon: CircleDot,
+    className: "border-violet-200 bg-violet-50/50 hover:bg-violet-100/50",
+  },
 ]
 
 function createSectionForType(
-  type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk",
+  type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings",
   orderIndex: number,
   existingSections: ChecklistSection[]
 ): ChecklistSection {
@@ -59,6 +66,8 @@ function createSectionForType(
         ? `Evidencia Fotográfica ${count + 1}`
         : type === "security_talk"
           ? `Charla de Seguridad ${count + 1}`
+          : type === "tire_readings"
+            ? `Inspección de llantas ${count + 1}`
           : `Verificación de Limpieza ${count + 1}`
 
   if (type === "checklist") {
@@ -105,6 +114,14 @@ function createSectionForType(
         require_reflection: true,
         allow_evidence: false,
       },
+      items: [],
+    }
+  }
+  if (type === "tire_readings") {
+    return {
+      title: baseTitle,
+      order_index: orderIndex,
+      section_type: "tire_readings",
       items: [],
     }
   }

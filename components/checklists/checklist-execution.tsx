@@ -56,6 +56,10 @@ import {
   type EquipmentReadingsValidation,
 } from "@/components/checklists/equipment-readings-form"
 import {
+  TireReadingsSection,
+} from "@/components/checklists/tire-readings-section"
+import type { ChecklistTireReadingInput } from "@/lib/tires/checklist-readings"
+import {
   enrichEquipmentReadingsValidation,
   formatSubmissionReadingErrors,
   validateReadingsPresence,
@@ -91,7 +95,7 @@ interface ChecklistExecutionProps {
 interface SectionProgress {
   id: string
   title: string
-  type: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+  type: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
   total: number
   completed: number
   hasIssues: boolean
@@ -186,6 +190,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Estados para datos de charla de seguridad
   const [securityData, setSecurityData] = useState<Record<string, any>>({})
+
+  // Lecturas de llantas por sección (Phase D)
+  const [tireReadingsData, setTireReadingsData] = useState<
+    Record<string, ChecklistTireReadingInput[]>
+  >({})
   
   // Section Navigation States
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({})
@@ -362,6 +371,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           hasIssues: false,
           isCollapsed: sectionCollapsed[section.id] || false
         }
+      } else if (section.section_type === 'tire_readings') {
+        const readings = tireReadingsData[section.id] ?? []
+        const completed = readings.filter(
+          (r) => r.tread_depth_mm != null || r.pressure_psi != null
+        ).length
+        return {
+          id: section.id,
+          title: section.title,
+          type: 'tire_readings' as const,
+          total: Math.max(readings.length, 1),
+          completed,
+          hasIssues: false,
+          isCollapsed: sectionCollapsed[section.id] || false,
+        }
       } else {
         const items = section.checklist_items || section.items || []
         const completed = items.filter((item: any) => itemStatus[item.id]).length
@@ -380,7 +403,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       }
     })
-  }, [checklist, itemStatus, evidenceData, securityData, sectionCollapsed])
+  }, [checklist, itemStatus, evidenceData, securityData, tireReadingsData, sectionCollapsed])
 
   // Auto-collapse completed sections when enabled
   useEffect(() => {
@@ -1278,7 +1301,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     const maintenanceItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
       const sectionAndItem = findSectionAndItemById(itemId)
       return sectionAndItem?.section?.section_type !== 'cleanliness_bonus' &&
-             sectionAndItem?.section?.section_type !== 'security_talk'
+             sectionAndItem?.section?.section_type !== 'security_talk' &&
+             sectionAndItem?.section?.section_type !== 'tire_readings'
     })
 
     const cleanlinessItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
@@ -1431,7 +1455,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             sectionType: sectionAndItem?.section?.section_type,
           }
         })
-        .filter((item) => item.sectionType !== "cleanliness_bonus" && item.sectionType !== "security_talk")
+        .filter(
+          (item) =>
+            item.sectionType !== "cleanliness_bonus" &&
+            item.sectionType !== "security_talk" &&
+            item.sectionType !== "tire_readings"
+        )
 
       if (operatorSimpleFlow) {
         const uuidOk =
@@ -1560,7 +1589,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         hours_reading: hoursOut,
         kilometers_reading: kmOut,
         evidence_data: evidenceData,
-        security_data: Object.keys(securityData).length > 0 ? securityData : undefined
+        security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
+        tire_readings: Object.values(tireReadingsData).flat(),
       }
       
       if (isOnline) {
@@ -1770,7 +1800,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       })
       // Exclude cleanliness verification items and security talk sections from corrective work orders
-      .filter(item => item.sectionType !== 'cleanliness_bonus' && item.sectionType !== 'security_talk')
+      .filter(
+        (item) =>
+          item.sectionType !== "cleanliness_bonus" &&
+          item.sectionType !== "security_talk" &&
+          item.sectionType !== "tire_readings"
+      )
 
     if (itemsWithIssues.length === 0) {
       toast.error("No hay elementos con problemas para generar una orden correctiva")
@@ -1956,6 +1991,17 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         evidenceCompleted: evidenceCompleted,
         evidenceTotal: requiredPhotos,
         evidenceComplete: evidenceCompleted >= requiredPhotos
+      }
+    } else if (section.section_type === 'tire_readings') {
+      const readings = tireReadingsData[section.id] ?? []
+      const completed = readings.filter(
+        (r) => r.tread_depth_mm != null || r.pressure_psi != null
+      ).length
+      return {
+        completed,
+        total: Math.max(readings.length, 1),
+        hasIssues: false,
+        isComplete: readings.length > 0 && completed === readings.length,
       }
     } else {
       const items = section.checklist_items || section.items || []
@@ -2503,6 +2549,26 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                   </div>
                 )
               }
+
+              if (section.section_type === 'tire_readings') {
+                return (
+                  <div
+                    key={`tire-readings-${section.id}`}
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <TireReadingsSection
+                      assetId={checklist.assetId}
+                      sectionTitle={section.title}
+                      value={tireReadingsData[section.id] ?? []}
+                      onChange={(readings) =>
+                        setTireReadingsData((prev) => ({ ...prev, [section.id]: readings }))
+                      }
+                      disabled={submitting}
+                    />
+                  </div>
+                )
+              }
               
               // Enhanced Regular Checklist Section with Collapsible Items
               const items = section.checklist_items || section.items || []
@@ -2830,7 +2896,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             }
           })
           // Exclude cleanliness verification items and security talk sections from corrective work orders
-          .filter(item => item.sectionType !== 'cleanliness_bonus' && item.sectionType !== 'security_talk')}
+          .filter(
+            (item) =>
+              item.sectionType !== "cleanliness_bonus" &&
+              item.sectionType !== "security_talk" &&
+              item.sectionType !== "tire_readings"
+          )}
         onWorkOrderCreated={handleWorkOrderCreated}
         onNavigateToAssetsPage={handlePostCompletionNavigation}
       />

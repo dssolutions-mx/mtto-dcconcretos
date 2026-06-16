@@ -6,6 +6,10 @@ import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
 import { previewCheckpointAbsorption } from "@/lib/maintenance/due-engine"
 import { parseMaintenanceUnitString } from "@/lib/utils/cyclic-maintenance"
+import {
+  buildTirePartsForWorkOrder,
+  mergePartsWithTireLines,
+} from "@/lib/tires/work-order-parts"
 
 // Define a type for any table access to bypass TypeScript checking
 interface AnyTable {
@@ -344,6 +348,25 @@ export async function POST(request: Request) {
         enhancedHistoryData.technician_id = existingOrder.assigned_to;
       }
       enhancedHistoryData.work_order_id = workOrderId;
+
+      // Phase A: roll up tire costs from events/installations on this WO
+      try {
+        const tireLines = await buildTirePartsForWorkOrder(supabase, workOrderId)
+        if (tireLines.length > 0) {
+          const mergedParts = mergePartsWithTireLines(
+            enhancedHistoryData.parts ?? completionData.parts_used,
+            tireLines
+          )
+          enhancedHistoryData.parts = mergedParts
+          const tireCostTotal = tireLines.reduce((s, l) => s + l.total_price, 0)
+          if (tireCostTotal > 0) {
+            enhancedHistoryData.total_cost =
+              (Number(enhancedHistoryData.total_cost) || 0) + tireCostTotal
+          }
+        }
+      } catch (tireRollupErr) {
+        console.warn('API: tire parts rollup (non-critical):', tireRollupErr)
+      }
 
       // Canonical: maintenance_history.maintenance_plan_id = maintenance_intervals.id (cyclic logic / UI).
       // work_orders.maintenance_plan_id stays maintenance_plans.id; resolve interval here.

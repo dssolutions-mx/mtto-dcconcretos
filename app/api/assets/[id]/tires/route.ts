@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import {
+  issueTireFromInventory,
+  returnTireToInventory,
+} from '@/lib/tires/inventory-integration'
 import type { MountTireInput, TireReadingInput } from '@/types/tires'
 
 export async function GET(
@@ -145,6 +149,7 @@ export async function POST(
         km_at_install: asset.current_kilometers,
         hours_at_install: asset.current_hours,
         installed_by: user.id,
+        work_order_id: body.work_order_id ?? null,
         notes: body.notes?.trim() || null,
       })
       .select('*, tire:tires(*)')
@@ -155,6 +160,13 @@ export async function POST(
       return NextResponse.json({ error: instErr.message }, { status: 500 })
     }
 
+    await issueTireFromInventory(supabase, {
+      tire_id: body.tire_id,
+      work_order_id: body.work_order_id ?? null,
+      user_id: user.id,
+      notes: `Montaje en ${body.position_label}`,
+    })
+
     await supabase.from('tires').update({ status: 'montada', updated_at: new Date().toISOString() }).eq('id', body.tire_id)
 
     await supabase.from('tire_events').insert({
@@ -162,6 +174,7 @@ export async function POST(
       installation_id: installation.id,
       asset_id: assetId,
       event_type: 'montaje',
+      work_order_id: body.work_order_id ?? null,
       odometer_km: asset.current_kilometers,
       horometer_hours: asset.current_hours,
       to_position: body.position_code,
@@ -196,6 +209,7 @@ export async function PATCH(
       cost?: number
       notes?: string
       retire_tire?: boolean
+      work_order_id?: string
     }
 
     if (body.action === 'reading' && body.reading) {
@@ -274,11 +288,21 @@ export async function PATCH(
         .update({ status: newStatus, updated_at: now })
         .eq('id', inst.tire_id)
 
+      if (!body.retire_tire) {
+        await returnTireToInventory(supabase, {
+          tire_id: inst.tire_id,
+          work_order_id: body.work_order_id ?? inst.work_order_id ?? null,
+          user_id: user.id,
+          notes: `Desmontaje de ${inst.position_label}`,
+        })
+      }
+
       await supabase.from('tire_events').insert({
         tire_id: inst.tire_id,
         installation_id: inst.id,
         asset_id: assetId,
         event_type: body.retire_tire ? 'baja' : 'desmontaje',
+        work_order_id: body.work_order_id ?? inst.work_order_id ?? null,
         odometer_km: asset?.current_kilometers ?? null,
         horometer_hours: asset?.current_hours ?? null,
         from_position: inst.position_code,
@@ -313,6 +337,7 @@ export async function PATCH(
           installation_id: body.installation_id,
           asset_id: assetId,
           event_type: body.event_type ?? 'reparacion',
+          work_order_id: body.work_order_id ?? null,
           cost: body.cost ?? null,
           odometer_km: asset?.current_kilometers ?? null,
           horometer_hours: asset?.current_hours ?? null,

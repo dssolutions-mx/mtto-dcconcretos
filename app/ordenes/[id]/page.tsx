@@ -37,6 +37,7 @@ import { WorkOrderContextBand } from "@/components/work-orders/details/work-orde
 import { isTaskMarkedCompleted, parseCompletedTasksJson } from "@/lib/work-orders/parse-completed-tasks"
 import { fetchIncidentThreadForWorkOrder, attachWorkOrderLabels } from "@/lib/incidents/fetch-incident-thread"
 import { IncidentThreadHistory } from "@/components/incidents/incident-thread-history"
+import { WOTireActions } from "@/components/work-orders/wo-tire-actions"
 
 // Extended type for work order with completed_at field and recurrence data
 type ExtendedWorkOrder = WorkOrderComplete & {
@@ -466,13 +467,16 @@ export default async function WorkOrderDetailsPage({
           is_adjustment: Boolean(po.is_adjustment),
         }))
       : null
+  const woAssetId =
+    extendedWorkOrder.asset_id ?? extendedWorkOrder.asset?.id ?? null
   const hasSidebarContent = Boolean(
     extendedWorkOrder.incident_id ||
       extendedWorkOrder.purchase_order_id ||
       linkedPoCount > 0 ||
       linkedPOsForSidebar.length > 0 ||
       isCompleted ||
-      requiredTasks.length > 0
+      requiredTasks.length > 0 ||
+      (woAssetId && !isCompleted)
   )
 
   return (
@@ -829,6 +833,12 @@ export default async function WorkOrderDetailsPage({
               )
             }
             checklistOriginName={originData.originName}
+            />
+
+            <WOTireActions
+              workOrderId={id}
+              assetId={woAssetId}
+              status={extendedWorkOrder.status}
             />
 
             {linkedPOsForSidebar.length > 0 && (

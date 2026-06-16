@@ -27,6 +27,7 @@ interface MountTireDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   assetId: string
+  workOrderId?: string | null
   occupiedPositions: string[]
   onMounted: () => void
 }
@@ -35,6 +36,7 @@ export function MountTireDialog({
   open,
   onOpenChange,
   assetId,
+  workOrderId,
   occupiedPositions,
   onMounted,
 }: MountTireDialogProps) {
@@ -72,6 +74,7 @@ export function MountTireDialog({
           position_label: pos.label,
           axle_number: pos.axle,
           notes,
+          work_order_id: workOrderId ?? undefined,
         }),
       })
       if (!res.ok) {

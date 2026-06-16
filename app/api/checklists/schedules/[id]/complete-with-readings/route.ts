@@ -1,5 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import {
+  saveChecklistTireReadings,
+  type ChecklistTireReadingInput,
+} from '@/lib/tires/checklist-readings'
 
 export async function POST(
   request: Request,
@@ -56,7 +60,8 @@ export async function POST(
       signature,
       hours_reading,
       kilometers_reading,
-      evidence_data
+      evidence_data,
+      tire_readings,
     } = await request.json()
 
     console.log('=== COMPLETANDO CHECKLIST CON LECTURAS Y EVIDENCIAS ===')
@@ -286,6 +291,24 @@ export async function POST(
       }
     }
 
+    // Guardar lecturas de llantas (Phase D)
+    let tireReadingsSummary = null
+    const tireRows = (tire_readings ?? []) as ChecklistTireReadingInput[]
+    if (tireRows.length > 0 && completionResult?.completed_id) {
+      try {
+        tireReadingsSummary = await saveChecklistTireReadings(supabase, {
+          checklist_id: completionResult.completed_id,
+          asset_id: scheduleData.asset_id,
+          recorded_by: user.id,
+          readings: tireRows,
+          odometer_km: kilometers_reading ?? asset?.current_kilometers ?? null,
+          horometer_hours: hours_reading ?? asset?.current_hours ?? null,
+        })
+      } catch (tireErr) {
+        console.error('Error saving tire readings (non-critical):', tireErr)
+      }
+    }
+
     // Si hay problemas detectados, crear orden de trabajo correctiva
     if (completionResult?.has_issues) {
       console.log('Issues detected, creating corrective work order...')
@@ -349,6 +372,7 @@ ${evidenceSaveResult ? `EVIDENCIAS FOTOGRÁFICAS: ${evidenceSaveResult.saved_cou
         has_issues: completionResult.has_issues,
         reading_update: completionResult.reading_update,
         evidence_summary: evidenceSaveResult,
+        tire_readings_summary: tireReadingsSummary,
         asset_info: {
           name: asset?.name || 'Desconocido',
           previous_hours: completionResult.reading_update?.previous_hours,

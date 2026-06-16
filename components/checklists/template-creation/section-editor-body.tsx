@@ -85,6 +85,25 @@ export function SectionEditorBody({
       </div>
     )
   }
+  if (sectionType === "tire_readings") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Título de la sección</Label>
+          <Input
+            value={section.title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder="Inspección de llantas"
+          />
+        </div>
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p>
+            Al ejecutar el checklist se capturan lecturas de banda y presión por cada llanta montada en el activo.
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (sectionType === "cleanliness_bonus") {
     return (
       <div className="space-y-4">
