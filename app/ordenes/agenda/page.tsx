@@ -3,17 +3,17 @@
 import { Suspense } from "react"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
-import { WorkAgendaBoard } from "@/components/agenda/work-agenda-board"
+import { PlanningCenter } from "@/components/planning/planning-center"
 
 export default function AgendaPage() {
   return (
     <DashboardShell>
       <DashboardHeader
-        heading="Agenda de trabajos"
-        text="Planeación semanal de órdenes de trabajo por mecánico, derivadas de incidencias y mantenimiento"
+        heading="Centro de planificación"
+        text="Agenda de trabajos, ventanas de servicio por unidad, disponibilidad vs producción y avisos a operaciones"
       />
       <Suspense fallback={<div className="h-64 rounded-lg bg-muted animate-pulse" />}>
-        <WorkAgendaBoard />
+        <PlanningCenter />
       </Suspense>
     </DashboardShell>
   )

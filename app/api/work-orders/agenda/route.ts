@@ -28,9 +28,10 @@ export async function GET(request: NextRequest) {
       .from("work_orders")
       .select(
         `
-        id, order_id, description, priority, status, planned_date, assigned_to,
+        id, order_id, description, priority, status, planned_date, planned_start_at, planned_end_at,
+        estimated_duration, service_window_id, assigned_to,
         incident_id, checklist_id, maintenance_plan_id, asset_id, created_at,
-        asset:assets ( id, name, asset_id )
+        asset:assets ( id, name, asset_id, status )
       `,
       )
       .gte("planned_date", from)
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest) {
     }
 
     const mapWorkOrder = (wo: Record<string, unknown>) => {
-      const asset = wo.asset as { name?: string; asset_id?: string } | null
+      const asset = wo.asset as { name?: string; asset_id?: string; status?: string } | null
       const incidentId = wo.incident_id as string | null
       const incident = incidentId ? incidentMap[incidentId] : null
       const hoursOpen = incident?.created_at
@@ -135,6 +136,13 @@ export async function GET(request: NextRequest) {
         asset_id: wo.asset_id,
         asset_name: asset?.name ?? null,
         asset_code: asset?.asset_id ?? null,
+        asset_status: asset?.status ?? null,
+        estimated_duration: (wo.estimated_duration as number) ?? null,
+        planned_start_at: (wo.planned_start_at as string) ?? null,
+        planned_end_at: (wo.planned_end_at as string) ?? null,
+        service_window_id: (wo.service_window_id as string) ?? null,
+        ops_notified: false,
+        production_conflict_count: null,
         technician_name: wo.assigned_to ? techMap[wo.assigned_to as string] ?? null : null,
         origin: inferWorkOrderOrigin({
           incident_id: incidentId,

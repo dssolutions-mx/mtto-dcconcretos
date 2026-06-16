@@ -83,6 +83,8 @@ interface IncidentReviewContentProps {
   incident: {
     id: string
     asset_id?: string
+    asset_code?: string
+    asset_display_name?: string
     asset_display_name?: string
     asset_code?: string
     date?: string
@@ -420,6 +422,8 @@ export function IncidentReviewContent({
           onOpenChange={setScheduleDialogOpen}
           workOrderId={generatedWorkOrderId}
           workOrderLabel={generatedWorkOrderLabel}
+          assetId={incident.asset_id}
+          assetCode={incident.asset_code ?? incident.asset_display_name}
           onScheduled={() => {
             window.location.href = `/ordenes/${generatedWorkOrderId}`
           }}

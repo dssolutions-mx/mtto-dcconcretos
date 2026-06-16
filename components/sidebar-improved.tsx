@@ -260,7 +260,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
               >
                 <Link href="/ordenes/agenda">
                   <CalendarDays className="mr-2 h-4 w-4" />
-                  Agenda
+                  Centro de planificación
                 </Link>
               </Button>
               <Button
@@ -438,7 +438,7 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
         { href: "/checklists", icon: ClipboardCheck, label: "Checklists", active: isPathActive("/checklists") },
         { href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") },
         { href: "/ordenes/planificacion", icon: Target, label: "Planificación", active: isPathActive("/ordenes/planificacion") },
-        { href: "/ordenes/agenda", icon: CalendarDays, label: "Agenda", active: isPathActive("/ordenes/agenda") },
+        { href: "/ordenes/agenda", icon: CalendarDays, label: "Centro de planificación", active: isPathActive("/ordenes/agenda") },
         { href: "/ordenes/campanas", icon: Layers, label: "Campañas", active: isPathActive("/ordenes/campanas") },
         { href: "/ordenes", icon: Tool, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") && !isPathActive("/ordenes/planificacion") && !isPathActive("/ordenes/campanas") && !isPathActive("/ordenes/agenda") },
         { href: "/calendario", icon: Calendar, label: "Calendario", active: isPathActive("/calendario") }

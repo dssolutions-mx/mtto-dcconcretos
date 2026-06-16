@@ -20,7 +20,14 @@ export interface AgendaWorkOrder {
   asset_id: string | null
   asset_name: string | null
   asset_code: string | null
+  asset_status: string | null
   technician_name: string | null
+  estimated_duration: number | null
+  planned_start_at: string | null
+  planned_end_at: string | null
+  service_window_id: string | null
+  ops_notified: boolean
+  production_conflict_count: number | null
   origin: "incident" | "checklist" | "preventive" | "manual"
   incident_created_at: string | null
   incident_status: string | null

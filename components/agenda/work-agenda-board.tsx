@@ -22,6 +22,7 @@ import {
   ORIGIN_LABELS,
   type AgendaWorkOrder,
 } from "@/lib/agenda/agenda-utils"
+import { getAssetStatusConfig } from "@/lib/utils/asset-status"
 import { cn } from "@/lib/utils"
 
 interface Technician {
@@ -202,9 +203,16 @@ function AgendaCard({
     >
       <div className="flex items-start justify-between gap-1">
         <span className="font-semibold">{wo.order_id}</span>
-        <Badge variant="outline" className="text-[10px] shrink-0">
-          {ORIGIN_LABELS[wo.origin]}
-        </Badge>
+        <div className="flex gap-1 shrink-0">
+          {wo.asset_status && (
+            <Badge variant={getAssetStatusConfig(wo.asset_status).variant} className="text-[10px]">
+              {getAssetStatusConfig(wo.asset_status).label}
+            </Badge>
+          )}
+          <Badge variant="outline" className="text-[10px]">
+            {ORIGIN_LABELS[wo.origin]}
+          </Badge>
+        </div>
       </div>
       <p className="text-muted-foreground truncate mt-0.5">
         {wo.asset_code ?? wo.asset_name ?? "Sin activo"}
