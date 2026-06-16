@@ -16,7 +16,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { Info, ChevronDown, Shield, CheckCircle, AlertTriangle, DollarSign, ExternalLink, Receipt, Sparkles } from "lucide-react"
+import { Info, ChevronDown, Shield, CheckCircle, AlertTriangle, DollarSign, ExternalLink, Receipt, Sparkles, FileText } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { AccountsPayableSummary } from "@/types/purchase-orders"
 import { cn } from "@/lib/utils"
@@ -200,6 +200,14 @@ export function ComprasMobileInfoDrawer({
                 <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 cursor-pointer">
                   <Receipt className="h-4 w-4" />
                   Ver Comprobantes
+                </Button>
+              </Link>
+            )}
+            {isAdmin && (
+              <Link href="/compras/facturas" onClick={() => setOpen(false)}>
+                <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 cursor-pointer">
+                  <FileText className="h-4 w-4" />
+                  Facturas OC
                 </Button>
               </Link>
             )}

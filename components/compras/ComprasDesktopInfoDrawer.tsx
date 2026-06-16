@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Info, Shield, CheckCircle, AlertTriangle, DollarSign, ExternalLink, Receipt, Sparkles, Store, Wrench, Building2 } from "lucide-react"
+import { Info, Shield, CheckCircle, AlertTriangle, DollarSign, ExternalLink, Receipt, Sparkles, Store, Wrench, Building2, FileText } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { AccountsPayableSummary } from "@/types/purchase-orders"
 
@@ -260,6 +260,14 @@ export function ComprasDesktopInfoDrawer({
                 <Button variant="outline" className="w-full justify-start gap-2 cursor-pointer">
                   <Receipt className="h-4 w-4" />
                   Ver Comprobantes
+                </Button>
+              </Link>
+            )}
+            {isAdmin && (
+              <Link href="/compras/facturas" onClick={() => setOpen(false)}>
+                <Button variant="outline" className="w-full justify-start gap-2 cursor-pointer">
+                  <FileText className="h-4 w-4" />
+                  Facturas OC
                 </Button>
               </Link>
             )}

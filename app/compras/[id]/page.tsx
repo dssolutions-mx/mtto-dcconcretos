@@ -21,6 +21,8 @@ import {
 } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
+import { PoSupplierInvoiceSection } from "@/components/purchase-orders/PoSupplierInvoiceSection"
+import { suggestExpenseCategory } from "@/lib/ap/po-invoice-utils"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { loadActorContext } from "@/lib/auth/server-authorization"
 import { computeCoordinatorQuotationUiState } from "@/lib/purchase-orders/coordinator-quotation-mutations"
@@ -198,6 +200,15 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     plant_id: order.plant_id,
     viability_state: order.viability_state,
     status: order.status,
+  })
+
+  const canRegisterInvoice =
+    !!actor?.profile?.role &&
+    ["GERENCIA_GENERAL", "AREA_ADMINISTRATIVA", "GERENTE_MANTENIMIENTO"].includes(actor.profile.role)
+
+  const defaultExpenseCategory = suggestExpenseCategory({
+    po_type: order.po_type,
+    po_purpose: order.po_purpose,
   })
 
   // ── Desktop layout ─────────────────────────────────────────────────────────
@@ -485,6 +496,15 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
           {/* Receipts / Comprobantes card */}
           {showReceiptsCard && (
             <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+          )}
+
+          {/* Fiscal supplier invoice */}
+          {showReceiptsCard && (
+            <PoSupplierInvoiceSection
+              purchaseOrderId={order.id}
+              canRegister={canRegisterInvoice}
+              defaultExpenseCategory={defaultExpenseCategory}
+            />
           )}
         </div>
 
