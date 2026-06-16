@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AccountsPayableView } from "@/components/purchase-orders/AccountsPayableView"
@@ -15,7 +16,9 @@ export default function AccountsPayablePage() {
         heading="Cuentas por Pagar"
         text="Control y seguimiento de pagos pendientes, vencimientos y flujo de caja para órdenes de compra."
       />
-      <AccountsPayableView />
+      <Suspense fallback={<p className="text-muted-foreground">Cargando cuentas por pagar…</p>}>
+        <AccountsPayableView />
+      </Suspense>
     </DashboardShell>
   )
 } 

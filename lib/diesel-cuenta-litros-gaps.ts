@@ -57,9 +57,29 @@ export type BuildCuentaLitrosGapsOptions = {
   warehouse_id: string
   has_cuenta_litros: boolean
   tolerance_liters?: number
+  /** Local calendar date (YYYY-MM-DD, GMT-6) — only txs on/after this date are considered */
+  audit_from?: string
 }
 
+export const CUENTA_LITROS_GAP_AUDIT_FROM = "2026-04-01"
+
 const DEFAULT_TOLERANCE_LITERS = 2
+
+/** UTC timestamp → local YYYY-MM-DD (GMT-6), matching warehouse page toLocalYmd */
+function toLocalYmd(utcTimestamp: string): string {
+  if (!utcTimestamp) return ""
+  const utcDate = new Date(utcTimestamp)
+  const localTimeMs = utcDate.getTime() - 6 * 60 * 60 * 1000
+  const localDate = new Date(localTimeMs)
+  const year = localDate.getUTCFullYear()
+  const month = String(localDate.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(localDate.getUTCDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function isOnOrAfterAuditFrom(transactionDate: string, auditFromYmd: string): boolean {
+  return toLocalYmd(transactionDate) >= auditFromYmd
+}
 
 function assetLabel(tx: GapTransactionInput): string | null {
   return tx.asset_name ?? tx.asset_id ?? tx.exception_asset_name ?? null
@@ -189,7 +209,10 @@ export function buildCuentaLitrosGaps(
   if (!options.has_cuenta_litros) return []
 
   const tolerance = options.tolerance_liters ?? DEFAULT_TOLERANCE_LITERS
-  const sorted = [...transactions].sort(compareTransactions)
+  const auditFromYmd = options.audit_from ?? CUENTA_LITROS_GAP_AUDIT_FROM
+  const sorted = [...transactions]
+    .filter((tx) => isOnOrAfterAuditFrom(tx.transaction_date, auditFromYmd))
+    .sort(compareTransactions)
   const anchors = sorted.filter((tx) => tx.cuenta_litros != null)
 
   if (anchors.length < 2) return []

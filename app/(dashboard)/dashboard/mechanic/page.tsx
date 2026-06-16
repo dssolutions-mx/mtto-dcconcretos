@@ -41,16 +41,30 @@ export default function MechanicDashboard() {
         icon={Wrench}
         count={0}
         label="órdenes de trabajo asignadas"
-        href="/ordenes"
-        ctaLabel="Ver mis OTs"
+        href="/ordenes/agenda/hoja"
+        ctaLabel="Mi orden del día"
       />
       <div className="flex flex-wrap gap-3">
+        <Link
+          href="/ordenes/agenda/hoja"
+          className="inline-flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+        >
+          <Wrench className="h-4 w-4" />
+          Orden del día
+        </Link>
+        <Link
+          href="/ordenes/agenda"
+          className="inline-flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+        >
+          <Wrench className="h-4 w-4" />
+          Agenda semanal
+        </Link>
         <Link
           href="/ordenes"
           className="inline-flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
         >
           <Wrench className="h-4 w-4" />
-          Ver todas las órdenes
+          Todas las OTs
         </Link>
       </div>
     </DashboardShell>

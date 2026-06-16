@@ -7,7 +7,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat, ArrowUpDown, ArrowUp, ArrowDown, Eye } from "lucide-react"
+import { User, AlertTriangle, ShoppingCart, Calendar, Package, Repeat, ArrowUpDown, ArrowUp, ArrowDown, Eye, CalendarDays, CalendarPlus } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useIsMobile } from "@/hooks/use-mobile"
 import Link from "next/link"
@@ -27,6 +27,11 @@ import type { WorkOrderSummaryMetrics } from "@/components/work-orders/WorkOrder
 import type { WorkOrderFilters, WorkOrderSortBy, WorkOrderSortDir } from "@/hooks/useWorkOrderFilters"
 import { cn } from "@/lib/utils"
 import { PullToRefresh } from "@/components/ui/pull-to-refresh"
+import { PlanWorkOrderDialog, type PlanWorkOrderSummary } from "@/components/agenda/plan-work-order-dialog"
+import { inferWorkOrderOrigin } from "@/lib/agenda/agenda-utils"
+import { format, parseISO } from "date-fns"
+import { es } from "date-fns/locale"
+import { isPendingStatus } from "@/lib/work-order-status-tabs"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -162,17 +167,28 @@ function getPurchaseOrderStatusClass(status: string) {
   }
 }
 
+function formatPlannedDate(value: string | null | undefined): string {
+  if (!value) return "Sin programar"
+  try {
+    return format(parseISO(value.slice(0, 10)), "d MMM yyyy", { locale: es })
+  } catch {
+    return value
+  }
+}
+
 // Mobile-optimized WorkOrder Card Component
 function WorkOrderCard({ 
   order, 
   getTechnicianName, 
   getPurchaseOrderStatus,
-  onDeleteOrder
+  onDeleteOrder,
+  onPlan,
 }: { 
   order: WorkOrderListRow
   getTechnicianName: (techId: string | null) => string
   getPurchaseOrderStatus: (poId: string | null) => string
   onDeleteOrder: (order: WorkOrderListRow) => void
+  onPlan?: (order: WorkOrderListRow) => void
 }) {
   const linkedPoIds = getLinkedPOIdsForWorkOrderRow(order)
   return (
@@ -275,10 +291,16 @@ function WorkOrderCard({
           })()}
         </div>
         
-        {/* Technician */}
+        {/* Technician + planned date */}
         <div className="flex items-center gap-2 text-sm">
           <User className="h-4 w-4 text-muted-foreground shrink-0" />
           <span className="truncate">{getTechnicianName(order.assigned_to)}</span>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className={cn(!order.planned_date && "text-amber-700 font-medium")}>
+            {formatPlannedDate(order.planned_date)}
+          </span>
         </div>
         
         {/* Creation date + recurrence tooltip */}
@@ -315,6 +337,17 @@ function WorkOrderCard({
               OC: {ocStatusSummaryForRow(order, getPurchaseOrderStatus)}
             </Badge>
           </div>
+        )}
+        {onPlan && order.status !== "Completada" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => onPlan(order)}
+          >
+            <CalendarPlus className="h-4 w-4 mr-2" />
+            Programar
+          </Button>
         )}
       </CardContent>
     </Card>
@@ -362,6 +395,25 @@ export function WorkOrdersList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [orderToDelete, setOrderToDelete] = useState<WorkOrderListRow | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [planningOrder, setPlanningOrder] = useState<PlanWorkOrderSummary | null>(null)
+  const [planDialogOpen, setPlanDialogOpen] = useState(false)
+
+  const openPlanDialog = (order: WorkOrderListRow) => {
+    setPlanningOrder({
+      id: order.id,
+      order_id: order.order_id ?? order.id,
+      description: order.description ?? "",
+      priority: order.priority ?? null,
+      status: order.status ?? "Pendiente",
+      planned_date: order.planned_date ?? null,
+      assigned_to: order.assigned_to ?? null,
+      asset_code: order.asset?.asset_id ?? null,
+      asset_name: order.asset?.name ?? null,
+      origin: inferWorkOrderOrigin(order),
+      technician_name: null,
+    })
+    setPlanDialogOpen(true)
+  }
 
   // Load work orders — single API call (server does parallel fetches, minimal payload)
   const loadWorkOrders = async () => {
@@ -454,6 +506,12 @@ export function WorkOrdersList() {
     return { pending, completed, recurrentes }
   }, [workOrders])
 
+  const unscheduledCount = useMemo(
+    () =>
+      workOrders.filter((o) => !o.planned_date && isPendingStatus(o.status)).length,
+    [workOrders],
+  )
+
   const handleRecurrentesClick = () => {
     if (filters.recurrentesOnly) {
       setFilters({ recurrentesOnly: false })
@@ -543,6 +601,27 @@ export function WorkOrdersList() {
       <PullToRefresh onRefresh={handlePullToRefresh} disabled={isLoading}>
         {/* Apple HIG: Content-first, deference, clarity. Single toolbar + unified segmented control. */}
         <div className="space-y-6">
+          {unscheduledCount > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm text-amber-900 flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 shrink-0" />
+                {unscheduledCount} órdenes sin fecha programada — planifique desde la agenda o aquí mismo.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="bg-white"
+                  onClick={() => setFilters({ schedulingFilter: "unscheduled", tab: "all" })}
+                >
+                  Ver sin programar
+                </Button>
+                <Button size="sm" asChild>
+                  <Link href="/ordenes/agenda">Ir a agenda</Link>
+                </Button>
+              </div>
+            </div>
+          )}
           {/* Toolbar: Search + Filters. Progressive disclosure per HIG. */}
           <div className="flex flex-col gap-4">
             <WorkOrdersFilterBar
@@ -623,6 +702,7 @@ export function WorkOrdersList() {
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    onPlan={openPlanDialog}
                   />
                 ) : (
                   <DesktopView
@@ -636,6 +716,7 @@ export function WorkOrdersList() {
                     onClearFilters={clearAllFilters}
                     filters={filters}
                     onSortChange={setFilters}
+                    onPlan={openPlanDialog}
                   />
                 )}
               </TabsContent>
@@ -651,6 +732,7 @@ export function WorkOrdersList() {
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    onPlan={openPlanDialog}
                   />
                 ) : (
                   <DesktopView 
@@ -664,6 +746,7 @@ export function WorkOrdersList() {
                     onClearFilters={clearAllFilters}
                     filters={filters}
                     onSortChange={setFilters}
+                    onPlan={openPlanDialog}
                   />
                 )}
               </TabsContent>
@@ -679,6 +762,7 @@ export function WorkOrdersList() {
                     onDeleteOrder={handleDeleteWorkOrder}
                     hasActiveFilters={hasActiveFilters}
                     onClearFilters={clearAllFilters}
+                    onPlan={openPlanDialog}
                   />
                 ) : (
                   <DesktopView 
@@ -692,6 +776,7 @@ export function WorkOrdersList() {
                     onClearFilters={clearAllFilters}
                     filters={filters}
                     onSortChange={setFilters}
+                    onPlan={openPlanDialog}
                   />
                 )}
               </TabsContent>
@@ -703,6 +788,13 @@ export function WorkOrdersList() {
           </div>
         </div>
       </PullToRefresh>
+
+      <PlanWorkOrderDialog
+        open={planDialogOpen}
+        onOpenChange={setPlanDialogOpen}
+        workOrder={planningOrder}
+        onSaved={loadWorkOrders}
+      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -751,6 +843,7 @@ function MobileView({
   onDeleteOrder,
   hasActiveFilters,
   onClearFilters,
+  onPlan,
 }: {
   orders: WorkOrderListRow[]
   groupedOrders: GroupedOrdersItem[] | null
@@ -760,6 +853,7 @@ function MobileView({
   onDeleteOrder: (order: WorkOrderListRow) => void
   hasActiveFilters?: boolean
   onClearFilters?: () => void
+  onPlan?: (order: WorkOrderListRow) => void
 }) {
   if (isLoading) {
     return (
@@ -822,6 +916,7 @@ function MobileView({
                   getTechnicianName={getTechnicianName}
                   getPurchaseOrderStatus={getPurchaseOrderStatus}
                   onDeleteOrder={onDeleteOrder}
+                  onPlan={onPlan}
                 />
               ))}
             </div>
@@ -842,6 +937,7 @@ function MobileView({
           getTechnicianName={getTechnicianName}
           getPurchaseOrderStatus={getPurchaseOrderStatus}
           onDeleteOrder={onDeleteOrder}
+          onPlan={onPlan}
         />
       ))}
     </div>
@@ -904,6 +1000,7 @@ function DesktopView({
   onClearFilters,
   filters,
   onSortChange,
+  onPlan,
 }: {
   orders: WorkOrderListRow[]
   groupedOrders: GroupedOrdersItem[] | null
@@ -915,6 +1012,7 @@ function DesktopView({
   onClearFilters?: () => void
   filters: WorkOrderFilters
   onSortChange: (patch: Partial<WorkOrderFilters>) => void
+  onPlan?: (order: WorkOrderListRow) => void
 }) {
   const router = useRouter()
   if (isLoading) {
@@ -963,6 +1061,7 @@ function DesktopView({
             <TableHead className="w-[88px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Tipo</TableHead>
             <SortableTableHead label="Prioridad" sortKey="priority" filters={filters} onSortChange={onSortChange} className="w-[82px]" />
             <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Estado</TableHead>
+            <TableHead className="w-[100px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Programada</TableHead>
             <TableHead className="w-[110px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Origen</TableHead>
             <TableHead className="w-[95px] py-3 px-3 text-[13px] font-semibold text-muted-foreground shrink-0">Recurr.</TableHead>
             <SortableTableHead label="Creado" sortKey="created" filters={filters} onSortChange={onSortChange} className="w-[88px]" />
@@ -1019,6 +1118,11 @@ function DesktopView({
                   {order.status || 'N/A'}
                 </Badge>
               </TableCell>
+              <TableCell className="py-3 px-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                <span className={cn(!order.planned_date && "text-amber-700 font-medium")}>
+                  {formatPlannedDate(order.planned_date)}
+                </span>
+              </TableCell>
               <TableCell className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
                 {(() => {
                   const origin = getOriginBadge(order)
@@ -1068,29 +1172,42 @@ function DesktopView({
                 })()}
               </TableCell>
               <TableCell className="py-3 px-3 text-xs" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-2">
-                  <span className="truncate max-w-[80px]" title={getTechnicianName(order.assigned_to)}>{getTechnicianName(order.assigned_to)}</span>
-                  {(() => {
-                    const poIdsRow = getLinkedPOIdsForWorkOrderRow(order)
-                    if (poIdsRow.length === 0) return null
-                    return (
-                      <span className="flex items-center gap-0.5 shrink-0">
-                        {poIdsRow.slice(0, 2).map((poId) => (
-                          <Link
-                            key={poId}
-                            href={`/compras/${poId}`}
-                            title="Ver OC"
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <ShoppingCart className="h-4 w-4" />
-                          </Link>
-                        ))}
-                        {poIdsRow.length > 2 ? (
-                          <span className="text-[10px] text-muted-foreground">+{poIdsRow.length - 2}</span>
-                        ) : null}
-                      </span>
-                    )
-                  })()}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate max-w-[80px]" title={getTechnicianName(order.assigned_to)}>{getTechnicianName(order.assigned_to)}</span>
+                    {(() => {
+                      const poIdsRow = getLinkedPOIdsForWorkOrderRow(order)
+                      if (poIdsRow.length === 0) return null
+                      return (
+                        <span className="flex items-center gap-0.5 shrink-0">
+                          {poIdsRow.slice(0, 2).map((poId) => (
+                            <Link
+                              key={poId}
+                              href={`/compras/${poId}`}
+                              title="Ver OC"
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <ShoppingCart className="h-4 w-4" />
+                            </Link>
+                          ))}
+                          {poIdsRow.length > 2 ? (
+                            <span className="text-[10px] text-muted-foreground">+{poIdsRow.length - 2}</span>
+                          ) : null}
+                        </span>
+                      )
+                    })()}
+                  </div>
+                  {onPlan && order.status !== "Completada" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs justify-start"
+                      onClick={() => onPlan(order)}
+                    >
+                      <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+                      Programar
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

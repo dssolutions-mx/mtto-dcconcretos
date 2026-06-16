@@ -7,6 +7,7 @@ import { FileText, Receipt, ExternalLink, Download, Eye } from "lucide-react"
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { use } from "react"
 
 export const metadata: Metadata = {
   title: "Comprobantes | Sistema de Gestión de Mantenimiento",
@@ -87,7 +88,7 @@ function getTypeBadge(poType: string | null) {
   );
 }
 
-async function ComprobantesListContent() {
+async function ComprobantesListContent({ poId }: { poId?: string }) {
   const supabase = await createClient();
   
   // Get all purchase order receipts with order details
@@ -147,8 +148,22 @@ async function ComprobantesListContent() {
     index === self.findIndex(o => o.receipt_id === order.receipt_id)
   );
 
+  const filteredReceipts = poId
+    ? ordersWithReceipts.filter((order) => order.id === poId)
+    : ordersWithReceipts;
+
   return (
     <div className="container mx-auto py-8 space-y-6">
+      {poId && (
+        <Card className="border-sky-200 bg-sky-50/50">
+          <CardContent className="p-4 text-sm text-sky-900">
+            Filtrado por una orden de compra.{" "}
+            <Link href="/compras/comprobantes" className="underline font-medium">
+              Ver todos los comprobantes
+            </Link>
+          </CardContent>
+        </Card>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -159,13 +174,13 @@ async function ComprobantesListContent() {
         </div>
         <Badge variant="outline" className="bg-blue-50">
           <Receipt className="h-4 w-4 mr-1" />
-          {ordersWithReceipts.length} comprobantes
+          {filteredReceipts.length} comprobantes
         </Badge>
       </div>
 
       {/* Receipts List */}
       <div className="space-y-4">
-        {ordersWithReceipts.map((order) => (
+        {filteredReceipts.map((order) => (
           <Card key={order.receipt_id} className="hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -255,7 +270,7 @@ async function ComprobantesListContent() {
           </Card>
         ))}
 
-        {ordersWithReceipts.length === 0 && (
+        {filteredReceipts.length === 0 && (
           <Card>
             <CardContent className="p-12 text-center">
               <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -271,6 +286,11 @@ async function ComprobantesListContent() {
   );
 }
 
-export default function ComprobantesList() {
-  return <ComprobantesListContent />;
+export default function ComprobantesList({
+  searchParams,
+}: {
+  searchParams: Promise<{ po?: string }>
+}) {
+  const { po } = use(searchParams)
+  return <ComprobantesListContent poId={po} />
 } 

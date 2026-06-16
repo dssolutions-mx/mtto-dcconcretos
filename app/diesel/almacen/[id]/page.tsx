@@ -40,6 +40,7 @@ import { MarkTransferModal } from "@/components/diesel-inventory/mark-transfer-m
 import { formatLocalDateForAccounting } from "@/lib/diesel/date-utils"
 import {
   buildCuentaLitrosGaps,
+  CUENTA_LITROS_GAP_AUDIT_FROM,
   getSignificantGaps,
   indexGapsByTransactionId,
   sumUnregisteredLiters,
@@ -165,6 +166,7 @@ export default function WarehouseDetailPage() {
     return buildCuentaLitrosGaps(transactions, {
       warehouse_id: warehouseId,
       has_cuenta_litros: true,
+      audit_from: CUENTA_LITROS_GAP_AUDIT_FROM,
     })
   }, [transactions, warehouse?.has_cuenta_litros, warehouseId])
 
@@ -702,11 +704,6 @@ export default function WarehouseDetailPage() {
   }
 
   const handleOpenEvidence = (transaction: Transaction) => {
-    const gap = gapsByTransactionId.get(transaction.id)
-    if (gap && warehouse?.has_cuenta_litros) {
-      handleOpenGap(gap)
-      return
-    }
     setEvidenceTransaction(transaction)
     setIsEvidenceModalOpen(true)
   }
@@ -1217,7 +1214,7 @@ export default function WarehouseDetailPage() {
               Salidas faltantes (cuenta litros)
             </CardTitle>
             <CardDescription>
-              Huecos detectados entre lecturas consecutivas del medidor
+              Huecos detectados entre lecturas consecutivas del medidor (desde abril 2026)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -1527,7 +1524,7 @@ export default function WarehouseDetailPage() {
                           <TooltipTrigger asChild>
                             <Badge
                               variant="destructive"
-                              className="text-xs"
+                              className="text-xs cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleOpenGap(txGap)
@@ -1546,7 +1543,7 @@ export default function WarehouseDetailPage() {
                           <TooltipTrigger asChild>
                             <Badge
                               variant="secondary"
-                              className="text-xs"
+                              className="text-xs cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleOpenGap(txGap)

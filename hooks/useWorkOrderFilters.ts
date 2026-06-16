@@ -24,6 +24,7 @@ export interface WorkOrderFilters {
   groupByAsset: boolean
   sortBy: WorkOrderSortBy
   sortDir: WorkOrderSortDir
+  schedulingFilter: "all" | "scheduled" | "unscheduled"
 }
 
 const DEFAULT_FILTERS: WorkOrderFilters = {
@@ -40,6 +41,7 @@ const DEFAULT_FILTERS: WorkOrderFilters = {
   groupByAsset: false,
   sortBy: "default",
   sortDir: "desc",
+  schedulingFilter: "all",
 }
 
 /** Work order shape needed for filtering (extended with origin/recurrence) */
@@ -131,6 +133,14 @@ export function applyWorkOrderFilters<T extends WorkOrderForFilter>(
       (o) =>
         (o.escalation_count != null && o.escalation_count > 0) ||
         (o.related_issues_count != null && o.related_issues_count > 1)
+    )
+  }
+
+  if (filters.schedulingFilter === "scheduled") {
+    result = result.filter((o) => !!o.planned_date && o.status !== "Completada")
+  } else if (filters.schedulingFilter === "unscheduled") {
+    result = result.filter(
+      (o) => !o.planned_date && o.status !== "Completada" && isPendingStatus(o.status),
     )
   }
 
@@ -393,6 +403,7 @@ export function useWorkOrderFilters() {
     !isTypeAll ||
     !isOriginAll ||
     filters.recurrentesOnly ||
+    filters.schedulingFilter !== "all" ||
     !!filters.fromDate ||
     !!filters.toDate ||
     filters.groupByAsset
@@ -403,6 +414,7 @@ export function useWorkOrderFilters() {
     !isTypeAll,
     !isOriginAll,
     filters.recurrentesOnly,
+    filters.schedulingFilter !== "all",
     filters.fromDate || filters.toDate,
     filters.groupByAsset,
   ].filter(Boolean).length

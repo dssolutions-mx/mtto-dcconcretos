@@ -18,7 +18,7 @@ export default function WorkOrdersPage() {
     <DashboardShell>
       <DashboardHeader
         heading="Órdenes de Trabajo"
-        text="Planificación, aprobación y asignación de trabajos"
+        text="Planifique cuándo atender cada trabajo: fecha, técnico y estado desde la lista o la agenda."
         id="ordenes-header"
       >
         <Button asChild>

@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
-import { Plus, Loader2, Receipt, DollarSign, FileText } from "lucide-react"
+import { Plus, Loader2, FileText } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ComprasMobileInfoDrawer } from "@/components/compras/ComprasMobileInfoDrawer"
@@ -195,27 +195,11 @@ function PurchaseOrdersPageContent() {
               isAdmin={!!isAdmin}
             />
           )}
-          {profile && hasCreateAccess('purchases') && (
-            <Link href="/compras/comprobantes">
-              <Button variant="outline" className="w-full sm:w-auto cursor-pointer">
-                <Receipt className="mr-2 h-4 w-4" />
-                Ver Comprobantes
-              </Button>
-            </Link>
-          )}
           {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
             <Link href="/compras/procurement">
               <Button variant="outline" className="w-full sm:w-auto bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100 cursor-pointer">
                 <FileText className="mr-2 h-4 w-4" />
-                Compras post-aprobación
-              </Button>
-            </Link>
-          )}
-          {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
-            <Link href="/compras/cuentas-por-pagar">
-              <Button variant="outline" className="w-full sm:w-auto bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 cursor-pointer">
-                <DollarSign className="mr-2 h-4 w-4" />
-                Cuentas por Pagar
+                Post-aprobación (desde OC)
               </Button>
             </Link>
           )}
