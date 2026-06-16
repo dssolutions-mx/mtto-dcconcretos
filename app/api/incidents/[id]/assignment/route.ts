@@ -22,7 +22,7 @@ export async function PATCH(
     const { data: current, error: fetchError } = await supabase
       .from("incident_history")
       .select(
-        "id, routing_department_id, assigned_to_id, pipeline_stage, status, routed_at",
+        "id, routing_department_id, assigned_to_id, pipeline_stage, status, routed_at, routing_rule_id, asset_id",
       )
       .eq("id", id)
       .single()
@@ -107,6 +107,34 @@ export async function PATCH(
         reason: body.reason?.trim() || "Reasignación manual",
         changed_by: user?.id ?? null,
       })
+
+      const newDepartmentId =
+        (updates.routing_department_id as string | null | undefined) ??
+        current.routing_department_id
+
+      if (
+        body.routing_department_id !== undefined &&
+        newDepartmentId &&
+        newDepartmentId !== current.routing_department_id
+      ) {
+        const { error: learnError } = await supabase.rpc(
+          "record_incident_routing_signal",
+          {
+            p_incident_id: id,
+            p_chosen_department_id: newDepartmentId,
+            p_chosen_assignee_id:
+              (updates.assigned_to_id as string | null | undefined) ??
+              current.assigned_to_id,
+            p_previous_department_id: current.routing_department_id,
+            p_previous_rule_id: current.routing_rule_id,
+            p_created_by: user?.id ?? null,
+          },
+        )
+
+        if (learnError) {
+          console.warn("Learning signal not recorded:", learnError.message)
+        }
+      }
     }
 
     return NextResponse.json(data)

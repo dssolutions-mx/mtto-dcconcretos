@@ -37,6 +37,10 @@ export type IncidentRoutingRule = {
   target_department_id: string
   default_assignee_id: string | null
   target_response_hours: number
+  source?: "manual" | "learned"
+  pattern_key?: string | null
+  sample_count?: number
+  confidence?: number
   created_at: string
   updated_at: string
   departments?: { id: string; name: string; code: string } | null

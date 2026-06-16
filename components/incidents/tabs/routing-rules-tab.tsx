@@ -351,11 +351,21 @@ export function RoutingRulesTab() {
                     <TableCell>
                       <div className="flex flex-col gap-1">
                         <span className="font-medium">{rule.name}</span>
-                        {!rule.is_active && (
-                          <Badge variant="secondary" className="w-fit">
-                            Inactiva
-                          </Badge>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {rule.source === "learned" && (
+                            <Badge variant="default" className="w-fit text-[10px]">
+                              Aprendida
+                              {rule.confidence != null && rule.confidence > 0
+                                ? ` ${Math.round(rule.confidence * 100)}%`
+                                : ""}
+                            </Badge>
+                          )}
+                          {!rule.is_active && (
+                            <Badge variant="secondary" className="w-fit">
+                              Inactiva
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>{rule.departments?.name ?? "—"}</TableCell>
