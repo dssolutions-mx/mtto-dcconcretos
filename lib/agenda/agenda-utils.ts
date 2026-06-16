@@ -7,6 +7,7 @@ import {
   startOfWeek,
 } from "date-fns"
 import { es } from "date-fns/locale"
+import { plantDateKey } from "@/lib/agenda/planning-datetime"
 
 export interface AgendaWorkOrder {
   id: string
@@ -54,19 +55,23 @@ export function groupAgendaByDay(
   }
 
   for (const item of items) {
-    if (!item.planned_date) continue
-    const dayKey = item.planned_date.slice(0, 10)
+    const dayKey = item.planned_start_at
+      ? plantDateKey(item.planned_start_at)
+      : item.planned_date?.slice(0, 10)
+    if (!dayKey) continue
     if (!map.has(dayKey)) map.set(dayKey, [])
     map.get(dayKey)!.push(item)
   }
 
   for (const [, list] of map) {
     list.sort((a, b) => {
+      const ta = a.planned_start_at ?? `${a.planned_date}T12:00:00`
+      const tb = b.planned_start_at ?? `${b.planned_date}T12:00:00`
+      const timeCmp = ta.localeCompare(tb)
+      if (timeCmp !== 0) return timeCmp
       const prio = (p: string | null) =>
         p === "Alta" ? 0 : p === "Media" ? 1 : 2
-      const pd = prio(a.priority) - prio(b.priority)
-      if (pd !== 0) return pd
-      return (a.order_id ?? "").localeCompare(b.order_id ?? "")
+      return prio(a.priority) - prio(b.priority)
     })
   }
 

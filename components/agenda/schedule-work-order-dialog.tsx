@@ -3,12 +3,7 @@
 import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import {
-  AlertTriangle,
-  Bell,
-  CalendarIcon,
-  Clock,
-} from "lucide-react"
+import { AlertTriangle, CalendarIcon, ChevronDown, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import {
@@ -30,9 +25,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Badge } from "@/components/ui/badge"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
+import { addHoursToIso, plantLocalToIso } from "@/lib/agenda/planning-datetime"
 import type { AvailabilityCheck } from "@/lib/planning/planning-types"
 
 interface ScheduleWorkOrderDialogProps {
@@ -63,13 +63,15 @@ export function ScheduleWorkOrderDialog({
   const [saving, setSaving] = useState(false)
   const [availability, setAvailability] = useState<AvailabilityCheck | null>(null)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
-  const [notifyOperations, setNotifyOperations] = useState(true)
+  const [notifyOperations, setNotifyOperations] = useState(false)
   const [forceSchedule, setForceSchedule] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setAvailability(null)
     setForceSchedule(false)
+    setAdvancedOpen(false)
     fetch("/api/work-orders/agenda?from=2000-01-01&to=2099-12-31")
       .then((r) => (r.ok ? r.json() : { technicians: [] }))
       .then((data) => setTechnicians(data.technicians ?? []))
@@ -83,10 +85,8 @@ export function ScheduleWorkOrderDialog({
     }
 
     const dateStr = format(plannedDate, "yyyy-MM-dd")
-    const startsAt = `${dateStr}T${startTime}:00`
-    const endDate = new Date(`${dateStr}T${startTime}:00`)
-    endDate.setHours(endDate.getHours() + durationHours)
-    const endsAt = endDate.toISOString()
+    const startsAt = plantLocalToIso(dateStr, startTime)
+    const endsAt = addHoursToIso(startsAt, durationHours)
 
     const timer = setTimeout(() => {
       setCheckingAvailability(true)
@@ -124,13 +124,8 @@ export function ScheduleWorkOrderDialog({
     setSaving(true)
     try {
       const dateStr = plannedDate ? format(plannedDate, "yyyy-MM-dd") : null
-      const startsAt = dateStr ? `${dateStr}T${startTime}:00` : null
-      let endsAt: string | null = null
-      if (startsAt) {
-        const end = new Date(startsAt)
-        end.setHours(end.getHours() + durationHours)
-        endsAt = end.toISOString()
-      }
+      const startsAt = dateStr ? plantLocalToIso(dateStr, startTime) : null
+      const endsAt = startsAt ? addHoursToIso(startsAt, durationHours) : null
 
       const body: Record<string, unknown> = {
         confirm_service_window: true,
@@ -160,9 +155,7 @@ export function ScheduleWorkOrderDialog({
 
       toast({
         title: "Trabajo programado",
-        description: notifyOperations
-          ? "Ventana de servicio creada y operaciones notificadas."
-          : "La orden quedó en la agenda del mecánico.",
+        description: "La orden quedó en la agenda con ventana de servicio.",
       })
       onScheduled?.()
       onOpenChange(false)
@@ -185,7 +178,14 @@ export function ScheduleWorkOrderDialog({
   const applySuggestedSlot = (slot: { starts_at: string; ends_at: string }) => {
     const start = new Date(slot.starts_at)
     setPlannedDate(start)
-    setStartTime(format(start, "HH:mm"))
+    setStartTime(
+      new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "America/Mexico_City",
+      }).format(start),
+    )
     const hours = (new Date(slot.ends_at).getTime() - start.getTime()) / 3_600_000
     setDurationHours(Math.max(1, Math.round(hours)))
   }
@@ -196,7 +196,7 @@ export function ScheduleWorkOrderDialog({
         <DialogHeader>
           <DialogTitle>Programar orden de trabajo</DialogTitle>
           <DialogDescription>
-            Defina ventana de servicio, mecánico y aviso a operaciones.
+            Asigne técnico, fecha y ventana de ejecución.
             {workOrderLabel ? ` (${workOrderLabel})` : ""}
             {assetCode ? ` · Unidad ${assetCode}` : ""}
           </DialogDescription>
@@ -204,7 +204,7 @@ export function ScheduleWorkOrderDialog({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>Mecánico</Label>
+            <Label>Mecánico responsable</Label>
             <Select value={assignedTo} onValueChange={setAssignedTo}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar técnico" />
@@ -221,7 +221,7 @@ export function ScheduleWorkOrderDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2 col-span-2 sm:col-span-1">
-              <Label>Fecha</Label>
+              <Label>Fecha de ejecución</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -261,7 +261,7 @@ export function ScheduleWorkOrderDialog({
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Duración (h)</Label>
+              <Label>Duración estimada (h)</Label>
               <Input
                 type="number"
                 min={1}
@@ -273,25 +273,25 @@ export function ScheduleWorkOrderDialog({
           </div>
 
           {checkingAvailability && (
-            <p className="text-xs text-muted-foreground">Verificando producción…</p>
+            <p className="text-xs text-muted-foreground">Verificando producción y solapes…</p>
           )}
 
           {availability && (
             <div
               className={cn(
                 "rounded-md border p-3 text-xs space-y-2",
-                availability.can_schedule
+                availability.can_schedule && availability.production_conflicts.length === 0
                   ? "border-green-200 bg-green-50/50"
                   : "border-amber-200 bg-amber-50/50",
               )}
             >
               <div className="flex items-center gap-2 font-medium">
-                {availability.can_schedule ? (
-                  <span className="text-green-800">Disponible para servicio</span>
+                {availability.can_schedule && availability.production_conflicts.length === 0 ? (
+                  <span className="text-green-800">Ventana libre para servicio</span>
                 ) : (
                   <>
                     <AlertTriangle className="h-4 w-4 text-amber-700" />
-                    <span className="text-amber-900">Conflictos detectados</span>
+                    <span className="text-amber-900">Revisar antes de confirmar</span>
                   </>
                 )}
               </div>
@@ -329,19 +329,8 @@ export function ScheduleWorkOrderDialog({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="notify-ops"
-              checked={notifyOperations}
-              onCheckedChange={(v) => setNotifyOperations(v === true)}
-            />
-            <Label htmlFor="notify-ops" className="text-sm font-normal flex items-center gap-1">
-              <Bell className="h-3.5 w-3.5" />
-              Notificar a operaciones (unidad fuera de servicio)
-            </Label>
-          </div>
-
-          {availability && !availability.can_schedule && (
+          {(availability && !availability.can_schedule) ||
+          availability?.production_conflicts.length ? (
             <div className="flex items-center gap-2">
               <Checkbox
                 id="force-schedule"
@@ -349,18 +338,41 @@ export function ScheduleWorkOrderDialog({
                 onCheckedChange={(v) => setForceSchedule(v === true)}
               />
               <Label htmlFor="force-schedule" className="text-sm font-normal text-amber-800">
-                Programar de todos modos (coordinación manual con operaciones)
+                Confirmar de todos modos (coordinación manual)
               </Label>
             </div>
-          )}
+          ) : null}
+
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="w-full justify-between px-0">
+                Opciones avanzadas
+                <ChevronDown
+                  className={cn("h-4 w-4 transition-transform", advancedOpen && "rotate-180")}
+                />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="notify-ops"
+                  checked={notifyOperations}
+                  onCheckedChange={(v) => setNotifyOperations(v === true)}
+                />
+                <Label htmlFor="notify-ops" className="text-sm font-normal">
+                  Avisar a operaciones (unidad fuera de servicio)
+                </Label>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="ghost" onClick={handleSkip}>
-            Programar después
+            Ir a la orden
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Guardando…" : "Confirmar ventana de servicio"}
+            {saving ? "Guardando…" : "Confirmar programación"}
           </Button>
         </DialogFooter>
       </DialogContent>

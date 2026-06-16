@@ -8,6 +8,29 @@ import { inferWorkOrderOrigin } from "@/lib/agenda/agenda-utils"
 
 const ACTIVE_STATUSES = ["Pendiente", "Programada", "Esperando repuestos"]
 
+const SCHEDULED_SELECT_FULL = `
+  id, order_id, description, priority, status, planned_date, planned_start_at, planned_end_at,
+  estimated_duration, service_window_id, assigned_to,
+  incident_id, checklist_id, maintenance_plan_id, asset_id, created_at,
+  asset:assets ( id, name, asset_id, status )
+`
+
+const SCHEDULED_SELECT_LEGACY = `
+  id, order_id, description, priority, status, planned_date,
+  estimated_duration, assigned_to,
+  incident_id, checklist_id, maintenance_plan_id, asset_id, created_at,
+  asset:assets ( id, name, asset_id, status )
+`
+
+function isMissingPlanningColumnError(message: string): boolean {
+  return (
+    message.includes("planned_start_at") ||
+    message.includes("planned_end_at") ||
+    message.includes("service_window_id") ||
+    message.includes("first_planned_at")
+  )
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -26,14 +49,7 @@ export async function GET(request: NextRequest) {
 
     let scheduledQuery = supabase
       .from("work_orders")
-      .select(
-        `
-        id, order_id, description, priority, status, planned_date, planned_start_at, planned_end_at,
-        estimated_duration, service_window_id, assigned_to,
-        incident_id, checklist_id, maintenance_plan_id, asset_id, created_at,
-        asset:assets ( id, name, asset_id, status )
-      `,
-      )
+      .select(SCHEDULED_SELECT_FULL)
       .gte("planned_date", from)
       .lte("planned_date", to)
       .in("status", ACTIVE_STATUSES)
@@ -43,7 +59,19 @@ export async function GET(request: NextRequest) {
       scheduledQuery = scheduledQuery.eq("assigned_to", assignedTo)
     }
 
-    const scheduledPromise = scheduledQuery
+    let scheduledRes = await scheduledQuery
+
+    if (scheduledRes.error && isMissingPlanningColumnError(scheduledRes.error.message)) {
+      let legacyQuery = supabase
+        .from("work_orders")
+        .select(SCHEDULED_SELECT_LEGACY)
+        .gte("planned_date", from)
+        .lte("planned_date", to)
+        .in("status", ACTIVE_STATUSES)
+        .order("planned_date", { ascending: true })
+      if (assignedTo) legacyQuery = legacyQuery.eq("assigned_to", assignedTo)
+      scheduledRes = await legacyQuery
+    }
 
     const unscheduledPromise = includeUnscheduled
       ? (() => {
@@ -53,7 +81,7 @@ export async function GET(request: NextRequest) {
               `
           id, order_id, description, priority, status, planned_date, assigned_to,
           incident_id, checklist_id, maintenance_plan_id, asset_id, created_at,
-          asset:assets ( id, name, asset_id )
+          asset:assets ( id, name, asset_id, status )
         `,
             )
             .is("planned_date", null)
@@ -71,8 +99,7 @@ export async function GET(request: NextRequest) {
       .eq("is_active", true)
       .limit(500)
 
-    const [scheduledRes, unscheduledRes, techsRes] = await Promise.all([
-      scheduledPromise,
+    const [unscheduledRes, techsRes] = await Promise.all([
       unscheduledPromise ?? Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
       techsPromise,
     ])
@@ -100,16 +127,27 @@ export async function GET(request: NextRequest) {
     > = {}
 
     if (incidentIds.length > 0) {
-      const { data: incidents } = await supabase
+      let { data: incidents, error: incErr } = await supabase
         .from("incident_history")
         .select("id, created_at, status, first_planned_at")
         .in("id", incidentIds)
+
+      if (incErr && isMissingPlanningColumnError(incErr.message)) {
+        const fallback = await supabase
+          .from("incident_history")
+          .select("id, created_at, status")
+          .in("id", incidentIds)
+        incidents = fallback.data
+      }
 
       for (const inc of incidents ?? []) {
         incidentMap[inc.id] = {
           created_at: inc.created_at,
           status: inc.status,
-          first_planned_at: inc.first_planned_at,
+          first_planned_at:
+            "first_planned_at" in inc
+              ? (inc.first_planned_at as string | null)
+              : null,
         }
       }
     }

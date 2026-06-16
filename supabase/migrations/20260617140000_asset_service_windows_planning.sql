@@ -177,6 +177,66 @@ CREATE TRIGGER trg_service_window_status
   FOR EACH ROW
   EXECUTE FUNCTION public.on_service_window_status_change();
 
+-- Confirmed windows inserted directly (schedule flow) must also flip asset status
+CREATE OR REPLACE FUNCTION public.on_service_window_insert_confirmed()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_prev text;
+BEGIN
+  IF NEW.planning_status = 'confirmed' THEN
+    SELECT status INTO v_prev FROM public.assets WHERE id = NEW.asset_id;
+    PERFORM public.log_asset_status_event(
+      NEW.asset_id, v_prev, 'maintenance', 'service_window', NEW.id,
+      'Ventana de servicio confirmada', NEW.created_by
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_service_window_insert_confirmed ON public.asset_service_windows;
+CREATE TRIGGER trg_service_window_insert_confirmed
+  AFTER INSERT ON public.asset_service_windows
+  FOR EACH ROW
+  WHEN (NEW.planning_status = 'confirmed')
+  EXECUTE FUNCTION public.on_service_window_insert_confirmed();
+
+-- ---------------------------------------------------------------------------
+-- Row level security (authenticated maintenance roles)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.asset_service_windows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.asset_status_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.maintenance_notification_queue ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY asset_service_windows_select ON public.asset_service_windows
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY asset_service_windows_insert ON public.asset_service_windows
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY asset_service_windows_update ON public.asset_service_windows
+  FOR UPDATE TO authenticated USING (true);
+
+CREATE POLICY asset_status_events_select ON public.asset_status_events
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY asset_status_events_insert ON public.asset_status_events
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY maint_notif_queue_select ON public.maintenance_notification_queue
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY maint_notif_queue_insert ON public.maintenance_notification_queue
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY maint_notif_queue_update ON public.maintenance_notification_queue
+  FOR UPDATE TO authenticated USING (true);
+
 -- ---------------------------------------------------------------------------
 -- Planning calendar view (service windows + work orders)
 -- ---------------------------------------------------------------------------

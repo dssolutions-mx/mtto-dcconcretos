@@ -5,6 +5,7 @@
 import { createClient } from "@/lib/supabase-server"
 import { NextResponse } from "next/server"
 import { checkAssetAvailability } from "@/lib/agenda/production-availability"
+import { plantLocalToIso, addHoursToIso } from "@/lib/agenda/planning-datetime"
 import { createServiceWindow } from '@/lib/planning/service-windows'
 
 async function tryCreateServiceWindow(
@@ -86,11 +87,10 @@ export async function PATCH(
     let endsAt = planned_end_at
 
     if (dateStr && !startsAt) {
-      startsAt = `${dateStr}T06:00:00.000Z`
+      startsAt = plantLocalToIso(dateStr, "06:00")
     }
     if (startsAt && !endsAt) {
-      const start = new Date(startsAt)
-      endsAt = new Date(start.getTime() + durationH * 3_600_000).toISOString()
+      endsAt = addHoursToIso(startsAt, durationH)
     }
 
     let availability = null
@@ -138,7 +138,7 @@ export async function PATCH(
         ends_at: endsAt,
         reason: existing.incident_id ? "corrective" : "preventive",
         confirm: true,
-        notify_operations: notify_operations ?? true,
+        notify_operations: notify_operations ?? false,
         created_by: user.id,
       })
       if (serviceWindow?.id) {
@@ -146,7 +146,7 @@ export async function PATCH(
       }
     }
 
-    const { data: updated, error: updateError } = await supabase
+    let { data: updated, error: updateError } = await supabase
       .from("work_orders")
       .update(updatePayload)
       .eq("id", id)
@@ -154,6 +154,21 @@ export async function PATCH(
         "id, order_id, planned_date, planned_start_at, planned_end_at, assigned_to, status, incident_id, service_window_id",
       )
       .single()
+
+    if (updateError?.message?.includes("planned_start_at")) {
+      const legacyPayload = { ...updatePayload }
+      delete legacyPayload.planned_start_at
+      delete legacyPayload.planned_end_at
+      delete legacyPayload.service_window_id
+      const retry = await supabase
+        .from("work_orders")
+        .update(legacyPayload)
+        .eq("id", id)
+        .select("id, order_id, planned_date, assigned_to, status, incident_id")
+        .single()
+      updated = retry.data
+      updateError = retry.error
+    }
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 })

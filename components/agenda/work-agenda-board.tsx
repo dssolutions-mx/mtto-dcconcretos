@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { addWeeks, format, parseISO, startOfWeek, subWeeks } from "date-fns"
 import { es } from "date-fns/locale"
-import { CalendarDays, ChevronLeft, ChevronRight, Printer, Wrench } from "lucide-react"
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Printer,
+  Wrench,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,6 +30,7 @@ import {
   ORIGIN_LABELS,
   type AgendaWorkOrder,
 } from "@/lib/agenda/agenda-utils"
+import { formatPlantTime } from "@/lib/agenda/planning-datetime"
 import { getAssetStatusConfig } from "@/lib/utils/asset-status"
 import { cn } from "@/lib/utils"
 
@@ -32,10 +41,28 @@ interface Technician {
 
 interface WorkAgendaBoardProps {
   initialTechnicianId?: string
+  /** When set, week navigation is controlled by the parent (e.g. PlanningCenter). */
+  anchor?: Date
+  onAnchorChange?: (date: Date) => void
+  hideWeekNavigation?: boolean
+  hidePrintAction?: boolean
+  onScheduleWorkOrder?: (workOrder: AgendaWorkOrder) => void
+  onDataLoaded?: () => void
 }
 
-export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
-  const [anchor, setAnchor] = useState(() => new Date())
+export function WorkAgendaBoard({
+  initialTechnicianId,
+  anchor: controlledAnchor,
+  onAnchorChange,
+  hideWeekNavigation,
+  hidePrintAction,
+  onScheduleWorkOrder,
+  onDataLoaded,
+}: WorkAgendaBoardProps) {
+  const [internalAnchor, setInternalAnchor] = useState(() => new Date())
+  const anchor = controlledAnchor ?? internalAnchor
+  const setAnchor = onAnchorChange ?? setInternalAnchor
+
   const [technicianId, setTechnicianId] = useState(initialTechnicianId ?? "all")
   const [scheduled, setScheduled] = useState<AgendaWorkOrder[]>([])
   const [unscheduled, setUnscheduled] = useState<AgendaWorkOrder[]>([])
@@ -67,13 +94,14 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
       setScheduled(data.scheduled ?? [])
       setUnscheduled(data.unscheduled ?? [])
       setTechnicians(data.technicians ?? [])
+      onDataLoaded?.()
     } catch {
       setScheduled([])
       setUnscheduled([])
     } finally {
       setLoading(false)
     }
-  }, [bounds.from, bounds.to, technicianId])
+  }, [bounds.from, bounds.to, technicianId, onDataLoaded])
 
   useEffect(() => {
     loadAgenda()
@@ -92,25 +120,29 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
       ? `/ordenes/agenda/hoja?technician=${technicianId}&from=${bounds.from}&to=${bounds.to}`
       : `/ordenes/agenda/hoja?from=${bounds.from}&to=${bounds.to}`
 
+  const showUnscheduledPanel = !hideWeekNavigation && unscheduled.length > 0
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setAnchor(subWeeks(anchor, 1))}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="text-sm font-medium min-w-[10rem] text-center">
-            {weekLabel} – {weekEndLabel}
+        {!hideWeekNavigation && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setAnchor(subWeeks(anchor, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-sm font-medium min-w-[10rem] text-center">
+              {weekLabel} – {weekEndLabel}
+            </div>
+            <Button variant="outline" size="icon" onClick={() => setAnchor(addWeeks(anchor, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setAnchor(new Date())}>
+              Hoy
+            </Button>
           </div>
-          <Button variant="outline" size="icon" onClick={() => setAnchor(addWeeks(anchor, 1))}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setAnchor(new Date())}>
-            Hoy
-          </Button>
-        </div>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           <Select value={technicianId} onValueChange={setTechnicianId}>
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Todos los técnicos" />
@@ -124,12 +156,14 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={hojaHref} target="_blank">
-              <Printer className="h-4 w-4 mr-2" />
-              Hoja de trabajo
-            </Link>
-          </Button>
+          {!hidePrintAction && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={hojaHref} target="_blank">
+                <Printer className="h-4 w-4 mr-2" />
+                Hoja de trabajo
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -150,7 +184,11 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
                     <p className="text-xs text-muted-foreground">Sin trabajos</p>
                   ) : (
                     items.map((wo) => (
-                      <AgendaCard key={wo.id} workOrder={wo} />
+                      <AgendaCard
+                        key={wo.id}
+                        workOrder={wo}
+                        onSchedule={onScheduleWorkOrder}
+                      />
                     ))
                   )}
                 </CardContent>
@@ -158,7 +196,7 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
             ))}
           </div>
 
-          {unscheduled.length > 0 && (
+          {showUnscheduledPanel && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -168,7 +206,12 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
               </CardHeader>
               <CardContent className="space-y-2">
                 {unscheduled.map((wo) => (
-                  <AgendaCard key={wo.id} workOrder={wo} showScheduleHint />
+                  <AgendaCard
+                    key={wo.id}
+                    workOrder={wo}
+                    showScheduleHint
+                    onSchedule={onScheduleWorkOrder}
+                  />
                 ))}
               </CardContent>
             </Card>
@@ -182,9 +225,11 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
 function AgendaCard({
   workOrder: wo,
   showScheduleHint,
+  onSchedule,
 }: {
   workOrder: AgendaWorkOrder
   showScheduleHint?: boolean
+  onSchedule?: (workOrder: AgendaWorkOrder) => void
 }) {
   const priorityClass =
     wo.priority === "Alta"
@@ -193,11 +238,17 @@ function AgendaCard({
         ? "border-amber-200 bg-amber-50"
         : "border-border bg-muted/30"
 
+  const timeLabel =
+    wo.planned_start_at && wo.planned_end_at
+      ? `${formatPlantTime(wo.planned_start_at)} – ${formatPlantTime(wo.planned_end_at)}`
+      : wo.planned_start_at
+        ? formatPlantTime(wo.planned_start_at)
+        : null
+
   return (
-    <Link
-      href={`/ordenes/${wo.id}`}
+    <div
       className={cn(
-        "block rounded-md border p-2 text-xs transition-colors hover:bg-muted/50",
+        "rounded-md border p-2 text-xs transition-colors",
         priorityClass,
       )}
     >
@@ -214,7 +265,13 @@ function AgendaCard({
           </Badge>
         </div>
       </div>
-      <p className="text-muted-foreground truncate mt-0.5">
+      {timeLabel && (
+        <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {timeLabel}
+        </p>
+      )}
+      <p className="text-muted-foreground truncate">
         {wo.asset_code ?? wo.asset_name ?? "Sin activo"}
       </p>
       <p className="line-clamp-2 mt-1">{wo.description}</p>
@@ -230,6 +287,24 @@ function AgendaCard({
       {wo.hours_open != null && wo.origin === "incident" && wo.hours_open >= 3 && (
         <p className="text-red-700 mt-1">{wo.hours_open}d abierto</p>
       )}
-    </Link>
+      <div className="flex gap-1 mt-2">
+        <Button variant="outline" size="sm" className="h-7 text-[10px] flex-1" asChild>
+          <Link href={`/ordenes/${wo.id}`}>
+            <ExternalLink className="h-3 w-3 mr-1" />
+            Ejecutar
+          </Link>
+        </Button>
+        {onSchedule && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 text-[10px]"
+            onClick={() => onSchedule(wo)}
+          >
+            Reprogramar
+          </Button>
+        )}
+      </div>
+    </div>
   )
 }

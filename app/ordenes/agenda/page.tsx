@@ -10,7 +10,7 @@ export default function AgendaPage() {
     <DashboardShell>
       <DashboardHeader
         heading="Centro de planificación"
-        text="Agenda de trabajos, ventanas de servicio por unidad, disponibilidad vs producción y avisos a operaciones"
+        text="Agenda de trabajos, ventanas de servicio por unidad y verificación de disponibilidad vs producción"
       />
       <Suspense fallback={<div className="h-64 rounded-lg bg-muted animate-pulse" />}>
         <PlanningCenter />

@@ -5,14 +5,12 @@ import Link from "next/link"
 import {
   addWeeks,
   format,
-  parseISO,
   startOfWeek,
   subWeeks,
 } from "date-fns"
 import { es } from "date-fns/locale"
 import {
   AlertTriangle,
-  Bell,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -25,22 +23,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { WorkAgendaBoard } from "@/components/agenda/work-agenda-board"
 import { ScheduleWorkOrderDialog } from "@/components/agenda/schedule-work-order-dialog"
+import { AssetDayTimeline, WeekDayPicker } from "@/components/planning/asset-day-timeline"
 import {
-  formatAgendaDayLabel,
   getWeekBounds,
-  groupAgendaByDay,
   ORIGIN_LABELS,
   type AgendaWorkOrder,
 } from "@/lib/agenda/agenda-utils"
+import { formatPlantTime, plantDateKey } from "@/lib/agenda/planning-datetime"
 import {
   PLANNING_STATUS_LABELS,
   type PlanningCalendarEvent,
@@ -58,7 +49,7 @@ export function PlanningCenter() {
 
   const bounds = useMemo(() => getWeekBounds(anchor), [anchor])
   const weekStart = useMemo(() => startOfWeek(anchor, { weekStartsOn: 1 }), [anchor])
-  const today = useMemo(() => new Date(), [])
+  const [selectedDay, setSelectedDay] = useState(() => format(new Date(), "yyyy-MM-dd"))
 
   const loadPlanning = useCallback(async () => {
     setLoading(true)
@@ -83,6 +74,10 @@ export function PlanningCenter() {
     loadPlanning()
   }, [loadPlanning])
 
+  useEffect(() => {
+    setSelectedDay(format(anchor, "yyyy-MM-dd"))
+  }, [anchor])
+
   const eventsByAsset = useMemo(() => {
     const map = new Map<string, PlanningCalendarEvent[]>()
     for (const ev of calendarEvents) {
@@ -96,8 +91,22 @@ export function PlanningCenter() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [calendarEvents])
 
+  const eventCountsByDay = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const ev of calendarEvents) {
+      const day = plantDateKey(ev.starts_at)
+      counts.set(day, (counts.get(day) ?? 0) + 1)
+    }
+    return counts
+  }, [calendarEvents])
+
   const weekLabel = format(weekStart, "d MMM", { locale: es })
   const weekEndLabel = format(addWeeks(weekStart, 1), "d MMM yyyy", { locale: es })
+
+  const handleScheduled = () => {
+    setScheduleTarget(null)
+    loadPlanning()
+  }
 
   return (
     <div className="space-y-4">
@@ -141,22 +150,40 @@ export function PlanningCenter() {
         </TabsList>
 
         <TabsContent value="week" className="mt-4">
-          <WorkAgendaBoard />
+          <WorkAgendaBoard
+            anchor={anchor}
+            onAnchorChange={setAnchor}
+            hideWeekNavigation
+            hidePrintAction
+            onScheduleWorkOrder={setScheduleTarget}
+            onDataLoaded={loadPlanning}
+          />
         </TabsContent>
 
         <TabsContent value="assets" className="mt-4 space-y-4">
           {loading ? (
             <div className="h-48 rounded-lg bg-muted animate-pulse" />
-          ) : eventsByAsset.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                No hay ventanas de servicio ni OTs programadas esta semana.
-              </CardContent>
-            </Card>
           ) : (
-            eventsByAsset.map(([assetKey, events]) => (
-              <AssetPlanningLane key={assetKey} assetKey={assetKey} events={events} />
-            ))
+            <>
+              <WeekDayPicker
+                weekStart={weekStart}
+                selectedDay={selectedDay}
+                onSelectDay={setSelectedDay}
+                eventCounts={eventCountsByDay}
+              />
+              <AssetDayTimeline day={selectedDay} events={calendarEvents} />
+              {eventsByAsset.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    No hay ventanas de servicio ni OTs programadas esta semana.
+                  </CardContent>
+                </Card>
+              ) : (
+                eventsByAsset.map(([assetKey, events]) => (
+                  <AssetPlanningLane key={assetKey} assetKey={assetKey} events={events} />
+                ))
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -193,10 +220,7 @@ export function PlanningCenter() {
           workOrderLabel={scheduleTarget.order_id}
           assetId={scheduleTarget.asset_id ?? undefined}
           assetCode={scheduleTarget.asset_code ?? undefined}
-          onScheduled={() => {
-            setScheduleTarget(null)
-            loadPlanning()
-          }}
+          onScheduled={handleScheduled}
         />
       )}
     </div>
@@ -247,22 +271,12 @@ function AssetPlanningLane({
                   </Badge>
                 )}
               </div>
-              {ev.ops_notified_at ? (
-                <Badge variant="outline" className="text-green-700 border-green-300">
-                  <Bell className="h-3 w-3 mr-1" />
-                  Ops notificado
-                </Badge>
-              ) : ev.event_type === "service_window" ? (
-                <Badge variant="outline" className="text-amber-700">
-                  Sin aviso ops
-                </Badge>
-              ) : null}
             </div>
             <p className="text-muted-foreground mt-1 flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {format(parseISO(ev.starts_at), "EEE d MMM HH:mm", { locale: es })}
+              {formatPlantTime(ev.starts_at, "datetime")}
               {" – "}
-              {format(parseISO(ev.ends_at), "HH:mm", { locale: es })}
+              {formatPlantTime(ev.ends_at)}
             </p>
             <p className="text-muted-foreground">
               Estado:{" "}
@@ -275,7 +289,7 @@ function AssetPlanningLane({
                 href={`/ordenes/${ev.work_order_id}`}
                 className="text-primary underline mt-1 inline-block"
               >
-                Ver orden
+                Ir a ejecutar
               </Link>
             )}
           </div>
@@ -312,10 +326,15 @@ function QueueCard({
           {wo.asset_code ?? wo.asset_name} — {wo.description}
         </p>
       </div>
-      <Button size="sm" onClick={onSchedule}>
-        <Wrench className="h-4 w-4 mr-2" />
-        Programar
-      </Button>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/ordenes/${wo.id}`}>Ejecutar</Link>
+        </Button>
+        <Button size="sm" onClick={onSchedule}>
+          <Wrench className="h-4 w-4 mr-2" />
+          Programar
+        </Button>
+      </div>
     </div>
   )
 }

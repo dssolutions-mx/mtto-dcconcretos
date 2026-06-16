@@ -35,17 +35,17 @@ Al confirmar una ventana:
 ## UI: `/ordenes/agenda` — Centro de planificación
 
 Tres pestañas:
-- **Semana (mecánicos)** — agenda semanal existente + badges de estado de activo
-- **Por activo** — línea de tiempo por unidad con ventanas de servicio y OTs
-- **Sin programar** — cola con botón Programar → diálogo completo
+- **Semana (mecánicos)** — agenda semanal sincronizada con navegación del centro; tarjetas con hora, estado de activo, **Ejecutar** y **Reprogramar**
+- **Por activo** — selector de día + **línea de tiempo horaria** (05:00–21:00) y lista por unidad
+- **Sin programar** — cola con **Ejecutar** y **Programar**
 
 ### Diálogo de programación
 
-- Fecha + hora + duración
+- Fecha + hora + duración (zona `America/Mexico_City`)
 - Check de disponibilidad vs producción en vivo
 - Slots sugeridos
-- Checkbox notificar operaciones
 - Override manual si hay conflicto
+- Notificación a operaciones en **Opciones avanzadas** (opt-in, no por defecto)
 
 ## APIs
 
