@@ -34,6 +34,8 @@ export async function saveChecklistTireReadings(
   const { data: installations } = await supabase
     .from('asset_tire_installations')
     .select('id, tire_id')
+    .eq('asset_id', params.asset_id)
+    .is('removed_at', null)
     .in('id', installationIds)
 
   const tireByInst = new Map((installations ?? []).map((i) => [i.id, i.tire_id]))

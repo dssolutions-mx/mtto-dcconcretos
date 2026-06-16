@@ -23,7 +23,7 @@ export async function GET() {
 
     const { data: installations, error: instErr } = await supabase
       .from('asset_tire_installations')
-      .select('*, assets(name)')
+      .select('*, assets(name, current_kilometers)')
     if (instErr) {
       return NextResponse.json({ error: instErr.message }, { status: 500 })
     }
@@ -60,7 +60,11 @@ export async function GET() {
       let kmTraveled: number | null = null
       for (const inst of insts) {
         if (inst.km_at_install != null) {
-          const end = inst.km_at_remove ?? inst.km_at_install
+          const assetRow = inst.assets as { current_kilometers?: number | null } | null
+          const end =
+            inst.km_at_remove ??
+            (!inst.removed_at ? assetRow?.current_kilometers : null) ??
+            inst.km_at_install
           const delta = end - inst.km_at_install
           kmTraveled = (kmTraveled ?? 0) + Math.max(0, delta)
         }

@@ -24,7 +24,8 @@ export async function GET(
         assets (
           id,
           name,
-          asset_id
+          asset_id,
+          plant_id
         )
       `)
       .eq('id', id)

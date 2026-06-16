@@ -57,7 +57,7 @@ export async function createTiresFromReceipt(
 
     if (error) {
       console.error('[tires] create from receipt', error)
-      continue
+      throw new Error(`No se pudo crear la llanta ${i + 1}: ${error.message}`)
     }
     created.push(data.id)
   }

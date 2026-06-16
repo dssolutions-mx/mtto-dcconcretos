@@ -316,6 +316,11 @@ export function IncidentReviewContent({
 
       <IncidentRoutingPanel
         incidentId={incident.id}
+        plantId={
+          (incident.assets as { plant_id?: string | null } | null | undefined)?.plant_id ??
+          (incident.plant_id as string | null | undefined) ??
+          null
+        }
         initial={{
           routing_department_id: incident.routing_department_id ?? null,
           assigned_to_id: incident.assigned_to_id ?? null,

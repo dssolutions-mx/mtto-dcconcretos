@@ -160,29 +160,46 @@ export async function POST(
       return NextResponse.json({ error: instErr.message }, { status: 500 })
     }
 
-    await issueTireFromInventory(supabase, {
-      tire_id: body.tire_id,
-      work_order_id: body.work_order_id ?? null,
-      user_id: user.id,
-      notes: `Montaje en ${body.position_label}`,
-    })
+    try {
+      const issueResult = await issueTireFromInventory(supabase, {
+        tire_id: body.tire_id,
+        work_order_id: body.work_order_id ?? null,
+        user_id: user.id,
+        notes: `Montaje en ${body.position_label}`,
+      })
 
-    await supabase.from('tires').update({ status: 'montada', updated_at: new Date().toISOString() }).eq('id', body.tire_id)
+      if (issueResult.skipped && issueResult.reason === 'not_in_stock') {
+        throw new Error('La llanta no está disponible en inventario')
+      }
 
-    await supabase.from('tire_events').insert({
-      tire_id: body.tire_id,
-      installation_id: installation.id,
-      asset_id: assetId,
-      event_type: 'montaje',
-      work_order_id: body.work_order_id ?? null,
-      odometer_km: asset.current_kilometers,
-      horometer_hours: asset.current_hours,
-      to_position: body.position_code,
-      created_by: user.id,
-      notes: body.notes?.trim() || null,
-    })
+      const { error: statusErr } = await supabase
+        .from('tires')
+        .update({ status: 'montada', updated_at: new Date().toISOString() })
+        .eq('id', body.tire_id)
 
-    return NextResponse.json({ installation }, { status: 201 })
+      if (statusErr) throw statusErr
+
+      const { error: eventErr } = await supabase.from('tire_events').insert({
+        tire_id: body.tire_id,
+        installation_id: installation.id,
+        asset_id: assetId,
+        event_type: 'montaje',
+        work_order_id: body.work_order_id ?? null,
+        odometer_km: asset.current_kilometers,
+        horometer_hours: asset.current_hours,
+        to_position: body.position_code,
+        created_by: user.id,
+        notes: body.notes?.trim() || null,
+      })
+
+      if (eventErr) throw eventErr
+
+      return NextResponse.json({ installation }, { status: 201 })
+    } catch (mountErr) {
+      await supabase.from('asset_tire_installations').delete().eq('id', installation.id)
+      const msg = mountErr instanceof Error ? mountErr.message : 'Error al montar llanta'
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Error interno'
     return NextResponse.json({ error: msg }, { status: 500 })

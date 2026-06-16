@@ -37,10 +37,12 @@ type ProfileOption = { id: string; nombre: string | null; apellido: string | nul
 
 export function IncidentRoutingPanel({
   incidentId,
+  plantId,
   initial,
   onUpdated,
 }: {
   incidentId: string
+  plantId?: string | null
   initial?: Partial<AssignmentState>
   onUpdated?: () => void
 }) {
@@ -58,6 +60,29 @@ export function IncidentRoutingPanel({
   const [profiles, setProfiles] = useState<ProfileOption[]>([])
   const [saving, setSaving] = useState(false)
   const [routing, setRouting] = useState(false)
+
+  useEffect(() => {
+    setState({
+      routing_department_id: initial?.routing_department_id ?? null,
+      assigned_to_id: initial?.assigned_to_id ?? null,
+      pipeline_stage: (initial?.pipeline_stage as IncidentPipelineStage) ?? "bandeja",
+      department_name: initial?.department_name,
+      assignee_name: initial?.assignee_name,
+      target_response_hours: initial?.target_response_hours,
+      routed_at: initial?.routed_at,
+      sla_breached: initial?.sla_breached,
+    })
+  }, [
+    incidentId,
+    initial?.routing_department_id,
+    initial?.assigned_to_id,
+    initial?.pipeline_stage,
+    initial?.target_response_hours,
+    initial?.routed_at,
+    initial?.sla_breached,
+    initial?.department_name,
+    initial?.assignee_name,
+  ])
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -142,6 +167,7 @@ export function IncidentRoutingPanel({
       <CardContent className="space-y-4">
         <DepartmentSelector
           label="Departamento"
+          plantId={plantId ?? undefined}
           value={state.routing_department_id ?? undefined}
           onValueChange={(v) =>
             setState((s) => ({ ...s, routing_department_id: v || null }))

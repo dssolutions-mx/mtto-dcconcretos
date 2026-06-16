@@ -170,6 +170,13 @@ export async function POST(req: NextRequest) {
       results.push({ id: incident.id, ok: true, department_id: departmentId })
     }
 
+    const processedIds = new Set(results.map((r) => r.id))
+    for (const id of incidentIds) {
+      if (!processedIds.has(id)) {
+        results.push({ id, ok: false, error: "Incidente no encontrado" })
+      }
+    }
+
     const succeeded = results.filter((r) => r.ok).length
     const failed = results.length - succeeded
 

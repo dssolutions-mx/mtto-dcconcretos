@@ -11,12 +11,33 @@ export interface TirePartLine {
   source: 'tire_event' | 'tire_purchase'
 }
 
+function upsertTireLine(
+  lines: TirePartLine[],
+  line: TirePartLine,
+): TirePartLine[] {
+  const idx = lines.findIndex((l) => l.tire_id === line.tire_id)
+  if (idx < 0) return [...lines, line]
+
+  const existing = lines[idx]
+  const merged: TirePartLine = {
+    ...existing,
+    unit_cost: existing.unit_cost + line.unit_cost,
+    total_price: existing.total_price + line.unit_cost,
+    position_code: existing.position_code ?? line.position_code,
+    source:
+      existing.source === 'tire_event' || line.source === 'tire_event'
+        ? 'tire_event'
+        : existing.source,
+  }
+  return [...lines.slice(0, idx), merged, ...lines.slice(idx + 1)]
+}
+
 export async function buildTirePartsForWorkOrder(
   supabase: SupabaseClient,
   workOrderId: string
 ): Promise<TirePartLine[]> {
-  const lines: TirePartLine[] = []
-  const seenTires = new Set<string>()
+  let lines: TirePartLine[] = []
+  const purchaseCounted = new Set<string>()
 
   const { data: events } = await supabase
     .from('tire_events')
@@ -25,41 +46,43 @@ export async function buildTirePartsForWorkOrder(
 
   for (const ev of events ?? []) {
     const tire = ev.tire as { brand?: string; size?: string; purchase_cost?: number } | null
-    if (!ev.tire_id || seenTires.has(ev.tire_id)) continue
+    if (!ev.tire_id) continue
 
     const eventCost = Number(ev.cost) || 0
     const purchaseCost =
-      ev.event_type === 'montaje' ? Number(tire?.purchase_cost) || 0 : 0
-    const total = eventCost + purchaseCost
-    if (total <= 0) continue
+      ev.event_type === 'montaje' && !purchaseCounted.has(ev.tire_id)
+        ? Number(tire?.purchase_cost) || 0
+        : 0
+    if (purchaseCost > 0) purchaseCounted.add(ev.tire_id)
 
-    seenTires.add(ev.tire_id)
-    lines.push({
+    const lineTotal = eventCost + purchaseCost
+    if (lineTotal <= 0) continue
+
+    lines = upsertTireLine(lines, {
       type: 'tire',
       tire_id: ev.tire_id,
       name: tire ? `${tire.brand ?? 'Llanta'} ${tire.size ?? ''}`.trim() : 'Llanta',
       position_code: ev.to_position ?? ev.from_position ?? null,
       quantity: 1,
-      unit_cost: total,
-      total_price: total,
+      unit_cost: lineTotal,
+      total_price: lineTotal,
       source: eventCost > 0 ? 'tire_event' : 'tire_purchase',
     })
   }
 
-  // Installations mounted under this WO without separate event cost
   const { data: installs } = await supabase
     .from('asset_tire_installations')
     .select('tire_id, position_code, tire:tires(brand, size, purchase_cost)')
     .eq('work_order_id', workOrderId)
 
   for (const inst of installs ?? []) {
-    if (!inst.tire_id || seenTires.has(inst.tire_id)) continue
+    if (!inst.tire_id || purchaseCounted.has(inst.tire_id)) continue
     const tire = inst.tire as { brand?: string; size?: string; purchase_cost?: number } | null
     const purchaseCost = Number(tire?.purchase_cost) || 0
     if (purchaseCost <= 0) continue
 
-    seenTires.add(inst.tire_id)
-    lines.push({
+    purchaseCounted.add(inst.tire_id)
+    lines = upsertTireLine(lines, {
       type: 'tire',
       tire_id: inst.tire_id,
       name: tire ? `${tire.brand ?? 'Llanta'} ${tire.size ?? ''}`.trim() : 'Llanta',

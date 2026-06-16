@@ -229,10 +229,56 @@ export async function POST(req: NextRequest) {
     const results: { id: string; ok: boolean; error?: string }[] = []
 
     for (const incidentId of incidentIds) {
+      const { data: before, error: beforeErr } = await supabase
+        .from("incident_history")
+        .select("routing_department_id")
+        .eq("id", incidentId)
+        .maybeSingle()
+
+      if (beforeErr || !before) {
+        results.push({
+          id: incidentId,
+          ok: false,
+          error: beforeErr?.message ?? "Incidente no encontrado",
+        })
+        continue
+      }
+
       const { error } = await supabase.rpc("apply_incident_routing", {
         p_incident_id: incidentId,
       })
-      results.push({ id: incidentId, ok: !error, error: error?.message })
+
+      if (error) {
+        results.push({ id: incidentId, ok: false, error: error.message })
+        continue
+      }
+
+      const { data: after, error: afterErr } = await supabase
+        .from("incident_history")
+        .select("routing_department_id")
+        .eq("id", incidentId)
+        .maybeSingle()
+
+      if (afterErr) {
+        results.push({ id: incidentId, ok: false, error: afterErr.message })
+        continue
+      }
+
+      if (before.routing_department_id) {
+        results.push({
+          id: incidentId,
+          ok: false,
+          error: "El incidente ya estaba clasificado",
+        })
+      } else if (!after?.routing_department_id) {
+        results.push({
+          id: incidentId,
+          ok: false,
+          error: "Sin regla coincidente",
+        })
+      } else {
+        results.push({ id: incidentId, ok: true })
+      }
     }
 
     return NextResponse.json({ results })

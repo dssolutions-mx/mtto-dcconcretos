@@ -60,20 +60,49 @@ export async function POST(request: NextRequest) {
 
         if (plantId) {
           const folio = invoiceNumberFromCfdi(cfdi)
-          const { data: poMatch } = await supabase
-            .from('po_without_supplier_invoice')
-            .select('purchase_order_id, order_id, supplier')
-            .eq('plant_id', plantId)
-            .limit(50)
+          const emisorRfc = cfdi.emisor_rfc?.trim().toUpperCase()
 
-          const match = (poMatch ?? []).find(
-            (po) =>
-              po.supplier?.toUpperCase().includes(cfdi.emisor_nombre?.slice(0, 8).toUpperCase() ?? '') ||
-              false,
-          )
-          if (match) {
-            purchaseOrderId = match.purchase_order_id
-            orderId = match.order_id
+          if (emisorRfc) {
+            const { data: supplier } = await supabase
+              .from('suppliers')
+              .select('id')
+              .eq('rfc', emisorRfc)
+              .maybeSingle()
+
+            if (supplier?.id) {
+              const { data: poBySupplier } = await supabase
+                .from('po_without_supplier_invoice')
+                .select('purchase_order_id, order_id')
+                .eq('plant_id', plantId)
+                .eq('supplier_id', supplier.id)
+                .order('approval_date', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+
+              if (poBySupplier) {
+                purchaseOrderId = poBySupplier.purchase_order_id
+                orderId = poBySupplier.order_id
+              }
+            }
+          }
+
+          if (!purchaseOrderId) {
+            const { data: poMatch } = await supabase
+              .from('po_without_supplier_invoice')
+              .select('purchase_order_id, order_id, supplier')
+              .eq('plant_id', plantId)
+              .limit(50)
+
+            const emisorPrefix = cfdi.emisor_nombre?.slice(0, 8).toUpperCase() ?? ''
+            const match = emisorPrefix
+              ? (poMatch ?? []).find((po) =>
+                  po.supplier?.toUpperCase().includes(emisorPrefix),
+                )
+              : undefined
+            if (match) {
+              purchaseOrderId = match.purchase_order_id
+              orderId = match.order_id
+            }
           }
 
           if (!dup) {

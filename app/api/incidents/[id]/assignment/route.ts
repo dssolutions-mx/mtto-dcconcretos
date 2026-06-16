@@ -42,6 +42,9 @@ export async function PATCH(
       if (body.routing_department_id && !current.routed_at) {
         updates.routed_at = now
       }
+      if (body.routing_department_id && current.target_response_hours == null) {
+        updates.target_response_hours = 48
+      }
     }
 
     if (body.assigned_to_id !== undefined) {

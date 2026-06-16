@@ -139,21 +139,32 @@ export async function POST(request: Request) {
     
     // Validar y procesar parts_used para evitar errores
     let formattedPartsUsed = null;
-    if (completionData.parts_used) {
+    let partsUsed = completionData.parts_used;
+    if (workOrderId) {
       try {
-        if (!Array.isArray(completionData.parts_used)) {
+        const tireLines = await buildTirePartsForWorkOrder(supabase, workOrderId)
+        if (tireLines.length > 0) {
+          partsUsed = mergePartsWithTireLines(partsUsed, tireLines)
+        }
+      } catch (tireMergeErr) {
+        console.warn('API: tire parts pre-merge (non-critical):', tireMergeErr)
+      }
+    }
+    if (partsUsed) {
+      try {
+        if (!Array.isArray(partsUsed)) {
           throw new Error("El formato de las partes usadas es incorrecto");
         }
         
         // Mostrar lo que estamos recibiendo para depuración
         console.log("API: Partes usadas recibidas:", 
-          JSON.stringify(completionData.parts_used.map((p: any) => ({
+          JSON.stringify(partsUsed.map((p: any) => ({
             id: p.id || p.part_id,
             name: p.name
           })))
         );
         
-        formattedPartsUsed = JSON.stringify(completionData.parts_used);
+        formattedPartsUsed = JSON.stringify(partsUsed);
       } catch (error) {
         console.error("Error formateando parts_used:", error);
         formattedPartsUsed = null;
