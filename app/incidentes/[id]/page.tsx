@@ -136,6 +136,14 @@ export default function IncidentReviewPage({
               setThreadIncidents(await resolveThreadIncidents(data))
             })()
           }}
+          onRoutingUpdated={() => {
+            void (async () => {
+              const res = await fetch(`/api/incidents/${incidentId}`)
+              if (!res.ok) return
+              const data = await res.json()
+              setIncident(data)
+            })()
+          }}
         />
       ) : null}
     </DashboardShell>

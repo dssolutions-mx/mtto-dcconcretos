@@ -1,6 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import { getExpenseCategoryById, getExpenseCategoryDisplayName } from '@/lib/constants/expense-categories'
 import { runIngresosGastosPost } from '@/lib/reports/ingresos-gastos-compute'
+import {
+  classifyNominaConcept,
+  NOMINA_CONCEPT_ORDER,
+  nominaConceptLabel,
+  type NominaConceptId,
+} from '@/lib/reports/nomina-concept-classifier'
 
 /**
  * Cotizador `plant_indirect_material_costs` (autoconsumo) is bucketed into the same
@@ -121,6 +127,18 @@ export type CostAnalysisNominaCashSplit = {
   nonCash: number
 }
 
+export type CostAnalysisNominaConceptRow = {
+  conceptId: NominaConceptId
+  conceptLabel: string
+  monthlyTotals: Record<CostAnalysisMonthKey, number>
+  /** Share of total nómina that month (0–100). */
+  pctOfNomina: Record<CostAnalysisMonthKey, number>
+  byDepartment: Array<{
+    department: string
+    monthlyTotals: Record<CostAnalysisMonthKey, number>
+  }>
+}
+
 export type CostAnalysisResponse = {
   months: CostAnalysisMonthKey[]
   summary: CostAnalysisSummary
@@ -129,6 +147,8 @@ export type CostAnalysisResponse = {
   byPlant: CostAnalysisPlantRow[]
   /** Nómina manual adjustments split by is_cash_payment, per month (allocated to scope). */
   nominaCashSplit: Record<CostAnalysisMonthKey, CostAnalysisNominaCashSplit>
+  /** Nómina split by payroll concept (bonos, tiempo extra, apoyos, etc.). */
+  byNominaConcept: CostAnalysisNominaConceptRow[]
   /** Maintenance cost split by WO type, per month. Independently sourced from PO↔WO join. */
   manttoByType: Record<CostAnalysisMonthKey, CostAnalysisManttoTypeBucket>
   /** Distinct expense_category buckets touched per month (data-quality glance). */
@@ -526,6 +546,7 @@ export async function runCostAnalysis(params: {
       byCategory: [],
       byDepartment: [],
       byPlant: [],
+      byNominaConcept: [],
       nominaCashSplit: {},
       manttoByType: {},
       categoryCoverage: {},
@@ -564,6 +585,7 @@ export async function runCostAnalysis(params: {
       byCategory: [],
       byDepartment: [],
       byPlant: [],
+      byNominaConcept: [],
       nominaCashSplit: emptyNominaCashSplit(sortedMonths),
       manttoByType: Object.fromEntries(sortedMonths.map(m => [m, { corrective: 0, preventive: 0, inspection: 0, other: 0 }])),
       categoryCoverage: zeroMap(sortedMonths),
@@ -598,6 +620,8 @@ export async function runCostAnalysis(params: {
   const categoryMonthly = new Map<string, Map<string, number>>()
   const subcatMonthly = new Map<string, Map<string, Map<string, number>>>()
   const deptMonthly = new Map<string, Map<string, number>>()
+  const nominaConceptMonthly = new Map<NominaConceptId, Map<string, number>>()
+  const nominaConceptDeptMonthly = new Map<string, Map<string, number>>()
   const nominaCashSplit = emptyNominaCashSplit(sortedMonths)
 
   const monthYmFromPeriod = (period: string) => period.slice(0, 7)
@@ -645,6 +669,25 @@ export async function runCostAnalysis(params: {
           if (isCash) cashBucket.cash += amt
           else cashBucket.nonCash += amt
         }
+      }
+
+      const conceptId = classifyNominaConcept({
+        is_bonus: adj.is_bonus as boolean | null,
+        is_cash_payment: adj.is_cash_payment as boolean | null,
+        subcategory: adj.subcategory as string | null,
+        expense_subcategory: adj.expense_subcategory as string | null,
+        description: adj.description as string | null,
+      })
+      if (!nominaConceptMonthly.has(conceptId)) nominaConceptMonthly.set(conceptId, new Map())
+      const cm = nominaConceptMonthly.get(conceptId)!
+      const conceptDeptKey = `${conceptId}::${dept}`
+      if (!nominaConceptDeptMonthly.has(conceptDeptKey)) {
+        nominaConceptDeptMonthly.set(conceptDeptKey, new Map())
+      }
+      const cdm = nominaConceptDeptMonthly.get(conceptDeptKey)!
+      for (const amt of byPlant.values()) {
+        cm.set(monthKey, (cm.get(monthKey) || 0) + amt)
+        cdm.set(monthKey, (cdm.get(monthKey) || 0) + amt)
       }
     }
 
@@ -731,6 +774,37 @@ export async function runCostAnalysis(params: {
   })
   byDepartment.sort((a, b) => a.department.localeCompare(b.department, 'es'))
 
+  const byNominaConcept: CostAnalysisNominaConceptRow[] = NOMINA_CONCEPT_ORDER.map(conceptId => {
+    const monthlyMap = nominaConceptMonthly.get(conceptId) || new Map<string, number>()
+    const monthlyTotals: Record<string, number> = {}
+    const pctOfNomina: Record<string, number> = {}
+    sortedMonths.forEach(m => {
+      monthlyTotals[m] = monthlyMap.get(m) || 0
+    })
+
+    const deptRows: CostAnalysisNominaConceptRow['byDepartment'] = []
+    for (const [key, deptMap] of nominaConceptDeptMonthly.entries()) {
+      if (!key.startsWith(`${conceptId}::`)) continue
+      const department = key.slice(conceptId.length + 2)
+      const deptMonthlyTotals: Record<string, number> = {}
+      sortedMonths.forEach(m => {
+        deptMonthlyTotals[m] = deptMap.get(m) || 0
+      })
+      const totalInRange = sortedMonths.reduce((s, m) => s + (deptMonthlyTotals[m] || 0), 0)
+      if (totalInRange <= 0) continue
+      deptRows.push({ department, monthlyTotals: deptMonthlyTotals })
+    }
+    deptRows.sort((a, b) => a.department.localeCompare(b.department, 'es'))
+
+    return {
+      conceptId,
+      conceptLabel: nominaConceptLabel(conceptId),
+      monthlyTotals,
+      pctOfNomina,
+      byDepartment: deptRows,
+    }
+  }).filter(row => sortedMonths.some(m => (row.monthlyTotals[m] || 0) > 0))
+
   const summary = emptySummary(sortedMonths)
 
   // volume-weighted accumulators for fc_ponderada and consumo_cem_m3
@@ -809,6 +883,15 @@ export async function runCostAnalysis(params: {
     }
   })
 
+  // Concept % of nómina (after summary.nomina is populated).
+  for (const row of byNominaConcept) {
+    for (const m of sortedMonths) {
+      const total = summary.nomina[m] || 0
+      const amt = row.monthlyTotals[m] || 0
+      row.pctOfNomina[m] = total > 0 ? (amt / total) * 100 : 0
+    }
+  }
+
   // Derived summary metrics — recompute from totals so rollups stay consistent.
   for (const m of sortedMonths) {
     const ventas = summary.ventasTotal[m]
@@ -880,6 +963,7 @@ export async function runCostAnalysis(params: {
     byCategory,
     byDepartment,
     byPlant,
+    byNominaConcept,
     nominaCashSplit,
     manttoByType,
     categoryCoverage,
