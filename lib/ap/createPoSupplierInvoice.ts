@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CreatePoSupplierInvoiceInput, PoSupplierInvoice } from '@/types/po-invoices'
-import { computeInvoiceTax, roundMoney, suggestExpenseCategory } from '@/lib/ap/po-invoice-utils'
+import { computeInvoiceTotals, roundMoney, suggestExpenseCategory } from '@/lib/ap/po-invoice-utils'
 
 export type CreatePoSupplierInvoiceResult =
   | { ok: true; invoice: PoSupplierInvoice }
@@ -17,7 +17,10 @@ export async function createPoSupplierInvoice(
     invoice_date,
     due_date = null,
     subtotal: rawSubtotal,
+    discount_amount: rawDiscount = 0,
     vat_rate = 0.16,
+    retention_isr_rate = 0,
+    retention_iva_rate = 0,
     expense_category: clientCategory,
     document_url = null,
     receipt_id = null,
@@ -30,6 +33,7 @@ export async function createPoSupplierInvoice(
   }
 
   const subtotal = roundMoney(Number(rawSubtotal))
+  const discount_amount = roundMoney(Number(rawDiscount) || 0)
   if (!Number.isFinite(subtotal) || subtotal <= 0) {
     return { ok: false, error: 'El subtotal debe ser mayor a cero', status: 400 }
   }
@@ -84,7 +88,13 @@ export async function createPoSupplierInvoice(
       receipt_expense_type: receiptExpenseType,
     })
 
-  const { tax, total } = computeInvoiceTax(subtotal, vat_rate)
+  const totals = computeInvoiceTotals({
+    subtotal,
+    discount_amount,
+    vat_rate,
+    retention_isr_rate,
+    retention_iva_rate,
+  })
 
   const { data: invoice, error: insertError } = await supabase
     .from('po_supplier_invoices')
@@ -96,9 +106,14 @@ export async function createPoSupplierInvoice(
       invoice_date,
       due_date,
       subtotal,
+      discount_amount,
       vat_rate,
-      tax,
-      total,
+      tax: totals.tax,
+      retention_isr_rate,
+      retention_isr_amount: totals.retention_isr_amount,
+      retention_iva_rate,
+      retention_iva_amount: totals.retention_iva_amount,
+      total: totals.total,
       expense_category,
       po_purpose_snapshot: po.po_purpose,
       po_type_snapshot: po.po_type,

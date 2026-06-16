@@ -204,10 +204,10 @@ function PurchaseOrdersPageContent() {
             </Link>
           )}
           {profile && (profile.role === 'GERENCIA_GENERAL' || profile.role === 'AREA_ADMINISTRATIVA') && (
-            <Link href="/compras/facturas">
-              <Button variant="outline" className="w-full sm:w-auto cursor-pointer">
+            <Link href="/compras/procurement">
+              <Button variant="outline" className="w-full sm:w-auto bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100 cursor-pointer">
                 <FileText className="mr-2 h-4 w-4" />
-                Facturas OC
+                Compras post-aprobación
               </Button>
             </Link>
           )}

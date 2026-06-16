@@ -2,48 +2,71 @@
 
 ## Contexto
 
-Las órdenes de compra de mantenimiento (`mtto-dcconcretos`) hoy manejan comprobantes operativos (`purchase_order_receipts`) y pagos (`accounts_payable_summary`), pero no tienen un registro fiscal estructurado como las facturas del ERP de cotizaciones.
+Las órdenes de compra de mantenimiento (`mtto-dcconcretos`) gestionan comprobantes operativos y pagos a nivel OC. Este módulo añade un **espacio de compras post-aprobación** alineado con el patrón AP del cotizador (`cotizaciones-concreto`).
 
 ## Referencia: cotizaciones-concreto
 
-En `cotizaciones-concreto`, el módulo AP usa:
-
-| Concepto | Tabla / archivo |
-|----------|-----------------|
-| Cabecera de factura | `supplier_invoices` |
-| Líneas | `supplier_invoice_items` |
-| Servicio de alta | `src/lib/ap/createSupplierInvoice.ts` |
-| Estados | `open` → `partially_paid` → `paid` / `void` |
-| Categoría de costo | `material` / `fleet` en líneas |
-
-Documentación: `docs/AP_CUENTAS_POR_PAGAR.md`.
-
-## Diseño espejo en mantenimiento
-
-| Cotizaciones | Mantenimiento |
-|--------------|---------------|
+| Concepto cotizador | Mantenimiento |
+|--------------------|---------------|
+| `CxpWorkspace` (sin factura / facturas / NC) | `/compras/procurement` (resumen / sin factura / facturas / post-aprobación) |
 | `supplier_invoices` | `po_supplier_invoices` |
 | `supplier_invoice_items` | `po_supplier_invoice_items` |
-| `material_entries` / `po_id` | `purchase_order_id` directo |
-| `cost_category` material/fleet | `expense_category` refacciones/mano_obra/servicio_externo/otros |
+| `payments` | `po_invoice_payments` |
+| `OrphanEntriesTab` | `PoWithoutInvoiceTab` (OC aprobadas sin factura) |
+| `InvoicesPayablesTab` | `PoInvoicesPayablesTab` (agrupado por proveedor, pagos parciales) |
+| `RecordPaymentModal` | `RecordPoPaymentModal` |
+| Action queue / dashboard | `ProcurementDashboardTab` + APIs |
 
-Migración: `supabase/migrations/20260616120000_po_supplier_invoices.sql`
+Documentación cotizador: `cotizaciones-concreto/docs/AP_CUENTAS_POR_PAGAR.md`
 
-## Flujo v1
+## Flujo post-aprobación (mantenimiento)
 
-1. OC en estado aprobado o posterior.
-2. Área administrativa registra factura desde `/compras/[id]` (sección “Factura de proveedor”).
-3. Se captura folio, fecha, subtotal, IVA, categoría contable y comprobante opcional.
-4. `purchase_orders.accounting_status` pasa a `invoiced`.
-5. Listado en `/compras/facturas`.
+```
+OC aprobada
+  → ejecutada (purchased/ordered/received/fulfilled)
+  → comprobante (purchase_order_receipts)
+  → factura proveedor (po_supplier_invoices + líneas)
+  → pagos parciales/totales (po_invoice_payments)
+  → validada (workflow) + accounting_status = paid
+```
 
-## Fuera de alcance (slice 1)
+## Migraciones (no aplicar en agente)
 
-- Importación CFDI
-- Notas de crédito
+| Archivo | Contenido |
+|---------|-----------|
+| `20260616120000_po_supplier_invoices.sql` | Tablas factura, accounting_status, vista resumen |
+| `20260616140000_po_procurement_payments_and_views.sql` | Pagos, retenciones, vistas sin factura y balances |
+
+## Rutas UI
+
+| Ruta | Descripción |
+|------|-------------|
+| `/compras/procurement` | Workspace principal (tabs URL-driven) |
+| `/compras/procurement?tab=sin_factura` | Cola OC sin factura |
+| `/compras/procurement?tab=facturas` | CxP con pagos parciales |
+| `/compras/[id]` | Detalle OC + ciclo contable + registro factura |
+
+## APIs
+
+| Endpoint | Rol |
+|----------|-----|
+| `GET /api/compras/procurement/dashboard` | KPIs post-aprobación |
+| `GET /api/compras/procurement/action-queue` | Cola de acciones |
+| `GET /api/ap/po-without-invoice` | OC sin factura |
+| `GET /api/ap/invoices` | Facturas con saldo |
+| `GET/POST /api/ap/payments` | Pagos parciales |
+| `GET /api/purchase-orders/[id]/lifecycle` | Cadena documental |
+
+## Fuera de alcance actual
+
+- CFDI / SAT (importación, complementos de pago)
+- Notas de crédito multi-factura
 - Sincronización cross-DB con cotizador
-- Conciliación de pagos fiscal vs operativo
+- Portal de proveedores unificado
 
-## Portal de proveedores (futuro)
+## Próximos pasos sugeridos
 
-La estructura `po_supplier_invoices` + `supplier_id` deja el gancho para que un portal unificado maneje compras de ambos sistemas sin reescribir el modelo.
+1. Notas de crédito (`po_credit_notes` + allocations)
+2. Importación CFDI (parse + match a OC/comprobante)
+3. Export contable integral (Excel revisión CxP)
+4. Validación 3-way match (OC ↔ comprobante ↔ factura)

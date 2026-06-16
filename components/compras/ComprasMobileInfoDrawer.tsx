@@ -204,6 +204,14 @@ export function ComprasMobileInfoDrawer({
               </Link>
             )}
             {isAdmin && (
+              <Link href="/compras/procurement" onClick={() => setOpen(false)}>
+                <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100 cursor-pointer">
+                  <FileText className="h-4 w-4" />
+                  Compras post-aprobación
+                </Button>
+              </Link>
+            )}
+            {isAdmin && (
               <Link href="/compras/facturas" onClick={() => setOpen(false)}>
                 <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 cursor-pointer">
                   <FileText className="h-4 w-4" />

@@ -25,7 +25,8 @@ import {
   type PoExpenseCategory,
   type PoSupplierInvoice,
 } from "@/types/po-invoices"
-import { computeInvoiceTax } from "@/lib/ap/po-invoice-utils"
+import { computeInvoiceTotals } from "@/lib/ap/po-invoice-utils"
+import { PoLifecycleStrip } from "@/components/compras/procurement/ProcurementDashboardTab"
 
 interface ReceiptOption {
   id: string
@@ -71,15 +72,25 @@ export function PoSupplierInvoiceSection({
     invoice_date: new Date().toISOString().slice(0, 10),
     due_date: "",
     subtotal: 0,
+    discount_amount: 0,
     vat_rate: 0.16,
+    retention_isr_rate: 0,
+    retention_iva_rate: 0,
     expense_category: defaultExpenseCategory,
     receipt_id: null,
     notes: "",
   })
 
   const totals = useMemo(
-    () => computeInvoiceTax(Number(form.subtotal) || 0, form.vat_rate ?? 0.16),
-    [form.subtotal, form.vat_rate],
+    () =>
+      computeInvoiceTotals({
+        subtotal: Number(form.subtotal) || 0,
+        discount_amount: Number(form.discount_amount) || 0,
+        vat_rate: form.vat_rate ?? 0.16,
+        retention_isr_rate: form.retention_isr_rate ?? 0,
+        retention_iva_rate: form.retention_iva_rate ?? 0,
+      }),
+    [form.subtotal, form.discount_amount, form.vat_rate, form.retention_isr_rate, form.retention_iva_rate],
   )
 
   const loadData = useCallback(async () => {
@@ -280,6 +291,53 @@ export function PoSupplierInvoiceSection({
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="discount_amount">Descuento (antes de IVA)</Label>
+                <Input
+                  id="discount_amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.discount_amount || ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, discount_amount: Number(e.target.value) }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="retention_isr">Retención ISR (%)</Label>
+                <Input
+                  id="retention_isr"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={(form.retention_isr_rate ?? 0) * 100 || ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      retention_isr_rate: Number(e.target.value) / 100,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="retention_iva">Retención IVA (%)</Label>
+                <Input
+                  id="retention_iva"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={(form.retention_iva_rate ?? 0) * 100 || ""}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      retention_iva_rate: Number(e.target.value) / 100,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Categoría contable</Label>
                 <Select
                   value={form.expense_category}
@@ -328,12 +386,23 @@ export function PoSupplierInvoiceSection({
               </div>
             </div>
 
-            <div className="rounded-lg bg-muted/40 p-3 text-sm">
+            <div className="rounded-lg bg-muted/40 p-3 text-sm space-y-1">
               <p>
-                IVA estimado: <strong>{formatCurrency(totals.tax)}</strong>
+                Base gravable: <strong>{formatCurrency(totals.taxable_base)}</strong>
               </p>
               <p>
-                Total estimado: <strong>{formatCurrency(totals.total)}</strong>
+                IVA: <strong>{formatCurrency(totals.tax)}</strong>
+              </p>
+              {(totals.retention_isr_amount > 0 || totals.retention_iva_amount > 0) && (
+                <p>
+                  Retenciones:{" "}
+                  <strong>
+                    {formatCurrency(totals.retention_isr_amount + totals.retention_iva_amount)}
+                  </strong>
+                </p>
+              )}
+              <p>
+                Total neto a pagar: <strong>{formatCurrency(totals.total)}</strong>
               </p>
             </div>
 

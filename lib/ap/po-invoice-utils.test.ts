@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { computeInvoiceTax, suggestExpenseCategory } from '@/lib/ap/po-invoice-utils'
+import { computeInvoiceTotals, suggestExpenseCategory } from '@/lib/ap/po-invoice-utils'
 import { POPurpose, PurchaseOrderType } from '@/types/purchase-orders'
 
 describe('po-invoice-utils', () => {
   it('computes tax and total from subtotal', () => {
-    expect(computeInvoiceTax(1000, 0.16)).toEqual({ tax: 160, total: 1160 })
+    expect(computeInvoiceTotals({ subtotal: 1000, vat_rate: 0.16 })).toMatchObject({
+      taxable_base: 1000,
+      tax: 160,
+      total: 1160,
+    })
+  })
+
+  it('applies discount and retentions', () => {
+    const result = computeInvoiceTotals({
+      subtotal: 1000,
+      discount_amount: 100,
+      vat_rate: 0.16,
+      retention_isr_rate: 0.1,
+      retention_iva_rate: 0.04,
+    })
+    expect(result.taxable_base).toBe(900)
+    expect(result.tax).toBe(144)
+    expect(result.retention_isr_amount).toBe(90)
+    expect(result.retention_iva_amount).toBeCloseTo(5.76, 2)
+    expect(result.total).toBeCloseTo(948.24, 2)
   })
 
   it('suggests servicio_externo for direct service POs', () => {

@@ -22,6 +22,7 @@ import {
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PoSupplierInvoiceSection } from "@/components/purchase-orders/PoSupplierInvoiceSection"
+import { PoLifecycleStrip } from "@/components/compras/procurement/ProcurementDashboardTab"
 import { suggestExpenseCategory } from "@/lib/ap/po-invoice-utils"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { loadActorContext } from "@/lib/auth/server-authorization"
@@ -276,6 +277,17 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
       {/* ── Lifecycle strip ─────────────────────────────────────────────────── */}
       <POLifecycleStrip status={order.status ?? "draft"} />
+
+      {showReceiptsCard && (
+        <Card className="rounded-2xl border border-border/60">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+              Ciclo contable post-aprobación
+            </p>
+            <PoLifecycleStrip purchaseOrderId={order.id} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Context band ────────────────────────────────────────────────────── */}
       <POContextBand order={order} workOrder={workOrder} />
