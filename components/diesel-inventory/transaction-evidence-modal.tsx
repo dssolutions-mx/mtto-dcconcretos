@@ -45,9 +45,23 @@ interface TxDetail {
   transaction_date: string
   quantity_liters: number
   cuenta_litros: number | null
+  /** Human-readable asset code (assets.asset_id), not the FK uuid */
   asset_id: string | null
   asset_name: string | null
   exception_asset_name: string | null
+}
+
+type TxDetailRow = Omit<TxDetail, "asset_id" | "asset_name"> & {
+  asset_id: string | null
+  assets: { asset_id: string | null; name: string | null } | null
+}
+
+function normalizeTxDetail(row: TxDetailRow): TxDetail {
+  return {
+    ...row,
+    asset_id: row.assets?.asset_id ?? null,
+    asset_name: row.assets?.name ?? null,
+  }
 }
 
 interface WarehouseMeta {
@@ -128,7 +142,9 @@ export function TransactionEvidenceModal({
         // 1) Load transaction core fields
         const { data: tx, error: txErr } = await supabase
           .from('diesel_transactions')
-          .select('id, transaction_id, warehouse_id, transaction_type, transaction_date, quantity_liters, cuenta_litros, asset_id, asset_name, exception_asset_name')
+          .select(
+            'id, transaction_id, warehouse_id, transaction_type, transaction_date, quantity_liters, cuenta_litros, asset_id, exception_asset_name, assets(asset_id, name)'
+          )
           .eq('id', transactionId)
           .single()
 
@@ -140,13 +156,14 @@ export function TransactionEvidenceModal({
           setVarianceInfo(null)
           return
         }
-        setTxDetail(tx as TxDetail)
+        const txDetail = normalizeTxDetail(tx as TxDetailRow)
+        setTxDetail(txDetail)
 
         // 2) Load warehouse meta (has_cuenta_litros)
         const { data: wh, error: whErr } = await supabase
           .from('diesel_warehouses')
           .select('id, has_cuenta_litros')
-          .eq('id', (tx as TxDetail).warehouse_id)
+          .eq('id', txDetail.warehouse_id)
           .single()
         if (whErr) {
           console.error('Audit: load warehouse error', whErr)
@@ -160,8 +177,8 @@ export function TransactionEvidenceModal({
         const { data: prevTx, error: prevErr } = await supabase
           .from('diesel_transactions')
           .select('id, cuenta_litros, transaction_date')
-          .eq('warehouse_id', (tx as TxDetail).warehouse_id)
-          .lt('transaction_date', (tx as TxDetail).transaction_date)
+          .eq('warehouse_id', txDetail.warehouse_id)
+          .lt('transaction_date', txDetail.transaction_date)
           .not('cuenta_litros', 'is', null)
           .order('transaction_date', { ascending: false })
           .limit(1)
@@ -175,9 +192,9 @@ export function TransactionEvidenceModal({
         setPreviousCuentaLitros(prevCuenta)
 
         // 4) Compute variance for consumption only and when data present
-        if ((tx as TxDetail).transaction_type === 'consumption' && wh?.has_cuenta_litros && prevCuenta != null && (tx as TxDetail).cuenta_litros != null) {
-          const quantity = (tx as TxDetail).quantity_liters
-          const actual = (tx as TxDetail).cuenta_litros as number
+        if (txDetail.transaction_type === 'consumption' && wh?.has_cuenta_litros && prevCuenta != null && txDetail.cuenta_litros != null) {
+          const quantity = txDetail.quantity_liters
+          const actual = txDetail.cuenta_litros
           const { movement, variance, withinTolerance, expectedCuentaLitros } =
             computeCuentaLitrosVariance(prevCuenta, actual, quantity)
           setVarianceInfo({
