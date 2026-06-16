@@ -63,7 +63,7 @@ export type BuildCuentaLitrosGapsOptions = {
 
 export const CUENTA_LITROS_GAP_AUDIT_FROM = "2026-04-01"
 
-const DEFAULT_TOLERANCE_LITERS = 2
+import { CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS } from "@/lib/diesel/cuenta-litros-variance"
 
 /** UTC timestamp → local YYYY-MM-DD (GMT-6), matching warehouse page toLocalYmd */
 function toLocalYmd(utcTimestamp: string): string {
@@ -81,8 +81,17 @@ function isOnOrAfterAuditFrom(transactionDate: string, auditFromYmd: string): bo
   return toLocalYmd(transactionDate) >= auditFromYmd
 }
 
+/** Prefer asset code (CR-29); fall back to external name, then display name. */
+export function dieselTransactionAssetLabel(tx: {
+  asset_id?: string | null
+  exception_asset_name?: string | null
+  asset_name?: string | null
+}): string | null {
+  return tx.asset_id ?? tx.exception_asset_name ?? tx.asset_name ?? null
+}
+
 function assetLabel(tx: GapTransactionInput): string | null {
-  return tx.asset_name ?? tx.asset_id ?? tx.exception_asset_name ?? null
+  return dieselTransactionAssetLabel(tx)
 }
 
 function compareTransactions(a: GapTransactionInput, b: GapTransactionInput): number {
@@ -145,11 +154,12 @@ function classifyGapType(
   return "over_registered"
 }
 
+/** Badge/list label — scoped to the anchor interval, not a single tx quantity. */
 function buildShortLabel(gapType: CuentaLitrosGap["gap_type"], gapLiters: number): string {
   const rounded = Math.round(Math.abs(gapLiters))
-  if (gapType === "within_tolerance") return "Dentro de tolerancia"
-  if (gapType === "unregistered_dispense") return `Salida faltante +${rounded}L`
-  return `Sobre-registrado −${rounded}L`
+  if (gapType === "within_tolerance") return "Intervalo dentro de tolerancia"
+  if (gapType === "unregistered_dispense") return `Intervalo: salida faltante +${rounded}L`
+  return `Intervalo: sobre-registro −${rounded}L`
 }
 
 export function buildGapNarrative(gap: Pick<
@@ -208,7 +218,7 @@ export function buildCuentaLitrosGaps(
 ): CuentaLitrosGap[] {
   if (!options.has_cuenta_litros) return []
 
-  const tolerance = options.tolerance_liters ?? DEFAULT_TOLERANCE_LITERS
+  const tolerance = options.tolerance_liters ?? CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS
   const auditFromYmd = options.audit_from ?? CUENTA_LITROS_GAP_AUDIT_FROM
   const sorted = [...transactions]
     .filter((tx) => isOnOrAfterAuditFrom(tx.transaction_date, auditFromYmd))

@@ -5,6 +5,7 @@ import {
   buildCuentaLitrosGaps,
   buildGapNarrative,
   CUENTA_LITROS_GAP_AUDIT_FROM,
+  dieselTransactionAssetLabel,
   formatTimeWindow,
   getSignificantGaps,
   indexGapsByTransactionId,
@@ -61,7 +62,7 @@ test("buildCuentaLitrosGaps detects unregistered dispense between anchors A and 
   assert.equal(gap.registered_liters, 50)
   assert.equal(gap.gap_liters, 50)
   assert.equal(gap.gap_type, "unregistered_dispense")
-  assert.equal(gap.short_label, "Salida faltante +50L")
+  assert.equal(gap.short_label, "Intervalo: salida faltante +50L")
   assert.deepEqual(gap.transaction_ids_in_interval, ["b"])
   assert.match(gap.narrative, /salida faltante de ~50 L/i)
   assert.match(gap.narrative, /TX-A/)
@@ -310,6 +311,72 @@ test("sumUnregisteredLiters and getSignificantGaps filter actionable gaps", () =
   assert.equal(sumUnregisteredLiters(gaps), 15)
 })
 
+test("Plant 1 June 8 2026: CR-29 before CR-28, cuenta from L200 anchor", () => {
+  const transactions = [
+    tx({
+      id: "dsl-3371",
+      transaction_id: "DSL-003371",
+      quantity_liters: 53,
+      cuenta_litros: 379_693,
+      transaction_date: "2026-06-08T12:37:00.000Z",
+      exception_asset_name: "Camioneta l200 número 7",
+    }),
+    tx({
+      id: "dsl-3373",
+      transaction_id: "DSL-003373",
+      quantity_liters: 301,
+      cuenta_litros: 379_994,
+      transaction_date: "2026-06-08T13:30:00.000Z",
+      asset_id: "CR-29",
+    }),
+    tx({
+      id: "dsl-3372",
+      transaction_id: "DSL-003372",
+      quantity_liters: 290,
+      cuenta_litros: 380_401,
+      transaction_date: "2026-06-08T14:15:00.000Z",
+      asset_id: "CR-28",
+    }),
+    tx({
+      id: "dsl-3378",
+      transaction_id: "DSL-003378",
+      quantity_liters: 620,
+      cuenta_litros: 381_021,
+      transaction_date: "2026-06-08T21:26:00.000Z",
+      exception_asset_name: "Safe",
+    }),
+  ]
+
+  const gaps = buildCuentaLitrosGaps(transactions, {
+    warehouse_id: WAREHOUSE_ID,
+    has_cuenta_litros: true,
+  })
+
+  assert.equal(gaps.length, 3)
+
+  const l200ToCr29 = gaps[0]!
+  assert.equal(l200ToCr29.meter_delta, 301)
+  assert.equal(l200ToCr29.registered_liters, 301)
+  assert.equal(l200ToCr29.gap_liters, 0)
+  assert.equal(l200ToCr29.gap_type, "within_tolerance")
+  assert.equal(l200ToCr29.curr_anchor.transaction_id, "DSL-003373")
+
+  const cr29ToCr28 = gaps[1]!
+  assert.equal(cr29ToCr28.meter_delta, 407)
+  assert.equal(cr29ToCr28.registered_liters, 290)
+  assert.equal(cr29ToCr28.gap_liters, 117)
+  assert.equal(cr29ToCr28.gap_type, "unregistered_dispense")
+  assert.equal(cr29ToCr28.short_label, "Intervalo: salida faltante +117L")
+  assert.equal(cr29ToCr28.curr_anchor.transaction_id, "DSL-003372")
+
+  const cr28ToSafe = gaps[2]!
+  assert.equal(cr28ToSafe.meter_delta, 620)
+  assert.equal(cr28ToSafe.registered_liters, 620)
+  assert.equal(cr28ToSafe.gap_liters, 0)
+  assert.equal(cr28ToSafe.gap_type, "within_tolerance")
+  assert.equal(cr28ToSafe.curr_anchor.transaction_id, "DSL-003378")
+})
+
 test("buildGapNarrative describes over-registration", () => {
   const narrative = buildGapNarrative({
     gap_type: "over_registered",
@@ -336,4 +403,62 @@ test("buildGapNarrative describes over-registration", () => {
   })
 
   assert.match(narrative, /sobre-registro/i)
+})
+
+test("dieselTransactionAssetLabel prefers asset_id over asset_name", () => {
+  assert.equal(
+    dieselTransactionAssetLabel({
+      asset_id: "CR-29",
+      asset_name: "Camión revolvedora 29",
+      exception_asset_name: null,
+    }),
+    "CR-29",
+  )
+  assert.equal(
+    dieselTransactionAssetLabel({
+      asset_id: null,
+      asset_name: "Ignored",
+      exception_asset_name: "Safe",
+    }),
+    "Safe",
+  )
+  assert.equal(
+    dieselTransactionAssetLabel({
+      asset_id: null,
+      asset_name: "Solo nombre",
+      exception_asset_name: null,
+    }),
+    "Solo nombre",
+  )
+})
+
+test("buildCuentaLitrosGaps uses asset_id in anchor asset_label", () => {
+  const transactions = [
+    tx({
+      id: "a",
+      transaction_id: "TX-A",
+      quantity_liters: 100,
+      cuenta_litros: 100,
+      transaction_date: "2026-06-01T08:00:00.000Z",
+      asset_id: "BP-04",
+      asset_name: "Bomba 04",
+    }),
+    tx({
+      id: "b",
+      transaction_id: "TX-B",
+      quantity_liters: 50,
+      cuenta_litros: 200,
+      transaction_date: "2026-06-01T14:15:00.000Z",
+      asset_id: "CR-28",
+      asset_name: "Camión 28",
+    }),
+  ]
+
+  const gaps = buildCuentaLitrosGaps(transactions, {
+    warehouse_id: WAREHOUSE_ID,
+    has_cuenta_litros: true,
+  })
+
+  assert.equal(gaps[0]!.prev_anchor.asset_label, "BP-04")
+  assert.equal(gaps[0]!.curr_anchor.asset_label, "CR-28")
 })

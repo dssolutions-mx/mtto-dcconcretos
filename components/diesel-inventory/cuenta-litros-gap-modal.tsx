@@ -70,7 +70,12 @@ function AnchorCard({
         <div className="font-mono text-xs text-muted-foreground">{anchor.transaction_id}</div>
         <div>{formatDateTime(anchor.transaction_date)}</div>
         {anchor.asset_label && (
-          <div className="text-muted-foreground">Equipo: {anchor.asset_label}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground text-xs">Equipo</span>
+            <Badge variant="outline" className="text-xs font-mono">
+              {anchor.asset_label}
+            </Badge>
+          </div>
         )}
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">{anchor.quantity_liters.toFixed(1)} L registrados</Badge>
@@ -195,6 +200,7 @@ export function CuentaLitrosGapModal({
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
+                  <TableHead>Equipo</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead className="text-right">Litros</TableHead>
@@ -206,6 +212,15 @@ export function CuentaLitrosGapModal({
                 {gap.transactions_in_interval.map((tx) => (
                   <TableRow key={tx.id}>
                     <TableCell className="font-mono text-xs">{tx.transaction_id}</TableCell>
+                    <TableCell className="text-xs">
+                      {tx.asset_label ? (
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {tx.asset_label}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
                     <TableCell className="text-xs whitespace-nowrap">
                       {formatDateTime(tx.transaction_date)}
                     </TableCell>

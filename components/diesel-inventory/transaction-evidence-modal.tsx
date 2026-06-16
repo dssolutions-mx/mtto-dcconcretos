@@ -16,6 +16,7 @@ import {
 } from "@/lib/photos/photo-time-vs-transaction"
 import type { Json } from "@/types/supabase-types"
 import { cn } from "@/lib/utils"
+import { computeCuentaLitrosVariance } from "@/lib/diesel/cuenta-litros-variance"
 
 interface TransactionEvidenceModalProps {
   transactionId: string | null
@@ -38,11 +39,15 @@ interface EvidenceRow {
 
 interface TxDetail {
   id: string
+  transaction_id: string
   warehouse_id: string
   transaction_type: string
   transaction_date: string
   quantity_liters: number
   cuenta_litros: number | null
+  asset_id: string | null
+  asset_name: string | null
+  exception_asset_name: string | null
 }
 
 interface WarehouseMeta {
@@ -123,7 +128,7 @@ export function TransactionEvidenceModal({
         // 1) Load transaction core fields
         const { data: tx, error: txErr } = await supabase
           .from('diesel_transactions')
-          .select('id, warehouse_id, transaction_type, transaction_date, quantity_liters, cuenta_litros')
+          .select('id, transaction_id, warehouse_id, transaction_type, transaction_date, quantity_liters, cuenta_litros, asset_id, asset_name, exception_asset_name')
           .eq('id', transactionId)
           .single()
 
@@ -173,11 +178,14 @@ export function TransactionEvidenceModal({
         if ((tx as TxDetail).transaction_type === 'consumption' && wh?.has_cuenta_litros && prevCuenta != null && (tx as TxDetail).cuenta_litros != null) {
           const quantity = (tx as TxDetail).quantity_liters
           const actual = (tx as TxDetail).cuenta_litros as number
-          const expected = prevCuenta + quantity
-          const movement = actual - prevCuenta
-          const variance = Math.abs(movement - quantity)
-          const valid = variance <= 2
-          setVarianceInfo({ expected, movement, variance, valid })
+          const { movement, variance, withinTolerance, expectedCuentaLitros } =
+            computeCuentaLitrosVariance(prevCuenta, actual, quantity)
+          setVarianceInfo({
+            expected: expectedCuentaLitros,
+            movement,
+            variance,
+            valid: withinTolerance,
+          })
         } else {
           setVarianceInfo(null)
         }
@@ -200,10 +208,41 @@ export function TransactionEvidenceModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-[96vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{headerTitle}</DialogTitle>
-          {subheader && (
-            <DialogDescription>
-              {subheader}
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {headerTitle}
+            {txDetail?.transaction_id && (
+              <Badge variant="outline" className="font-mono text-sm font-semibold">
+                {txDetail.transaction_id}
+              </Badge>
+            )}
+          </DialogTitle>
+          {(subheader ||
+            (txDetail &&
+              (txDetail.asset_id || txDetail.exception_asset_name || txDetail.asset_name))) && (
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                {subheader && <div>{subheader}</div>}
+                {txDetail &&
+                  (txDetail.asset_id || txDetail.exception_asset_name || txDetail.asset_name) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {txDetail.asset_id && (
+                      <Badge variant="outline" className="text-xs font-mono">
+                        {txDetail.asset_id}
+                      </Badge>
+                    )}
+                    {txDetail.asset_name && (
+                      <Badge variant="secondary" className="text-xs">
+                        {txDetail.asset_name}
+                      </Badge>
+                    )}
+                    {txDetail.exception_asset_name && (
+                      <Badge variant="outline" className="text-xs bg-orange-50">
+                        Externo: {txDetail.exception_asset_name}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
             </DialogDescription>
           )}
         </DialogHeader>

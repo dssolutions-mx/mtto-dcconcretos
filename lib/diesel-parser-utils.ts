@@ -10,6 +10,7 @@ import {
   MovementCategory, 
   MeterReading 
 } from '@/types/diesel'
+import { CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS } from '@/lib/diesel/cuenta-litros-variance'
 
 // Parse DD/MM/YY to Date (Latin American format)
 export function parseSmartsheetDate(dateStr: string): Date | null {
@@ -200,7 +201,7 @@ export function buildEnhancedRow(
     adjustment_reason: classification.adjustment_reason,
     
     // Validation
-    has_validation_discrepancy: validationDiscrepancy > 1,
+    has_validation_discrepancy: validationDiscrepancy > CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS,
     validation_discrepancy_liters: validationDiscrepancy,
     
     // Asset resolution (filled later)

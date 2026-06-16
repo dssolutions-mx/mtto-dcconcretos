@@ -1474,6 +1474,9 @@ export default function WarehouseDetailPage() {
                       <span className="font-semibold">
                         {getTransactionLabel(transaction)}
                       </span>
+                      <Badge variant="outline" className="text-xs font-mono">
+                        {transaction.transaction_id}
+                      </Badge>
                       <Badge variant="outline" className="text-xs">
                         {transaction.quantity_liters.toFixed(1)}L
                       </Badge>
@@ -1533,8 +1536,12 @@ export default function WarehouseDetailPage() {
                               {txGap.short_label}
                             </Badge>
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-xs text-xs">
-                            {txGap.narrative}
+                          <TooltipContent className="max-w-xs text-xs space-y-1">
+                            <p className="font-medium">
+                              Hueco entre {txGap.prev_anchor.transaction_id} y{" "}
+                              {txGap.curr_anchor.transaction_id}
+                            </p>
+                            <p>{txGap.narrative}</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -1552,8 +1559,12 @@ export default function WarehouseDetailPage() {
                               {txGap.short_label}
                             </Badge>
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-xs text-xs">
-                            {txGap.narrative}
+                          <TooltipContent className="max-w-xs text-xs space-y-1">
+                            <p className="font-medium">
+                              Hueco entre {txGap.prev_anchor.transaction_id} y{" "}
+                              {txGap.curr_anchor.transaction_id}
+                            </p>
+                            <p>{txGap.narrative}</p>
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -1605,7 +1616,7 @@ export default function WarehouseDetailPage() {
                           const created = transaction.created_at ? new Date(transaction.created_at).getTime() : undefined
                           const refTime = created ?? Date.now()
                           const futureMin = Math.floor((registered - refTime) / 60000)
-                          if (futureMin > 0) {
+                          if (futureMin > 120) {
                             return (
                               <Badge title={`Fuera de tiempo por ${futureMin} min`} variant="outline" className="text-[10px] bg-blue-50 text-blue-800 border-blue-300">
                                 Fuera de tiempo {futureMin}m

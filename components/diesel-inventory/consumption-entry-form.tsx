@@ -42,6 +42,11 @@ import {
 import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
 import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
+import {
+  computeCuentaLitrosVariance,
+  CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS,
+  shouldRequireValidationForCuentaLitrosVariance,
+} from "@/lib/diesel/cuenta-litros-variance"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -437,18 +442,14 @@ export function ConsumptionEntryForm({
       return
     }
 
-    // Calculate movement
-    const movement = currentCuenta - previousCuentaLitros
-    const variance = Math.abs(movement - quantity)
+    const { variance, withinTolerance } = computeCuentaLitrosVariance(
+      previousCuentaLitros,
+      currentCuenta,
+      quantity,
+    )
 
     setCuentaLitrosVariance(variance)
-
-    // Tolerance: ±2 liters
-    if (variance <= 2) {
-      setCuentaLitrosValid(true)
-    } else {
-      setCuentaLitrosValid(false)
-    }
+    setCuentaLitrosValid(withinTolerance)
   }, [quantityLiters, cuentaLitros, previousCuentaLitros])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -543,8 +544,16 @@ export function ConsumptionEntryForm({
         operator_id: user.id,
         transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
         notes: notes || null,
-        requires_validation: previousCuentaLitros !== null && cuentaLitrosValid === false,
-        validation_notes: previousCuentaLitros !== null && cuentaLitrosValid === false
+        requires_validation: shouldRequireValidationForCuentaLitrosVariance(
+          previousCuentaLitros,
+          cuentaLitros ? parseFloat(cuentaLitros) : null,
+          parseFloat(quantityLiters),
+        ),
+        validation_notes: shouldRequireValidationForCuentaLitrosVariance(
+          previousCuentaLitros,
+          cuentaLitros ? parseFloat(cuentaLitros) : null,
+          parseFloat(quantityLiters),
+        )
           ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
           : null,
         created_by: user.id,
@@ -665,7 +674,12 @@ export function ConsumptionEntryForm({
 
     // Warning for cuenta litros variance (only if warehouse has meter)
     // Allow submission but warn if variance is high
-    if (previousCuentaLitros !== null && cuentaLitrosValid === false && cuentaLitrosVariance && cuentaLitrosVariance > 2) {
+    if (
+      previousCuentaLitros !== null &&
+      cuentaLitrosValid === false &&
+      cuentaLitrosVariance != null &&
+      cuentaLitrosVariance > CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS
+    ) {
       const proceed = confirm(
         `⚠️ La diferencia entre litros y cuenta litros es de ${cuentaLitrosVariance.toFixed(1)}L.\n\n` +
         `Cantidad: ${quantityLiters}L\n` +
@@ -738,8 +752,16 @@ export function ConsumptionEntryForm({
         operator_id: user.id,
         transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
         notes: notes || null,
-        requires_validation: previousCuentaLitros !== null && cuentaLitrosValid === false,
-        validation_notes: previousCuentaLitros !== null && cuentaLitrosValid === false 
+        requires_validation: shouldRequireValidationForCuentaLitrosVariance(
+          previousCuentaLitros,
+          cuentaLitros ? parseFloat(cuentaLitros) : null,
+          parseFloat(quantityLiters),
+        ),
+        validation_notes: shouldRequireValidationForCuentaLitrosVariance(
+          previousCuentaLitros,
+          cuentaLitros ? parseFloat(cuentaLitros) : null,
+          parseFloat(quantityLiters),
+        )
           ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
           : null,
         created_by: user.id,
