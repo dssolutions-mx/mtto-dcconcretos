@@ -370,8 +370,10 @@ export function CostAnalysisDashboard() {
             <Card>
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <div>
-                  <CardTitle className="text-base">Nómina · explorador por departamento</CardTitle>
-                  <CardDescription className="text-xs">Efectivo vs no efectivo en el desglose.</CardDescription>
+                  <CardTitle className="text-base">Nómina · análisis por concepto</CardTitle>
+                  <CardDescription className="text-xs">
+                    Bonos, tiempo extra, apoyos y nómina formal con serie temporal y exportación.
+                  </CardDescription>
                 </div>
                 <DrillButton label="Efectivo / no efectivo" onClick={() => handleDrilldown('nomina')} />
               </CardHeader>
