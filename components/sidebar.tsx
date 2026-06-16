@@ -41,6 +41,10 @@ import {
   IdCard,
   Target,
   TrendingUp,
+  CalendarDays,
+  Layers,
+  CircleDot,
+  GitBranch,
 } from "lucide-react"
 import { reportsNavItemsForProfile } from '@/lib/reports/reports-catalog'
 import { UserNav } from "@/components/user-nav"
@@ -54,6 +58,21 @@ import {
   canAccessRHReportingNav,
   canManageUserAuthorizationClient,
 } from "@/lib/auth/client-authorization"
+
+/** Main OT list — excludes planning sub-routes with their own nav items. */
+function isOrdenesHubActive(pathname: string) {
+  if (pathname === "/ordenes") return true
+  if (!pathname.startsWith("/ordenes/")) return false
+  const excludedPrefixes = ["/ordenes/planificacion", "/ordenes/campanas", "/ordenes/agenda"]
+  return !excludedPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+}
+
+/** Compras hub — excludes comprobantes and cuentas-por-pagar siblings. */
+function isComprasHubActive(pathname: string) {
+  if (pathname === "/compras") return true
+  if (!pathname.startsWith("/compras/")) return false
+  return !pathname.startsWith("/compras/comprobantes") && !pathname.startsWith("/compras/cuentas-por-pagar")
+}
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   onLinkClick?: () => void
@@ -351,7 +370,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.shouldShowInNavigation('purchases') && (
                       <Button
-                        variant={isPathActive("/compras") ? "secondary" : "ghost"}
+                        variant={isComprasHubActive(pathname) ? "secondary" : "ghost"}
                         className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
@@ -558,7 +577,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     )}
                     {ui.shouldShowInNavigation('assets') && (
                       <Button
-                        variant={isPathActive("/activos") ? "secondary" : "ghost"}
+                        variant={isPathActive("/activos") && !isPathActive("/activos/llantas") ? "secondary" : "ghost"}
                         className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
@@ -567,6 +586,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         <Link href="/activos">
                           <Package className="mr-2 h-4 w-4" />
                           Activos
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('assets') && (
+                      <Button
+                        variant={isPathActive("/activos/llantas") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/activos/llantas">
+                          <CircleDot className="mr-2 h-4 w-4" />
+                          Llantas
                         </Link>
                       </Button>
                     )}
@@ -614,7 +646,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                     )}
                     {ui.shouldShowInNavigation('assets') && (
                       <Button
-                        variant={isPathActive("/activos") ? "secondary" : "ghost"}
+                        variant={isPathActive("/activos") && !isPathActive("/activos/llantas") ? "secondary" : "ghost"}
                         className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
@@ -623,6 +655,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         <Link href="/activos">
                           <Package className="mr-2 h-4 w-4" />
                           Activos
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('assets') && (
+                      <Button
+                        variant={isPathActive("/activos/llantas") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/activos/llantas">
+                          <CircleDot className="mr-2 h-4 w-4" />
+                          Llantas
                         </Link>
                       </Button>
                     )}
@@ -653,7 +698,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     <Button
-                      variant={isPathActive("/ordenes") ? "secondary" : "ghost"}
+                      variant={isOrdenesHubActive(pathname) ? "secondary" : "ghost"}
                       className={cn("w-full justify-start pl-8", navItemClasses)}
                       asChild
                       onClick={handleLinkClick}
@@ -665,8 +710,56 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                       </Link>
                     </Button>
                     {ui.shouldShowInNavigation('maintenance') && (
+                      <>
+                        <Button
+                          variant={isPathActive("/ordenes/agenda") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/ordenes/agenda">
+                            <CalendarDays className="mr-2 h-4 w-4" />
+                            Agenda semanal
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={pathname === "/ordenes/agenda/hoja" ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/ordenes/agenda/hoja">
+                            <FileText className="mr-2 h-4 w-4" />
+                            Orden del día
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={isPathActive("/ordenes/planificacion") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/ordenes/planificacion">
+                            <Target className="mr-2 h-4 w-4" />
+                            Planificación
+                          </Link>
+                        </Button>
+                        <Button
+                          variant={isPathActive("/ordenes/campanas") ? "secondary" : "ghost"}
+                          className={cn("w-full justify-start pl-8", navItemClasses)}
+                          asChild
+                          onClick={handleLinkClick}
+                        >
+                          <Link href="/ordenes/campanas">
+                            <Layers className="mr-2 h-4 w-4" />
+                            Campañas
+                          </Link>
+                        </Button>
+                      </>
+                    )}
+                    {ui.shouldShowInNavigation('maintenance') && (
                       <Button
-                        variant={isPathActive("/incidentes") ? "secondary" : "ghost"}
+                        variant={isPathActive("/incidentes") && !isPathActive("/incidentes/pipeline") ? "secondary" : "ghost"}
                         className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
@@ -674,6 +767,19 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                         <Link href="/incidentes">
                           <AlertTriangle className="mr-2 h-4 w-4" />
                           Incidentes
+                        </Link>
+                      </Button>
+                    )}
+                    {ui.shouldShowInNavigation('maintenance') && (
+                      <Button
+                        variant={isPathActive("/incidentes/pipeline") ? "secondary" : "ghost"}
+                        className={cn("w-full justify-start pl-8", navItemClasses)}
+                        asChild
+                        onClick={handleLinkClick}
+                      >
+                        <Link href="/incidentes/pipeline">
+                          <GitBranch className="mr-2 h-4 w-4" />
+                          Pipeline de incidencias
                         </Link>
                       </Button>
                     )}
@@ -759,7 +865,7 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                   <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
                     {ui.shouldShowInNavigation('purchases') && (
                       <Button
-                        variant={isPathActive("/compras") ? "secondary" : "ghost"}
+                        variant={isComprasHubActive(pathname) ? "secondary" : "ghost"}
                         className={cn("w-full justify-start pl-8", navItemClasses)}
                         asChild
                         onClick={handleLinkClick}
@@ -1204,36 +1310,54 @@ function buildNavigationSections(
       equipmentItems.push({ href: "/modelos", icon: Settings, label: "Modelos", active: isPathActive("/modelos") })
     }
     if (ui.shouldShowInNavigation('assets')) {
-      equipmentItems.push({ href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") })
+      equipmentItems.push({ href: "/activos", icon: Package, label: "Activos", active: isPathActive("/activos") && !isPathActive("/activos/llantas") })
+      equipmentItems.push({ href: "/activos/llantas", icon: CircleDot, label: "Llantas", active: isPathActive("/activos/llantas") })
     }
     if (equipmentItems.length > 0) {
       sections.push({
         id: "equipment",
         icon: Wrench,
         label: "Equipos",
-        active: isSectionActive(["/modelos", "/activos"]),
+        active: isSectionActive(["/modelos", "/activos", "/activos/llantas"]),
         items: equipmentItems,
       })
     }
   }
 
-  // Trabajos - work orders + incidentes (Incidentes relacionado con Órdenes de trabajo)
+  // Trabajos - work orders + incidentes + agenda planning
   if (ui.shouldShowInNavigation('work_orders') || ui.shouldShowInNavigation('maintenance')) {
     const trabajosItems: NavItem[] = []
     if (ui.shouldShowInNavigation('work_orders')) {
-      trabajosItems.push(
-        { href: "/ordenes", icon: Clock, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") }
-      )
+      trabajosItems.push({
+        href: "/ordenes",
+        icon: Clock,
+        label: "Órdenes de Trabajo",
+        active: isOrdenesHubActive(pathname),
+      })
     }
     if (ui.shouldShowInNavigation('maintenance')) {
-      trabajosItems.push({ href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") })
+      trabajosItems.push(
+        { href: "/ordenes/agenda", icon: CalendarDays, label: "Agenda semanal", active: isPathActive("/ordenes/agenda") },
+        { href: "/ordenes/agenda/hoja", icon: FileText, label: "Orden del día", active: pathname === "/ordenes/agenda/hoja" },
+        { href: "/ordenes/planificacion", icon: Target, label: "Planificación", active: isPathActive("/ordenes/planificacion") },
+        { href: "/ordenes/campanas", icon: Layers, label: "Campañas", active: isPathActive("/ordenes/campanas") },
+        { href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") && !isPathActive("/incidentes/pipeline") },
+        { href: "/incidentes/pipeline", icon: GitBranch, label: "Pipeline de incidencias", active: isPathActive("/incidentes/pipeline") },
+      )
     }
     if (trabajosItems.length > 0) {
       sections.push({
         id: "trabajos",
         icon: Tool,
         label: "Trabajos",
-        active: isSectionActive(["/ordenes", "/incidentes"]),
+        active: isSectionActive([
+          "/ordenes",
+          "/ordenes/planificacion",
+          "/ordenes/campanas",
+          "/ordenes/agenda",
+          "/incidentes",
+          "/incidentes/pipeline",
+        ]),
         items: trabajosItems,
       })
     }
@@ -1263,7 +1387,12 @@ function buildNavigationSections(
   if (ui.shouldShowInNavigation('purchases') || ui.shouldShowInNavigation('inventory')) {
     const procurementItems: NavItem[] = []
     if (ui.shouldShowInNavigation('purchases')) {
-      procurementItems.push({ href: "/compras", icon: CreditCard, label: "Órdenes de Compra", active: isPathActive("/compras") })
+      procurementItems.push({
+        href: "/compras",
+        icon: CreditCard,
+        label: "Órdenes de Compra",
+        active: isComprasHubActive(pathname),
+      })
     }
     if (ui.shouldShowInNavigation('inventory')) {
       procurementItems.push({ href: "/inventario", icon: Boxes, label: "Inventario", active: isPathActive("/inventario") })

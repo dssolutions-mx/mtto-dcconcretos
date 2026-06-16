@@ -165,10 +165,10 @@ export function ComprasMobileInfoDrawer({
                     )}
                   </div>
                 </div>
-                <Link href="/compras/cuentas-por-pagar" onClick={() => setOpen(false)}>
+                <Link href="/compras" onClick={() => setOpen(false)}>
                   <Button variant="outline" size="sm" className="shrink-0 min-h-[44px] text-sky-700 border-sky-200 hover:bg-sky-50 cursor-pointer">
                     <ExternalLink className="h-4 w-4 mr-1" />
-                    Ver Detalle
+                    Ver en OC
                   </Button>
                 </Link>
               </div>
@@ -195,38 +195,17 @@ export function ComprasMobileInfoDrawer({
 
           {/* Secondary actions */}
           <div className="flex flex-col gap-2 pt-2">
-            {profile && canCreateOrders && (
-              <Link href="/compras/comprobantes" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 cursor-pointer">
-                  <Receipt className="h-4 w-4" />
-                  Ver Comprobantes
-                </Button>
-              </Link>
-            )}
             {isAdmin && (
               <Link href="/compras/procurement" onClick={() => setOpen(false)}>
                 <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100 cursor-pointer">
                   <FileText className="h-4 w-4" />
-                  Compras post-aprobación
+                  Post-aprobación (panel OC)
                 </Button>
               </Link>
             )}
-            {isAdmin && (
-              <Link href="/compras/facturas" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 cursor-pointer">
-                  <FileText className="h-4 w-4" />
-                  Facturas OC
-                </Button>
-              </Link>
-            )}
-            {isAdmin && (
-              <Link href="/compras/cuentas-por-pagar" onClick={() => setOpen(false)}>
-                <Button variant="outline" className="w-full min-h-[44px] justify-start gap-2 bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 cursor-pointer">
-                  <DollarSign className="h-4 w-4" />
-                  Cuentas por Pagar
-                </Button>
-              </Link>
-            )}
+            <p className="text-xs text-muted-foreground px-1">
+              Comprobantes, CFDI y pagos se gestionan desde el detalle de cada orden de compra.
+            </p>
           </div>
         </div>
       </SheetContent>

@@ -5,6 +5,9 @@
 
 import { createClient } from "@/lib/supabase-server"
 import { NextResponse } from "next/server"
+import { AGENDA_ACTIVE_STATUSES } from "@/lib/agenda/agenda-utils"
+
+const SCHEDULABLE_STATUSES = new Set<string>(AGENDA_ACTIVE_STATUSES)
 
 export async function PATCH(
   request: Request,
@@ -23,14 +26,21 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { planned_date, assigned_to } = body as {
+    const { planned_date, assigned_to, status, priority } = body as {
       planned_date?: string | null
       assigned_to?: string | null
+      status?: string | null
+      priority?: string | null
     }
 
-    if (planned_date === undefined && assigned_to === undefined) {
+    if (
+      planned_date === undefined &&
+      assigned_to === undefined &&
+      status === undefined &&
+      priority === undefined
+    ) {
       return NextResponse.json(
-        { error: "Se requiere planned_date y/o assigned_to" },
+        { error: "Se requiere al menos un campo para actualizar" },
         { status: 400 },
       )
     }
@@ -38,6 +48,7 @@ export async function PATCH(
     const updatePayload: Record<string, unknown> = {}
     if (planned_date !== undefined) updatePayload.planned_date = planned_date
     if (assigned_to !== undefined) updatePayload.assigned_to = assigned_to
+    if (priority !== undefined) updatePayload.priority = priority
 
     const { data: existing, error: fetchError } = await supabase
       .from("work_orders")
@@ -52,7 +63,12 @@ export async function PATCH(
     const nextPlanned = planned_date !== undefined ? planned_date : existing.planned_date
     const nextAssigned = assigned_to !== undefined ? assigned_to : existing.assigned_to
 
-    if (nextPlanned && nextAssigned && existing.status === "Pendiente") {
+    if (status !== undefined && status !== null) {
+      if (!SCHEDULABLE_STATUSES.has(status)) {
+        return NextResponse.json({ error: "Estado no permitido para programación" }, { status: 400 })
+      }
+      updatePayload.status = status
+    } else if (nextPlanned && nextAssigned && existing.status === "Pendiente") {
       updatePayload.status = "Programada"
     }
 

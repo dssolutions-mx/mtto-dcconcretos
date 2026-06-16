@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { AlertTriangle, Calendar, CheckCircle, CreditCard, DollarSign, Receipt, Clock, Building2, Store, Wrench, Filter, RefreshCw } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import Link from "next/link"
 import { AccountsPayableItem, AccountsPayableResponse, PaymentStatus, PaymentMethod, MarkAsPaidRequest } from "@/types/purchase-orders"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
@@ -193,6 +195,8 @@ function MarkAsPaidDialog({ item, onPaid }: MarkAsPaidDialogProps) {
 }
 
 export function AccountsPayableView() {
+  const searchParams = useSearchParams()
+  const poFilter = searchParams.get("po")
   const [data, setData] = useState<AccountsPayableResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState<string>('all')
@@ -265,8 +269,22 @@ export function AccountsPayableView() {
     )
   }
 
+  const displayItems = poFilter
+    ? data.items.filter((item) => item.id === poFilter)
+    : data.items
+
   return (
     <div className="space-y-6">
+      {poFilter && (
+        <Card className="border-sky-200 bg-sky-50/50">
+          <CardContent className="p-4 text-sm text-sky-900">
+            Mostrando pagos de una orden de compra específica.{" "}
+            <Link href="/compras/cuentas-por-pagar" className="underline font-medium">
+              Ver todas las CxP
+            </Link>
+          </CardContent>
+        </Card>
+      )}
       {/* Header with Refresh Button */}
       <div className="flex items-center justify-end">
         <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
@@ -348,7 +366,7 @@ export function AccountsPayableView() {
         </TabsList>
 
         <TabsContent value={activeFilter} className="space-y-4">
-          {data.items.length === 0 ? (
+          {displayItems.length === 0 ? (
             <Card>
               <CardContent className="p-6">
                 <p className="text-center text-muted-foreground">
@@ -358,7 +376,7 @@ export function AccountsPayableView() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {data.items.map((item) => (
+              {displayItems.map((item) => (
                 <Card key={item.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">

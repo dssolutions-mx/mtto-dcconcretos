@@ -247,6 +247,10 @@ export enum WorkOrderStatus {
   Pending = 'Pendiente',
   Programmed = 'Programada',
   WaitingParts = 'Esperando repuestos',
+  /** Legacy DB value used by mechanic quick-start flow */
+  InExecution = 'En ejecución',
+  /** Legacy DB value; prefer InExecution for new writes */
+  InProgressLegacy = 'En Progreso',
   Completed = 'Completada'
 }
 

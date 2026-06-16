@@ -45,6 +45,12 @@ const TYPE_OPTIONS = [
   { id: "corrective", label: "Correctivo" },
 ] as const
 
+const SCHEDULING_OPTIONS = [
+  { id: "all", label: "Toda programación" },
+  { id: "scheduled", label: "Con fecha programada" },
+  { id: "unscheduled", label: "Sin programar" },
+] as const
+
 const SORT_OPTIONS: { id: WorkOrderSortBy; label: string }[] = [
   { id: "default", label: "Por creación" },
   { id: "priority", label: "Por prioridad" },
@@ -323,6 +329,28 @@ function MobileFiltersContent({
           </SelectTrigger>
           <SelectContent>
             {ORIGIN_OPTIONS.map((o) => (
+              <SelectItem key={o.id} value={o.id}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label className="text-sm font-medium text-slate-700">Programación</Label>
+        <Select
+          value={filters.schedulingFilter}
+          onValueChange={(v) =>
+            onFiltersChange({
+              schedulingFilter: v as WorkOrderFilters["schedulingFilter"],
+            })
+          }
+        >
+          <SelectTrigger className="mt-1">
+            <SelectValue placeholder="Toda programación" />
+          </SelectTrigger>
+          <SelectContent>
+            {SCHEDULING_OPTIONS.map((o) => (
               <SelectItem key={o.id} value={o.id}>
                 {o.label}
               </SelectItem>

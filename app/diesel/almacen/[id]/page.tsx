@@ -704,11 +704,6 @@ export default function WarehouseDetailPage() {
   }
 
   const handleOpenEvidence = (transaction: Transaction) => {
-    const gap = gapsByTransactionId.get(transaction.id)
-    if (gap && warehouse?.has_cuenta_litros) {
-      handleOpenGap(gap)
-      return
-    }
     setEvidenceTransaction(transaction)
     setIsEvidenceModalOpen(true)
   }
@@ -1529,7 +1524,7 @@ export default function WarehouseDetailPage() {
                           <TooltipTrigger asChild>
                             <Badge
                               variant="destructive"
-                              className="text-xs"
+                              className="text-xs cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleOpenGap(txGap)
@@ -1548,7 +1543,7 @@ export default function WarehouseDetailPage() {
                           <TooltipTrigger asChild>
                             <Badge
                               variant="secondary"
-                              className="text-xs"
+                              className="text-xs cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleOpenGap(txGap)

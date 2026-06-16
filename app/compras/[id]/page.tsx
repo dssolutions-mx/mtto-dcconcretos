@@ -23,6 +23,7 @@ import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
 import { PoSupplierInvoiceSection } from "@/components/purchase-orders/PoSupplierInvoiceSection"
 import { PoLifecycleStrip } from "@/components/compras/procurement/ProcurementDashboardTab"
+import { PoProcurementNavCard } from "@/components/compras/procurement/PoProcurementNavCard"
 import { suggestExpenseCategory } from "@/lib/ap/po-invoice-utils"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { loadActorContext } from "@/lib/auth/server-authorization"
@@ -507,17 +508,21 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
           {/* Receipts / Comprobantes card */}
           {showReceiptsCard && (
-            <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+            <div id="po-comprobantes" className="scroll-mt-24">
+              <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+            </div>
           )}
 
           {/* Fiscal supplier invoice */}
           {showReceiptsCard && (
-            <PoSupplierInvoiceSection
+            <div id="po-factura-cfdi" className="scroll-mt-24">
+              <PoSupplierInvoiceSection
               purchaseOrderId={order.id}
               canRegister={canRegisterInvoice}
               defaultExpenseCategory={defaultExpenseCategory}
               poPreTaxAmount={Number(order.actual_amount) > 0 ? Number(order.actual_amount) : Number(order.approval_amount) > 0 ? Number(order.approval_amount) : Number(order.total_amount ?? 0)}
             />
+            </div>
           )}
         </div>
 
@@ -538,6 +543,12 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
             /* Legacy PO fallback */
             <LegacyActionCard order={order} />
           )}
+
+          <PoProcurementNavCard
+            purchaseOrderId={order.id}
+            orderIdDisplay={order.order_id}
+            showPostApproval={!!showReceiptsCard}
+          />
 
           {/* Work order relationship */}
           <Card className="rounded-2xl border border-border/60">
