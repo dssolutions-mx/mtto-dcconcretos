@@ -309,6 +309,17 @@ function ManttoPanel({
 function NominaPanel({ month, data }: { month: string; data: CostAnalysisResponse }) {
   const split = data.nominaCashSplit?.[month] || { cash: 0, nonCash: 0 }
   const total = split.cash + split.nonCash
+  const concepts = (data.byNominaConcept || [])
+    .map(c => ({
+      key: c.conceptId,
+      label: c.conceptLabel,
+      value: formatCurrency(c.monthlyTotals[month] || 0),
+      pct: c.pctOfNomina[month] || 0,
+      sortAmount: c.monthlyTotals[month] || 0,
+    }))
+    .filter(c => c.sortAmount > 0)
+    .sort((a, b) => b.sortAmount - a.sortAmount)
+
   const depts = data.byDepartment
     .filter(d => d.type === 'nomina')
     .map(d => ({
@@ -337,6 +348,15 @@ function NominaPanel({ month, data }: { month: string; data: CostAnalysisRespons
           )}
         </div>
       </div>
+      <RankedList
+        title="Por concepto (bonos, tiempo extra, apoyos…)"
+        rows={concepts.map(({ key, label, value, pct }) => ({
+          key,
+          label: `${label} (${formatPercent(pct, 0)})`,
+          value,
+        }))}
+        empty="Sin nómina en este mes."
+      />
       <RankedList title="Por departamento" rows={depts} empty="Sin nómina en este mes." />
       <Link
         href={`/reportes/gerencial/manual-costs?month=${month}`}
