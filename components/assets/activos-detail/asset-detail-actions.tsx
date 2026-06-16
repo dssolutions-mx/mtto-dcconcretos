@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import {
   AlertTriangle,
+  CircleDot,
   Edit,
   FileText,
   Wrench,
@@ -91,6 +92,19 @@ export function AssetDetailActions({
           Reporte Producción
         </Link>
       </Button>
+      {ui.shouldShowInNavigation("assets") && (
+        <Button
+          size="sm"
+          variant="outline"
+          asChild
+          className="w-full sm:w-auto justify-center min-h-[44px] cursor-pointer transition-colors duration-200"
+        >
+          <Link href={`/activos/${assetId}/llantas`}>
+            <CircleDot className="h-4 w-4 mr-2" />
+            Llantas
+          </Link>
+        </Button>
+      )}
       {ui.canShowEditButton("assets") && (
         <Button
           size="sm"
