@@ -7,7 +7,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Loader2 } from "lucide-react"
+import { Plus, Loader2, GitBranch } from "lucide-react"
 import Link from "next/link"
 import { IncidentsOTLookup } from "@/components/incidents/incidents-ot-lookup"
 import { IncidentSnapshotPrintDocument } from "@/components/incidents/incident-snapshot-print-document"
@@ -253,13 +253,21 @@ function IncidentsPageContent() {
         heading="Incidentes"
         text="Vista de incidentes activos agrupados por activo"
       >
-        <Button asChild className="cursor-pointer">
-          <Link href="/activos">
-            <Plus className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Reportar Incidente</span>
-            <span className="sm:hidden">Nuevo</span>
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" className="cursor-pointer">
+            <Link href="/incidentes/pipeline">
+              <GitBranch className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Pipeline</span>
+            </Link>
+          </Button>
+          <Button asChild className="cursor-pointer">
+            <Link href="/activos">
+              <Plus className="mr-2 h-4 w-4" />
+              <span className="hidden sm:inline">Reportar Incidente</span>
+              <span className="sm:hidden">Nuevo</span>
+            </Link>
+          </Button>
+        </div>
       </DashboardHeader>
 
       {error && (
