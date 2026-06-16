@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { Loader2 } from "lucide-react"
+import { AlertTriangle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,21 +25,29 @@ import {
 import type { PoInvoiceBalance, PoInvoicePayment } from "@/types/po-invoices"
 import {
   PO_EXPENSE_CATEGORY_LABELS,
-  PO_INVOICE_STATUS_LABELS,
   PO_PAYMENT_METHOD_LABELS,
 } from "@/types/po-invoices"
 import { formatMxCurrency } from "@/lib/ap/po-invoice-utils"
+import { buildInvoiceAmountContext } from "@/lib/ap/po-amounts"
+import { PoAmountBreakdown } from "@/components/ap/PoAmountBreakdown"
 import { toast } from "sonner"
 
 interface RecordPoPaymentModalProps {
   invoice: PoInvoiceBalance
+  poPreTax?: number
   open: boolean
   onClose: () => void
   onSaved: () => void
 }
 
+type ValidationWarning = {
+  type: string
+  message: string
+}
+
 export function RecordPoPaymentModal({
   invoice,
+  poPreTax = 0,
   open,
   onClose,
   onSaved,
@@ -52,27 +60,49 @@ export function RecordPoPaymentModal({
   const [submitting, setSubmitting] = useState(false)
   const [payments, setPayments] = useState<PoInvoicePayment[]>([])
   const [loadingPayments, setLoadingPayments] = useState(true)
+  const [warnings, setWarnings] = useState<ValidationWarning[]>([])
+  const [loadingValidation, setLoadingValidation] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setAmount(String(invoice.balance))
     void (async () => {
       setLoadingPayments(true)
+      setLoadingValidation(true)
       try {
-        const res = await fetch(`/api/ap/payments?invoice_id=${invoice.invoice_id}`)
-        const json = await res.json()
-        if (json.success) setPayments(json.payments ?? [])
+        const [payRes, valRes] = await Promise.all([
+          fetch(`/api/ap/payments?invoice_id=${invoice.invoice_id}`),
+          fetch(`/api/ap/invoices/${invoice.invoice_id}/validate`),
+        ])
+        const payJson = await payRes.json()
+        const valJson = await valRes.json()
+        if (payJson.success) setPayments(payJson.payments ?? [])
+        if (valJson.success) setWarnings(valJson.warnings ?? [])
       } finally {
         setLoadingPayments(false)
+        setLoadingValidation(false)
       }
     })()
   }, [open, invoice.invoice_id, invoice.balance])
 
-  const paidToDate = payments.reduce((sum, p) => sum + Number(p.amount), 0)
+  const amountContext = buildInvoiceAmountContext({
+    po_pre_tax: poPreTax,
+    subtotal: Number(invoice.subtotal),
+    discount_amount: Number(invoice.discount_amount ?? 0),
+    vat_rate: Number(invoice.vat_rate),
+    balance: Number(invoice.balance),
+  })
 
   const handleSubmit = async () => {
     if (!paymentDate || !amount) {
       toast.error("Fecha y monto son requeridos")
+      return
+    }
+    const payAmount = Number(amount)
+    if (Math.abs(payAmount - Number(invoice.balance)) > 0.01 && payAmount > Number(invoice.total)) {
+      toast.error(
+        `El monto de pago no debe exceder el neto a pagar (${formatMxCurrency(invoice.total)})`,
+      )
       return
     }
     setSubmitting(true)
@@ -83,7 +113,7 @@ export function RecordPoPaymentModal({
         body: JSON.stringify({
           invoice_id: invoice.invoice_id,
           payment_date: paymentDate,
-          amount: Number(amount),
+          amount: payAmount,
           payment_method: paymentMethod,
           reference: reference || null,
           notes: notes || null,
@@ -106,7 +136,7 @@ export function RecordPoPaymentModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar pago — {invoice.invoice_number}</DialogTitle>
         </DialogHeader>
@@ -116,17 +146,26 @@ export function RecordPoPaymentModal({
             <p>
               OC: <strong>{invoice.order_id}</strong> · {invoice.supplier}
             </p>
-            <p>
-              Total factura: <strong>{formatMxCurrency(invoice.total)}</strong>
-            </p>
-            <p>
-              Pagado: <strong>{formatMxCurrency(paidToDate)}</strong> · Saldo:{" "}
-              <strong>{formatMxCurrency(invoice.balance)}</strong>
-            </p>
             <p className="text-muted-foreground">
               Categoría: {PO_EXPENSE_CATEGORY_LABELS[invoice.expense_category]}
             </p>
           </div>
+
+          <PoAmountBreakdown context={amountContext} variant="highlight" />
+
+          {!loadingValidation && warnings.length > 0 && (
+            <div className="space-y-2">
+              {warnings.map((w, i) => (
+                <div
+                  key={`${w.type}-${i}`}
+                  className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>{w.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {!loadingPayments && payments.length > 0 && (
             <div className="space-y-2">
@@ -152,7 +191,7 @@ export function RecordPoPaymentModal({
               />
             </div>
             <div className="space-y-2">
-              <Label>Monto</Label>
+              <Label>Monto a pagar (neto)</Label>
               <Input
                 type="number"
                 min="0"
@@ -160,6 +199,9 @@ export function RecordPoPaymentModal({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
+              <p className="text-[10px] text-muted-foreground">
+                Ingrese el neto con IVA que transfiere tesorería, no el monto sin IVA de la OC.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Método</Label>

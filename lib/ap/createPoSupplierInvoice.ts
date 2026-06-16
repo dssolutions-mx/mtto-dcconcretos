@@ -26,6 +26,19 @@ export async function createPoSupplierInvoice(
     receipt_id = null,
     notes = null,
     items = [],
+    cfdi_uuid = null,
+    cfdi_serie = null,
+    cfdi_folio = null,
+    cfdi_emisor_rfc = null,
+    cfdi_receptor_rfc = null,
+    cfdi_metodo_pago = null,
+    cfdi_forma_pago = null,
+    cfdi_uso = null,
+    cfdi_tipo_comprobante = null,
+    cfdi_fecha_emision = null,
+    cfdi_fecha_timbrado = null,
+    cfdi_capture_mode = 'manual',
+    xml_url = null,
   } = body
 
   if (!invoice_number?.trim() || !invoice_date) {
@@ -122,6 +135,19 @@ export async function createPoSupplierInvoice(
       notes,
       registered_by: userId,
       status: 'open',
+      cfdi_uuid: cfdi_uuid?.trim().toLowerCase() || null,
+      cfdi_serie,
+      cfdi_folio,
+      cfdi_emisor_rfc,
+      cfdi_receptor_rfc,
+      cfdi_metodo_pago,
+      cfdi_forma_pago,
+      cfdi_uso,
+      cfdi_tipo_comprobante,
+      cfdi_fecha_emision,
+      cfdi_fecha_timbrado,
+      cfdi_capture_mode: cfdi_uuid ? 'cfdi' : cfdi_capture_mode,
+      xml_url,
     })
     .select('*')
     .single()

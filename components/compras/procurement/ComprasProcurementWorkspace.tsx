@@ -8,7 +8,10 @@ import {
   ClipboardList,
   FileText,
   LayoutDashboard,
+  MinusCircle,
   Receipt,
+  Download,
+  Upload,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -24,6 +27,8 @@ import { ProcurementDashboardTab } from "./ProcurementDashboardTab"
 import { PoWithoutInvoiceTab } from "./PoWithoutInvoiceTab"
 import { PoInvoicesPayablesTab } from "./PoInvoicesPayablesTab"
 import { PoPostApprovalTab } from "./PoPostApprovalTab"
+import { PoCreditNotesTab } from "./PoCreditNotesTab"
+import { BulkCfdiInvoiceDialog } from "./BulkCfdiInvoiceDialog"
 
 function parseTab(raw: string | null): ProcurementTab {
   if (raw && PROCUREMENT_TABS.includes(raw as ProcurementTab)) return raw as ProcurementTab
@@ -42,6 +47,7 @@ const TAB_CONFIG: Array<{
   { key: "resumen", label: "Resumen", icon: LayoutDashboard },
   { key: "sin_factura", label: "Sin factura", icon: FileText },
   { key: "facturas", label: "Facturas / CxP", icon: Receipt },
+  { key: "notas_credito", label: "Notas de crédito", icon: MinusCircle },
   { key: "post_aprobacion", label: "Post-aprobación", icon: ClipboardList },
 ]
 
@@ -53,6 +59,8 @@ export function ComprasProcurementWorkspace({
   const searchParams = useSearchParams()
   const [plants, setPlants] = useState<Array<{ id: string; name: string }>>([])
   const [plantId, setPlantId] = useState("")
+  const [bulkCfdiOpen, setBulkCfdiOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const tabFromUrl = useMemo(() => parseTab(searchParams.get("tab")), [searchParams])
   const [optimisticTab, setOptimisticTab] = useState<ProcurementTab | null>(null)
@@ -89,6 +97,29 @@ export function ComprasProcurementWorkspace({
     [activeTab, pathname, router, searchParams],
   )
 
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const params = new URLSearchParams()
+      if (plantId) params.set("plant_id", plantId)
+      const res = await fetch(`/api/ap/cxp-review-export?${params}`)
+      if (!res.ok) throw new Error("Export failed")
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download =
+        res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] ??
+        "CxP_OC_Mantenimiento.xlsx"
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      /* silent — user sees no download */
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -104,11 +135,21 @@ export function ComprasProcurementWorkspace({
               Compras post-aprobación
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Gestión contable de OC aprobadas: comprobantes, facturas de proveedor y pagos.
+              Gestión contable de OC aprobadas: comprobantes, facturas de proveedor, notas de crédito y pagos.
+              Los montos de OC se registran sin IVA; el pago al proveedor es el neto con impuestos.
             </p>
           </div>
         </div>
-        <Select value={plantId || "__all__"} onValueChange={(v) => setPlantId(v === "__all__" ? "" : v)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setBulkCfdiOpen(true)}>
+            <Upload className="h-4 w-4 mr-1" />
+            Importar CFDI
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+            <Download className="h-4 w-4 mr-1" />
+            {exporting ? "Exportando..." : "Excel CxP"}
+          </Button>
+          <Select value={plantId || "__all__"} onValueChange={(v) => setPlantId(v === "__all__" ? "" : v)}>
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Todas las plantas" />
           </SelectTrigger>
@@ -121,6 +162,7 @@ export function ComprasProcurementWorkspace({
             ))}
           </SelectContent>
         </Select>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b pb-1">
@@ -157,9 +199,23 @@ export function ComprasProcurementWorkspace({
           canRecordPayments={canRecordPayments}
         />
       )}
+      {activeTab === "notas_credito" && (
+        <PoCreditNotesTab plantId={plantId || undefined} />
+      )}
       {activeTab === "post_aprobacion" && (
         <PoPostApprovalTab plantId={plantId || undefined} />
       )}
+
+      <BulkCfdiInvoiceDialog
+        open={bulkCfdiOpen}
+        onClose={() => setBulkCfdiOpen(false)}
+        plantId={plantId || undefined}
+        onCreated={() => {
+          if (activeTab === "facturas") {
+            /* tabs reload on mount */
+          }
+        }}
+      />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { resolvePoPreTaxAmount } from '@/lib/ap/po-amounts'
 
 const POST_APPROVAL_STATUSES = [
   'approved',
@@ -103,7 +104,11 @@ export async function GET(
       receipts: receipts ?? [],
       invoices: invoices ?? [],
       payments: payments ?? [],
-      lifecycle: steps,
+      lifecycle: {
+        steps,
+        po_pre_tax: resolvePoPreTaxAmount(po),
+        accounting_status: po.accounting_status,
+      },
     })
   } catch (error) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { FileText, Loader2, Plus } from "lucide-react"
@@ -25,8 +25,9 @@ import {
   type PoExpenseCategory,
   type PoSupplierInvoice,
 } from "@/types/po-invoices"
-import { computeInvoiceTotals } from "@/lib/ap/po-invoice-utils"
-import { PoLifecycleStrip } from "@/components/compras/procurement/ProcurementDashboardTab"
+import { CfdiXmlUploadField } from "@/components/compras/procurement/CfdiXmlUploadField"
+import { PoAmountBreakdown } from "@/components/ap/PoAmountBreakdown"
+import { buildInvoiceAmountContext } from "@/lib/ap/po-amounts"
 
 interface ReceiptOption {
   id: string
@@ -39,6 +40,7 @@ interface PoSupplierInvoiceSectionProps {
   purchaseOrderId: string
   canRegister: boolean
   defaultExpenseCategory?: PoExpenseCategory
+  poPreTaxAmount?: number
 }
 
 function formatCurrency(amount: number): string {
@@ -61,12 +63,14 @@ export function PoSupplierInvoiceSection({
   purchaseOrderId,
   canRegister,
   defaultExpenseCategory = "otros",
+  poPreTaxAmount = 0,
 }: PoSupplierInvoiceSectionProps) {
   const [invoices, setInvoices] = useState<PoSupplierInvoice[]>([])
   const [receipts, setReceipts] = useState<ReceiptOption[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const [cfdiLoaded, setCfdiLoaded] = useState(false)
   const [form, setForm] = useState<CreatePoSupplierInvoiceInput>({
     invoice_number: "",
     invoice_date: new Date().toISOString().slice(0, 10),
@@ -81,17 +85,6 @@ export function PoSupplierInvoiceSection({
     notes: "",
   })
 
-  const totals = useMemo(
-    () =>
-      computeInvoiceTotals({
-        subtotal: Number(form.subtotal) || 0,
-        discount_amount: Number(form.discount_amount) || 0,
-        vat_rate: form.vat_rate ?? 0.16,
-        retention_isr_rate: form.retention_isr_rate ?? 0,
-        retention_iva_rate: form.retention_iva_rate ?? 0,
-      }),
-    [form.subtotal, form.discount_amount, form.vat_rate, form.retention_isr_rate, form.retention_iva_rate],
-  )
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -174,7 +167,8 @@ export function PoSupplierInvoiceSection({
               Factura de proveedor
             </CardTitle>
             <CardDescription>
-              Registro contable de la factura fiscal vinculada a esta orden de compra.
+              Registro contable de la factura fiscal vinculada a esta orden de compra. Compare la
+              base sin IVA con el monto de la OC antes de solicitar pago.
             </CardDescription>
           </div>
           {canRegister && !showForm && (
@@ -216,19 +210,25 @@ export function PoSupplierInvoiceSection({
                     <span className="text-muted-foreground">Fecha: </span>
                     {formatDate(invoice.invoice_date)}
                   </p>
-                  <p>
-                    <span className="text-muted-foreground">Total: </span>
-                    <span className="font-semibold">{formatCurrency(invoice.total)}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Subtotal: </span>
-                    {formatCurrency(invoice.subtotal)}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">IVA: </span>
-                    {formatCurrency(invoice.tax)}
-                  </p>
+                  {invoice.cfdi_uuid && (
+                    <p>
+                      <span className="text-muted-foreground">CFDI: </span>
+                      <span className="font-mono text-xs">{invoice.cfdi_uuid.slice(0, 8)}…</span>
+                    </p>
+                  )}
                 </div>
+                <PoAmountBreakdown
+                  variant="compact"
+                  context={buildInvoiceAmountContext({
+                    po_pre_tax: poPreTaxAmount,
+                    subtotal: Number(invoice.subtotal),
+                    discount_amount: Number(invoice.discount_amount ?? 0),
+                    vat_rate: Number(invoice.vat_rate),
+                    retention_isr_rate: Number(invoice.retention_isr_rate ?? 0),
+                    retention_iva_rate: Number(invoice.retention_iva_rate ?? 0),
+                    invoice_net_payable: Number(invoice.total),
+                  })}
+                />
                 {invoice.document_url && (
                   <a
                     href={invoice.document_url}
@@ -246,6 +246,17 @@ export function PoSupplierInvoiceSection({
 
         {canRegister && showForm && (
           <form onSubmit={handleSubmit} className="rounded-xl border border-dashed p-4 space-y-4">
+            <CfdiXmlUploadField
+              onParsed={(prefill) => {
+                setForm((prev) => ({ ...prev, ...prefill }))
+                setCfdiLoaded(true)
+              }}
+            />
+            {cfdiLoaded && (
+              <p className="text-xs text-primary font-medium">
+                Datos cargados desde CFDI — verifique montos sin IVA vs monto OC.
+              </p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="invoice_number">Folio de factura</Label>
@@ -386,25 +397,17 @@ export function PoSupplierInvoiceSection({
               </div>
             </div>
 
-            <div className="rounded-lg bg-muted/40 p-3 text-sm space-y-1">
-              <p>
-                Base gravable: <strong>{formatCurrency(totals.taxable_base)}</strong>
-              </p>
-              <p>
-                IVA: <strong>{formatCurrency(totals.tax)}</strong>
-              </p>
-              {(totals.retention_isr_amount > 0 || totals.retention_iva_amount > 0) && (
-                <p>
-                  Retenciones:{" "}
-                  <strong>
-                    {formatCurrency(totals.retention_isr_amount + totals.retention_iva_amount)}
-                  </strong>
-                </p>
-              )}
-              <p>
-                Total neto a pagar: <strong>{formatCurrency(totals.total)}</strong>
-              </p>
-            </div>
+            <PoAmountBreakdown
+              variant="highlight"
+              context={buildInvoiceAmountContext({
+                po_pre_tax: poPreTaxAmount,
+                subtotal: Number(form.subtotal) || 0,
+                discount_amount: Number(form.discount_amount) || 0,
+                vat_rate: form.vat_rate ?? 0.16,
+                retention_isr_rate: form.retention_isr_rate ?? 0,
+                retention_iva_rate: form.retention_iva_rate ?? 0,
+              })}
+            />
 
             <div className="space-y-2">
               <Label htmlFor="notes">Notas</Label>

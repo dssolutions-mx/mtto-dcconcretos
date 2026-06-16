@@ -4,69 +4,66 @@
 
 Las órdenes de compra de mantenimiento (`mtto-dcconcretos`) gestionan comprobantes operativos y pagos a nivel OC. Este módulo añade un **espacio de compras post-aprobación** alineado con el patrón AP del cotizador (`cotizaciones-concreto`).
 
+**Regla de negocio clave:** el monto registrado en la OC es **sin IVA**. El pago al proveedor corresponde al **neto a pagar** de la factura (base + IVA − retenciones). La UI expone esta distinción en todo el flujo.
+
 ## Referencia: cotizaciones-concreto
 
 | Concepto cotizador | Mantenimiento |
 |--------------------|---------------|
-| `CxpWorkspace` (sin factura / facturas / NC) | `/compras/procurement` (resumen / sin factura / facturas / post-aprobación) |
+| `CxpWorkspace` | `/compras/procurement` |
 | `supplier_invoices` | `po_supplier_invoices` |
-| `supplier_invoice_items` | `po_supplier_invoice_items` |
-| `payments` | `po_invoice_payments` |
-| `OrphanEntriesTab` | `PoWithoutInvoiceTab` (OC aprobadas sin factura) |
-| `InvoicesPayablesTab` | `PoInvoicesPayablesTab` (agrupado por proveedor, pagos parciales) |
-| `RecordPaymentModal` | `RecordPoPaymentModal` |
-| Action queue / dashboard | `ProcurementDashboardTab` + APIs |
+| `invoice_credit_notes` | `po_credit_notes` |
+| `BulkCfdiInvoiceDialog` | `BulkCfdiInvoiceDialog` (mantenimiento) |
+| `cxp-review-export` | `GET /api/ap/cxp-review-export` |
+| Validación 3-way | RPC `validate_po_invoice_vs_oc` |
 
-Documentación cotizador: `cotizaciones-concreto/docs/AP_CUENTAS_POR_PAGAR.md`
-
-## Flujo post-aprobación (mantenimiento)
+## Flujo post-aprobación
 
 ```
-OC aprobada
+OC aprobada (monto sin IVA)
   → ejecutada (purchased/ordered/received/fulfilled)
   → comprobante (purchase_order_receipts)
-  → factura proveedor (po_supplier_invoices + líneas)
-  → pagos parciales/totales (po_invoice_payments)
-  → validada (workflow) + accounting_status = paid
+  → factura proveedor (manual o CFDI XML)
+  → validación suave OC ↔ factura ↔ comprobante
+  → pagos parciales/totales (monto neto con IVA)
+  → notas de crédito (opcional)
+  → accounting_status = paid
 ```
 
 ## Migraciones (no aplicar en agente)
 
 | Archivo | Contenido |
 |---------|-----------|
-| `20260616120000_po_supplier_invoices.sql` | Tablas factura, accounting_status, vista resumen |
-| `20260616140000_po_procurement_payments_and_views.sql` | Pagos, retenciones, vistas sin factura y balances |
+| `20260616120000_po_supplier_invoices.sql` | Tablas factura, accounting_status |
+| `20260616140000_po_procurement_payments_and_views.sql` | Pagos, retenciones, vistas |
+| `20260616160000_po_procurement_cfdi_credit_notes.sql` | CFDI, NC, validación 3-way |
 
 ## Rutas UI
 
 | Ruta | Descripción |
 |------|-------------|
-| `/compras/procurement` | Workspace principal (tabs URL-driven) |
-| `/compras/procurement?tab=sin_factura` | Cola OC sin factura |
-| `/compras/procurement?tab=facturas` | CxP con pagos parciales |
-| `/compras/[id]` | Detalle OC + ciclo contable + registro factura |
+| `/compras/procurement` | Workspace (resumen, sin factura, facturas, NC, post-aprobación) |
+| `/compras/[id]` | Detalle OC + desglose sin IVA / neto a pagar |
 
 ## APIs
 
 | Endpoint | Rol |
 |----------|-----|
-| `GET /api/compras/procurement/dashboard` | KPIs post-aprobación |
-| `GET /api/compras/procurement/action-queue` | Cola de acciones |
-| `GET /api/ap/po-without-invoice` | OC sin factura |
-| `GET /api/ap/invoices` | Facturas con saldo |
-| `GET/POST /api/ap/payments` | Pagos parciales |
-| `GET /api/purchase-orders/[id]/lifecycle` | Cadena documental |
+| `POST /api/ap/cfdi/parse` | Parse XML único |
+| `POST /api/ap/cfdi/parse-bulk` | ZIP masivo facturas |
+| `POST /api/ap/cfdi/parse-bulk-credit-notes` | ZIP masivo NC tipo E |
+| `GET /api/ap/invoices/[id]/validate` | Validación 3-way + recordatorio IVA |
+| `GET/POST /api/ap/credit-notes` | Notas de crédito |
+| `GET /api/ap/cxp-review-export` | Excel revisión CxP |
 
-## Fuera de alcance actual
+## Componentes UX (IVA)
 
-- CFDI / SAT (importación, complementos de pago)
-- Notas de crédito multi-factura
+- `PoAmountBreakdown` — desglose OC sin IVA vs neto a pagar
+- `po-context-band` — etiqueta "Sin IVA" en monto autorizado
+- `RecordPoPaymentModal` — validación + advertencias antes de pagar
+
+## Fuera de alcance
+
 - Sincronización cross-DB con cotizador
 - Portal de proveedores unificado
-
-## Próximos pasos sugeridos
-
-1. Notas de crédito (`po_credit_notes` + allocations)
-2. Importación CFDI (parse + match a OC/comprobante)
-3. Export contable integral (Excel revisión CxP)
-4. Validación 3-way match (OC ↔ comprobante ↔ factura)
+- Complementos de pago (REP) automáticos

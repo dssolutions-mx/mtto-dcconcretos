@@ -23,6 +23,8 @@ import {
   PO_INVOICE_STATUS_LABELS,
 } from "@/types/po-invoices"
 import { formatMxCurrency } from "@/lib/ap/po-invoice-utils"
+import { buildInvoiceAmountContext } from "@/lib/ap/po-amounts"
+import { PoAmountBreakdown } from "@/components/ap/PoAmountBreakdown"
 import { RecordPoPaymentModal } from "./RecordPoPaymentModal"
 
 interface PoInvoicesPayablesTabProps {
@@ -46,6 +48,7 @@ export function PoInvoicesPayablesTab({
   const [includePaid, setIncludePaid] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [paymentInvoice, setPaymentInvoice] = useState<PoInvoiceBalance | null>(null)
+  const [paymentPoPreTax, setPaymentPoPreTax] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,7 +81,7 @@ export function PoInvoicesPayablesTab({
         <div>
           <h2 className="text-lg font-semibold">Facturas y cuentas por pagar</h2>
           <p className="text-sm text-muted-foreground">
-            Facturas de proveedor registradas con saldo, vencimiento y pagos parciales.
+            Facturas de proveedor con saldo. El monto de la OC es sin IVA; el saldo es el neto a pagar.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -161,19 +164,21 @@ export function PoInvoicesPayablesTab({
                               {inv.due_date &&
                                 ` · Vence ${format(new Date(inv.due_date), "dd/MM/yyyy", { locale: es })}`}
                             </p>
-                            <div className="grid gap-1 text-sm sm:grid-cols-3">
-                              <p>
-                                Total: <strong>{formatMxCurrency(inv.total)}</strong>
-                              </p>
-                              <p>
-                                Pagado: <strong>{formatMxCurrency(inv.paid_to_date)}</strong>
-                              </p>
-                              <p>
-                                Saldo:{" "}
-                                <strong className={inv.balance > 0 ? "text-amber-700" : ""}>
-                                  {formatMxCurrency(inv.balance)}
-                                </strong>
-                              </p>
+                            <div className="grid gap-2 text-sm">
+                              <PoAmountBreakdown
+                                variant="compact"
+                                showMismatchWarning={false}
+                                context={buildInvoiceAmountContext({
+                                  po_pre_tax: 0,
+                                  subtotal: Number(inv.subtotal),
+                                  discount_amount: Number(inv.discount_amount ?? 0),
+                                  vat_rate: Number(inv.vat_rate),
+                                  retention_isr_rate: 0,
+                                  retention_iva_rate: 0,
+                                  invoice_net_payable: Number(inv.total),
+                                  balance: Number(inv.balance),
+                                })}
+                              />
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2 shrink-0">
@@ -187,7 +192,22 @@ export function PoInvoicesPayablesTab({
                               ["open", "partially_paid"].includes(inv.invoice_status) && (
                                 <Button
                                   size="sm"
-                                  onClick={() => setPaymentInvoice(inv)}
+                                  onClick={async () => {
+                                    setPaymentInvoice(inv)
+                                    try {
+                                      const res = await fetch(
+                                        `/api/purchase-orders/${inv.purchase_order_id}/lifecycle`,
+                                      )
+                                      const json = await res.json()
+                                      if (json.success && json.lifecycle?.po_pre_tax != null) {
+                                        setPaymentPoPreTax(Number(json.lifecycle.po_pre_tax))
+                                      } else {
+                                        setPaymentPoPreTax(0)
+                                      }
+                                    } catch {
+                                      setPaymentPoPreTax(0)
+                                    }
+                                  }}
                                 >
                                   <DollarSign className="h-4 w-4 mr-1" />
                                   Registrar pago
@@ -208,6 +228,7 @@ export function PoInvoicesPayablesTab({
       {paymentInvoice && (
         <RecordPoPaymentModal
           invoice={paymentInvoice}
+          poPreTax={paymentPoPreTax}
           open={!!paymentInvoice}
           onClose={() => setPaymentInvoice(null)}
           onSaved={load}

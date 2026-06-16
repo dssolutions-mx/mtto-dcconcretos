@@ -191,7 +191,10 @@ export function PoLifecycleStrip({ purchaseOrderId }: { purchaseOrderId: string 
       try {
         const res = await fetch(`/api/purchase-orders/${purchaseOrderId}/lifecycle`)
         const json = await res.json()
-        if (json.success) setSteps(json.lifecycle ?? [])
+        if (json.success) {
+          const lifecycle = json.lifecycle
+          setSteps(Array.isArray(lifecycle) ? lifecycle : (lifecycle?.steps ?? []))
+        }
       } finally {
         setLoading(false)
       }

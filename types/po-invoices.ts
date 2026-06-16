@@ -45,6 +45,19 @@ export interface PoSupplierInvoice {
   receipt_id?: string | null
   notes?: string | null
   registered_by?: string | null
+  cfdi_uuid?: string | null
+  cfdi_serie?: string | null
+  cfdi_folio?: string | null
+  cfdi_emisor_rfc?: string | null
+  cfdi_receptor_rfc?: string | null
+  cfdi_metodo_pago?: string | null
+  cfdi_forma_pago?: string | null
+  cfdi_uso?: string | null
+  cfdi_tipo_comprobante?: string | null
+  cfdi_fecha_emision?: string | null
+  cfdi_fecha_timbrado?: string | null
+  cfdi_capture_mode?: 'manual' | 'cfdi'
+  xml_url?: string | null
   created_at: string
   updated_at: string
   items?: PoSupplierInvoiceItem[]
@@ -132,6 +145,41 @@ export interface CreatePoSupplierInvoiceInput {
   receipt_id?: string | null
   notes?: string | null
   items?: PoSupplierInvoiceItem[]
+  cfdi_uuid?: string | null
+  cfdi_serie?: string | null
+  cfdi_folio?: string | null
+  cfdi_emisor_rfc?: string | null
+  cfdi_receptor_rfc?: string | null
+  cfdi_metodo_pago?: string | null
+  cfdi_forma_pago?: string | null
+  cfdi_uso?: string | null
+  cfdi_tipo_comprobante?: string | null
+  cfdi_fecha_emision?: string | null
+  cfdi_fecha_timbrado?: string | null
+  cfdi_capture_mode?: 'manual' | 'cfdi'
+  xml_url?: string | null
+}
+
+export type PoCreditNoteReason = 'price_adjustment' | 'return' | 'defect' | 'other'
+
+export type PoCreditNoteStatus = 'open' | 'partially_applied' | 'fully_applied' | 'void'
+
+export interface PoCreditNote {
+  id: string
+  supplier_id?: string | null
+  plant_id: string
+  credit_number?: string | null
+  credit_date: string
+  reason: PoCreditNoteReason
+  amount: number
+  tax_amount: number
+  total: number
+  vat_rate: number
+  status: PoCreditNoteStatus
+  notes?: string | null
+  cfdi_uuid?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface RecordPoInvoicePaymentInput {
@@ -193,5 +241,25 @@ export const PO_PAYMENT_METHOD_LABELS: Record<PoPaymentMethod, string> = {
   card: 'Tarjeta',
 }
 
-export const PROCUREMENT_TABS = ['resumen', 'sin_factura', 'facturas', 'post_aprobacion'] as const
+export const PROCUREMENT_TABS = [
+  'resumen',
+  'sin_factura',
+  'facturas',
+  'notas_credito',
+  'post_aprobacion',
+] as const
 export type ProcurementTab = (typeof PROCUREMENT_TABS)[number]
+
+export const PO_CREDIT_NOTE_REASON_LABELS: Record<PoCreditNoteReason, string> = {
+  price_adjustment: 'Ajuste de precio',
+  return: 'Devolución',
+  defect: 'Defecto',
+  other: 'Otro',
+}
+
+export const PO_CREDIT_NOTE_STATUS_LABELS: Record<PoCreditNoteStatus, string> = {
+  open: 'Abierta',
+  partially_applied: 'Parcialmente aplicada',
+  fully_applied: 'Totalmente aplicada',
+  void: 'Anulada',
+}

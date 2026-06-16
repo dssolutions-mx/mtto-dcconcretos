@@ -516,6 +516,7 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
               purchaseOrderId={order.id}
               canRegister={canRegisterInvoice}
               defaultExpenseCategory={defaultExpenseCategory}
+              poPreTaxAmount={Number(order.actual_amount) > 0 ? Number(order.actual_amount) : Number(order.approval_amount) > 0 ? Number(order.approval_amount) : Number(order.total_amount ?? 0)}
             />
           )}
         </div>
