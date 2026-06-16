@@ -20,7 +20,7 @@
     "verify:kpi-rollup": "npx tsx scripts/verify-kpi-rollup-consistency.ts",
     "verify:asset-meter-view": "npx tsx scripts/verify-asset-meter-view-parity.ts",
     "verify:merged-hours-view": "npx tsx scripts/verify-merged-hours-from-view.ts",
-    "test:unit": "npx tsx --test lib/utils/cyclic-maintenance.test.ts lib/maintenance/due-engine.test.ts lib/maintenance/issue-theme-taxonomy.test.ts lib/incidents/normalize-issue-core-item.test.ts lib/incidents/incident-routing.test.ts lib/incidents/incident-routing-learning.test.ts lib/incidents/incident-routing-departments.test.ts lib/reports/nomina-concept-classifier.test.ts lib/agenda/cotizador-orders.test.ts lib/agenda/aggregate-daily-kit.test.ts lib/agenda/schedule-status.test.ts lib/agenda/agenda-auth.test.ts lib/diesel-cuenta-litros-gaps.test.ts lib/diesel/cuenta-litros-variance.test.ts"
+    "test:unit": "npx tsx --test lib/utils/cyclic-maintenance.test.ts lib/maintenance/due-engine.test.ts lib/maintenance/issue-theme-taxonomy.test.ts lib/incidents/normalize-issue-core-item.test.ts lib/incidents/incident-routing.test.ts lib/incidents/incident-routing-learning.test.ts lib/incidents/incident-routing-departments.test.ts lib/reports/nomina-concept-classifier.test.ts lib/agenda/cotizador-orders.test.ts lib/agenda/aggregate-daily-kit.test.ts lib/agenda/schedule-status.test.ts lib/agenda/agenda-auth.test.ts lib/diesel-cuenta-litros-gaps.test.ts lib/diesel/cuenta-litros-variance.test.ts lib/tires/layout-resolver.test.ts lib/tires/fleet-status.test.ts lib/tires/coverage.test.ts lib/tires/diagram-geometry.test.ts lib/tires/exceptions.test.ts lib/tires/tire-readings-validation.test.ts lib/tires/csv-import.test.ts lib/tires/identifier.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

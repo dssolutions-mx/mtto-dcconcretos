@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +13,7 @@ import Link from "next/link"
 import { useEquipmentModel } from "@/hooks/useSupabase"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { TireLayoutTab } from "@/components/models/tire-layout-tab"
 
 // Definir tipos para las especificaciones y tareas
 interface ModelSpecifications {
@@ -54,7 +57,16 @@ interface EquipmentModelDetailsProps {
 }
 
 export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
-  const { 
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const defaultTab = tabParam === 'tires' ? 'tires' : 'specifications'
+  const [activeTab, setActiveTab] = useState(defaultTab)
+
+  useEffect(() => {
+    if (tabParam === 'tires') setActiveTab('tires')
+  }, [tabParam])
+
+  const {
     model, 
     assets, 
     maintenanceIntervals, 
@@ -167,8 +179,8 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="specifications" className="w-full">
-        <TabsList className="mb-4 grid w-full grid-cols-2 md:grid-cols-4 h-auto md:h-10">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="mb-4 grid w-full grid-cols-2 md:grid-cols-5 h-auto md:h-10">
           <TabsTrigger 
             value="specifications" 
             className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
@@ -192,6 +204,12 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
             className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
           >
             <span className="text-center leading-tight">Activos</span>
+          </TabsTrigger>
+          <TabsTrigger 
+            value="tires" 
+            className="text-xs md:text-sm p-3 md:p-2 h-12 md:h-auto data-[state=active]:bg-background data-[state=active]:text-foreground"
+          >
+            <span className="text-center leading-tight">Llantas</span>
           </TabsTrigger>
         </TabsList>
 
@@ -422,6 +440,13 @@ export function EquipmentModelDetails({ id }: EquipmentModelDetailsProps) {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="tires">
+          <TireLayoutTab
+            modelId={id}
+            modelName={`${model.manufacturer} ${model.name}`}
+          />
         </TabsContent>
 
         <TabsContent value="assets">

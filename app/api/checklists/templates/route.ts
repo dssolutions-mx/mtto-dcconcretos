@@ -186,7 +186,10 @@ export async function POST(request: Request) {
           title: section.title,
           order_index: i,
           section_type: section.section_type || 'checklist',
-          evidence_config: section.evidence_config || null
+          evidence_config: section.evidence_config || null,
+          cleanliness_config: section.cleanliness_config || null,
+          security_config: section.security_config || null,
+          tire_readings_config: section.tire_readings_config || null,
         })
         .select('id')
         .single()

@@ -308,3 +308,97 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Tires module — shared status design tokens (single source of truth)
+   Each status exposes a saturated `stroke` (borders/icons/text) and a muted
+   `fill` (surfaces). Tuned for WCAG AA contrast in BOTH light and dark mode.
+   Consumed by: lib/tires/status.ts, tire diagram SVG, badges, exceptions, KPIs.
+   ────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    --tire-empty: 215 14% 58%;
+    --tire-empty-fill: 210 24% 96%;
+    --tire-ok: 142 68% 36%;
+    --tire-ok-fill: 142 60% 94%;
+    --tire-warning: 35 92% 42%;
+    --tire-warning-fill: 45 96% 91%;
+    --tire-critical: 0 78% 50%;
+    --tire-critical-fill: 0 86% 95%;
+    --tire-noreading: 222 16% 48%;
+    --tire-noreading-fill: 215 22% 93%;
+  }
+  .dark {
+    --tire-empty: 215 14% 52%;
+    --tire-empty-fill: 215 16% 17%;
+    --tire-ok: 142 58% 48%;
+    --tire-ok-fill: 142 38% 15%;
+    --tire-warning: 38 92% 56%;
+    --tire-warning-fill: 36 50% 16%;
+    --tire-critical: 0 74% 60%;
+    --tire-critical-fill: 0 48% 19%;
+    --tire-noreading: 217 16% 62%;
+    --tire-noreading-fill: 217 18% 19%;
+  }
+}
+
+/* Tire diagram micro-interactions */
+@keyframes tire-drop-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes tire-invalid-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+@keyframes tire-mount-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes tire-available-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
+}
+
+.tire-diagram [data-drop="drag-over"] {
+  animation: tire-drop-pulse 1.1s ease-in-out infinite;
+}
+.tire-diagram [data-drop="invalid"] {
+  animation: tire-invalid-shake 0.4s ease-in-out;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tire-diagram [data-available="true"] {
+  animation: tire-available-pulse 1.6s ease-in-out infinite;
+}
+.tire-diagram [data-mounted-pop="true"] {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tire-mount-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tire-pos-group {
+  transition: transform 0.18s ease, filter 0.18s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.tire-pos-group:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+.tire-pos-group:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tire-diagram [data-drop="drag-over"],
+  .tire-diagram [data-drop="invalid"],
+  .tire-diagram [data-available="true"],
+  .tire-diagram [data-mounted-pop="true"],
+  .tire-pos-group {
+    animation: none !important;
+    transition: none !important;
+  }
+}

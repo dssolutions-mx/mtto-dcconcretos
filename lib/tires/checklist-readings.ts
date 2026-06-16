@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { filterPersistableTireReadings } from '@/lib/tires/tire-readings-validation'
+import type { TireReadingsSectionConfig } from '@/types/tires'
+
 export interface ChecklistTireReadingInput {
   installation_id: string
   position_code: string
@@ -14,17 +17,14 @@ export interface SaveChecklistTireReadingsParams {
   readings: ChecklistTireReadingInput[]
   odometer_km?: number | null
   horometer_hours?: number | null
+  config?: TireReadingsSectionConfig | null
 }
 
 export async function saveChecklistTireReadings(
   supabase: SupabaseClient,
   params: SaveChecklistTireReadingsParams
 ): Promise<{ saved: number; snapshot: ChecklistTireReadingInput[] }> {
-  const valid = params.readings.filter(
-    (r) =>
-      r.installation_id &&
-      (r.tread_depth_mm != null || r.pressure_psi != null)
-  )
+  const valid = filterPersistableTireReadings(params.readings, params.config)
 
   if (valid.length === 0) {
     return { saved: 0, snapshot: [] }

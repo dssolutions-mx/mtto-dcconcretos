@@ -53,6 +53,9 @@ import { ChangeSummaryDialog } from './dialogs/change-summary-dialog'
 import { TemplatePreviewDialog } from './dialogs/template-preview-dialog'
 import { BasicInfoCard } from './template-editor/basic-info-card'
 import { validateTemplate as validateTemplateShared } from './template-editor/use-template-editor-state'
+import { TireReadingsConfigEditor } from '@/components/checklists/tire-readings-config-editor'
+import { DEFAULT_TIRE_READINGS_CONFIG } from '@/lib/tires/tire-readings-validation'
+import type { TireReadingsSectionConfig } from '@/types/tires'
 
 interface ChecklistItem {
   id?: string
@@ -88,6 +91,7 @@ interface ChecklistSection {
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig
+  tire_readings_config?: TireReadingsSectionConfig
   items: ChecklistItem[]
 }
 
@@ -398,6 +402,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         evidence_config: section.evidence_config || undefined,
         cleanliness_config: section.cleanliness_config || undefined,
         security_config: section.security_config || undefined,
+        tire_readings_config: section.tire_readings_config || undefined,
         items: section.checklist_items?.map((item: any) => ({
           id: item.id,
           description: item.description,
@@ -555,6 +560,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       title: newTitle,
       order_index: template.sections.length,
       section_type: 'tire_readings',
+      tire_readings_config: { ...DEFAULT_TIRE_READINGS_CONFIG },
       items: []
     }
 
@@ -1178,6 +1184,9 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           require_reflection: true,
           allow_evidence: false
         } : section?.security_config,
+        tire_readings_config: newType === 'tire_readings'
+          ? { ...DEFAULT_TIRE_READINGS_CONFIG }
+          : section?.tire_readings_config,
         items: newType === 'evidence' || newType === 'security_talk' || newType === 'tire_readings' ? [] : (section?.items ?? [])
       }
       const newSections = prev.sections.map((s, i) => i === sectionIndex ? { ...s, ...updates } : s)
@@ -1726,7 +1735,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               section_type: section.section_type || 'checklist',
               evidence_config: section.evidence_config || null,
               cleanliness_config: section.cleanliness_config || null,
-              security_config: section.security_config || null
+              security_config: section.security_config || null,
+              tire_readings_config: section.tire_readings_config || null
             })
             .select('id')
             .single()
@@ -1887,7 +1897,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               section_type: section.section_type || 'checklist',
               evidence_config: section.evidence_config || null,
               cleanliness_config: section.cleanliness_config || null,
-              security_config: section.security_config || null
+              security_config: section.security_config || null,
+              tire_readings_config: section.tire_readings_config || null
             })
             .select('id')
             .single()
@@ -2426,13 +2437,15 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="flex items-center gap-2 border-l-4 border-purple-500 pl-4">
                     <CircleDot className="h-5 w-5 text-purple-600" />
                     <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                      Lecturas de Llantas (mm / psi por posición)
+                      Lecturas de Llantas
                     </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Al ejecutar el checklist, el operador registrará profundidad de banda y presión
-                    para cada posición montada en el activo.
-                  </p>
+                  <TireReadingsConfigEditor
+                    config={section.tire_readings_config ?? DEFAULT_TIRE_READINGS_CONFIG}
+                    onChange={(tire_readings_config) =>
+                      updateSection(sectionIndex, { tire_readings_config })
+                    }
+                  />
                 </div>
               ) : section.section_type === 'cleanliness_bonus' ? (
                 // Render cleanliness section - hybrid of checklist items + evidence photos

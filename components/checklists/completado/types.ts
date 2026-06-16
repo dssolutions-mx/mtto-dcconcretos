@@ -1,3 +1,6 @@
+import type { ChecklistTireReadingInput } from '@/lib/tires/checklist-readings'
+import type { TireReadingsSectionConfig } from '@/types/tires'
+
 export type CompletedItem = {
   id?: string
   item_id: string
@@ -32,7 +35,7 @@ export type ChecklistSectionDefinition = {
   id: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk'
+  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
   security_config?: {
     mode: 'plant_manager' | 'operator'
     require_attendance: boolean
@@ -40,6 +43,7 @@ export type ChecklistSectionDefinition = {
     require_reflection: boolean
     allow_evidence: boolean
   }
+  tire_readings_config?: TireReadingsSectionConfig
   checklist_items?: ChecklistItemDefinition[]
 }
 
@@ -55,6 +59,7 @@ export type CompletedChecklistData = {
   signature_data: string | null
   created_by: string | null
   security_data?: Record<string, any> | null
+  tire_readings_snapshot?: ChecklistTireReadingInput[] | null
   checklists: {
     id: string
     name: string

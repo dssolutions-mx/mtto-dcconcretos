@@ -122,6 +122,7 @@ function createSectionForType(
       title: baseTitle,
       order_index: orderIndex,
       section_type: "tire_readings",
+      tire_readings_config: { ...DEFAULT_TIRE_READINGS_CONFIG },
       items: [],
     }
   }
@@ -171,7 +172,7 @@ export function SectionsStep({
   const [showAddDialog, setShowAddDialog] = useState(false)
   const sections = template.sections || []
 
-  const addSection = (type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk") => {
+  const addSection = (type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings") => {
     const newSection = createSectionForType(type, sections.length, sections)
     setTemplate((prev) => ({
       ...prev,
@@ -291,6 +292,7 @@ export function SectionsStep({
               onTitleChange={(title) =>
                 updateSection(sectionIndex, { title })
               }
+              onConfigChange={(updates) => updateSection(sectionIndex, updates)}
               onAddItem={() => addItem(sectionIndex)}
               onDeleteItem={(itemIndex) => deleteItem(sectionIndex, itemIndex)}
               onUpdateItem={(itemIndex, updates) =>

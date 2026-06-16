@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Plus, Trash2, CheckSquare, Ruler, Type } from "lucide-react"
+import { TireReadingsConfigEditor } from "@/components/checklists/tire-readings-config-editor"
+import { DEFAULT_TIRE_READINGS_CONFIG } from "@/lib/tires/tire-readings-validation"
 import type { ChecklistSection, ChecklistItem } from "./types"
 
 function getItemTypeIcon(type: string) {
@@ -29,6 +31,7 @@ interface SectionEditorBodyProps {
   section: ChecklistSection
   sectionIndex: number
   onTitleChange: (title: string) => void
+  onConfigChange?: (updates: Partial<ChecklistSection>) => void
   onAddItem: () => void
   onDeleteItem: (itemIndex: number) => void
   onUpdateItem: (itemIndex: number, updates: Partial<ChecklistItem>) => void
@@ -38,6 +41,7 @@ export function SectionEditorBody({
   section,
   sectionIndex,
   onTitleChange,
+  onConfigChange,
   onAddItem,
   onDeleteItem,
   onUpdateItem,
@@ -96,11 +100,15 @@ export function SectionEditorBody({
             placeholder="Inspección de llantas"
           />
         </div>
-        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <p>
-            Al ejecutar el checklist se capturan lecturas de banda y presión por cada llanta montada en el activo.
-          </p>
-        </div>
+        <TireReadingsConfigEditor
+          config={section.tire_readings_config ?? DEFAULT_TIRE_READINGS_CONFIG}
+          onChange={(tire_readings_config) =>
+            onConfigChange?.({ tire_readings_config })
+          }
+        />
+        <p className="text-sm text-muted-foreground">
+          Al ejecutar el checklist se capturan lecturas según el modo configurado para cada llanta montada.
+        </p>
       </div>
     )
   }

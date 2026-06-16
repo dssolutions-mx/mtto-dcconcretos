@@ -60,6 +60,11 @@ import {
 } from "@/components/checklists/tire-readings-section"
 import type { ChecklistTireReadingInput } from "@/lib/tires/checklist-readings"
 import {
+  countCompletedTireReadings,
+  normalizeTireReadingsConfig,
+  validateTireReadingsSection,
+} from "@/lib/tires/tire-readings-validation"
+import {
   enrichEquipmentReadingsValidation,
   formatSubmissionReadingErrors,
   validateReadingsPresence,
@@ -373,14 +378,16 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         }
       } else if (section.section_type === 'tire_readings') {
         const readings = tireReadingsData[section.id] ?? []
-        const completed = readings.filter(
-          (r) => r.tread_depth_mm != null || r.pressure_psi != null
-        ).length
+        const config = normalizeTireReadingsConfig(section.tire_readings_config)
+        const total =
+          config.reading_mode === 'none' ? 0 : Math.max(readings.length, 1)
+        const completed =
+          config.reading_mode === 'none' ? 0 : countCompletedTireReadings(readings, config)
         return {
           id: section.id,
           title: section.title,
           type: 'tire_readings' as const,
-          total: Math.max(readings.length, 1),
+          total,
           completed,
           hasIssues: false,
           isCollapsed: sectionCollapsed[section.id] || false,
@@ -1207,6 +1214,26 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         targetId: "checklist-field-equipment-readings",
       })
     }
+    if (checklist?.sections) {
+      for (const section of checklist.sections) {
+        if (section.section_type !== 'tire_readings') continue
+        const sectionReadings = tireReadingsData[section.id] ?? []
+        const tireValidation = validateTireReadingsSection({
+          readings: sectionReadings,
+          positionCount: sectionReadings.length,
+          config: section.tire_readings_config,
+          sectionTitle: section.title,
+        })
+        if (!tireValidation.valid) {
+          issues.push({
+            id: `tire-${section.id}`,
+            label: 'Faltan lecturas de llantas',
+            targetId: `section-${section.id}`,
+          })
+          break
+        }
+      }
+    }
     return issues
   }, [
     checklist,
@@ -1218,6 +1245,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     equipmentReadingsValidation,
     firstIncompleteSectionDomId,
     resolvedVisibleMeters,
+    tireReadingsData,
   ])
 
   const handleSubmit = async () => {
@@ -1285,6 +1313,23 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (!readingsValidation.isValid) {
       validationErrors.push(...readingsValidation.errors)
       validationWarnings.push(...readingsValidation.warnings)
+    }
+
+    // 3b. Validate tire readings sections
+    if (checklist?.sections) {
+      for (const section of checklist.sections) {
+        if (section.section_type !== 'tire_readings') continue
+        const readings = tireReadingsData[section.id] ?? []
+        const tireValidation = validateTireReadingsSection({
+          readings,
+          positionCount: readings.length,
+          config: section.tire_readings_config,
+          sectionTitle: section.title,
+        })
+        if (!tireValidation.valid) {
+          validationErrors.push(...tireValidation.errors)
+        }
+      }
     }
 
     // 4. Separate cleanliness items from maintenance items
@@ -1994,14 +2039,27 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     } else if (section.section_type === 'tire_readings') {
       const readings = tireReadingsData[section.id] ?? []
-      const completed = readings.filter(
-        (r) => r.tread_depth_mm != null || r.pressure_psi != null
-      ).length
+      const config = normalizeTireReadingsConfig(section.tire_readings_config)
+      if (config.reading_mode === 'none' || readings.length === 0) {
+        return {
+          completed: 0,
+          total: 0,
+          hasIssues: false,
+          isComplete: true,
+        }
+      }
+      const completed = countCompletedTireReadings(readings, config)
+      const validation = validateTireReadingsSection({
+        readings,
+        positionCount: readings.length,
+        config,
+        sectionTitle: section.title,
+      })
       return {
         completed,
-        total: Math.max(readings.length, 1),
+        total: readings.length,
         hasIssues: false,
-        isComplete: readings.length > 0 && completed === readings.length,
+        isComplete: validation.valid,
       }
     } else {
       const items = section.checklist_items || section.items || []
@@ -2560,6 +2618,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                     <TireReadingsSection
                       assetId={checklist.assetId}
                       sectionTitle={section.title}
+                      config={section.tire_readings_config}
                       value={tireReadingsData[section.id] ?? []}
                       onChange={(readings) =>
                         setTireReadingsData((prev) => ({ ...prev, [section.id]: readings }))

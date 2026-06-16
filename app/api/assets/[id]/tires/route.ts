@@ -1,4 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
+import { computeAssetTireSubState } from '@/lib/tires/fleet-status'
+import { getPositionsForAsset } from '@/lib/tires/layout-resolver'
+import { validateRotation } from '@/lib/tires/rotation'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   issueTireFromInventory,
@@ -21,12 +24,30 @@ export async function GET(
 
     const { data: asset, error: assetErr } = await supabase
       .from('assets')
-      .select('id, name, current_kilometers, current_hours')
+      .select('id, name, current_kilometers, current_hours, model_id, equipment_models(id, name, category)')
       .eq('id', assetId)
       .maybeSingle()
 
     if (assetErr) return NextResponse.json({ error: assetErr.message }, { status: 500 })
     if (!asset) return NextResponse.json({ error: 'Activo no encontrado' }, { status: 404 })
+
+    const modelId = asset.model_id as string | null
+    let hasExplicitLayout = false
+    if (modelId) {
+      const { data: layoutRow } = await supabase
+        .from('equipment_model_tire_layouts')
+        .select('id')
+        .eq('model_id', modelId)
+        .maybeSingle()
+      hasExplicitLayout = !!layoutRow
+    }
+
+    const resolvedLayout = await getPositionsForAsset(supabase, assetId)
+
+    const { count: warehouseCount } = await supabase
+      .from('tires')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'en_almacen')
 
     const { data: installations, error: instErr } = await supabase
       .from('asset_tire_installations')
@@ -70,10 +91,43 @@ export async function GET(
       .order('event_at', { ascending: false })
       .limit(50)
 
+    const active = enriched.filter((i) => !i.removed_at)
+    const mountedCount = active.length
+    const totalPositions = resolvedLayout.positions.length
+    const assetSubState = computeAssetTireSubState({
+      hasExplicitLayout,
+      hasModel: !!modelId,
+      mountedCount,
+      totalPositions,
+      warehouseCount: warehouseCount ?? 0,
+    })
+
+    const equipmentModel = Array.isArray(asset.equipment_models)
+      ? asset.equipment_models[0]
+      : asset.equipment_models
+
     return NextResponse.json({
-      asset,
+      asset: {
+        id: asset.id,
+        name: asset.name,
+        current_kilometers: asset.current_kilometers,
+        current_hours: asset.current_hours,
+        model_id: modelId,
+        model: equipmentModel ?? null,
+      },
       installations: enriched,
       events: events ?? [],
+      layout: {
+        ...resolvedLayout,
+        has_explicit_layout: hasExplicitLayout,
+      },
+      warehouse_tire_count: warehouseCount ?? 0,
+      asset_sub_state: assetSubState,
+      coverage: {
+        mounted: mountedCount,
+        total: totalPositions,
+        pct: totalPositions > 0 ? Math.round((mountedCount / totalPositions) * 100) : 0,
+      },
     })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Error interno'
@@ -219,7 +273,7 @@ export async function PATCH(
 
     const { id: assetId } = await context.params
     const body = await request.json() as {
-      action: 'unmount' | 'reading' | 'event'
+      action: 'unmount' | 'reading' | 'event' | 'rotate'
       installation_id?: string
       reading?: TireReadingInput
       event_type?: string
@@ -227,6 +281,9 @@ export async function PATCH(
       notes?: string
       retire_tire?: boolean
       work_order_id?: string
+      to_position_code?: string
+      to_position_label?: string
+      to_axle_number?: number
     }
 
     if (body.action === 'reading' && body.reading) {
@@ -366,6 +423,86 @@ export async function PATCH(
 
       if (evErr) return NextResponse.json({ error: evErr.message }, { status: 500 })
       return NextResponse.json({ event })
+    }
+
+    if (body.action === 'rotate' && body.installation_id) {
+      if (!body.to_position_code || !body.to_position_label) {
+        return NextResponse.json({ error: 'Posición destino requerida' }, { status: 400 })
+      }
+
+      const { data: inst, error: instErr } = await supabase
+        .from('asset_tire_installations')
+        .select('*, tire:tires(*)')
+        .eq('id', body.installation_id)
+        .eq('asset_id', assetId)
+        .is('removed_at', null)
+        .maybeSingle()
+
+      if (instErr || !inst) {
+        return NextResponse.json({ error: 'Instalación activa no encontrada' }, { status: 404 })
+      }
+
+      const resolvedLayout = await getPositionsForAsset(supabase, assetId)
+      const { data: otherActive } = await supabase
+        .from('asset_tire_installations')
+        .select('position_code')
+        .eq('asset_id', assetId)
+        .is('removed_at', null)
+        .neq('id', body.installation_id)
+
+      const occupied = (otherActive ?? []).map((i) => i.position_code as string)
+      const validation = validateRotation({
+        from_position_code: inst.position_code as string,
+        to_position_code: body.to_position_code,
+        occupied_positions: occupied,
+        positions: resolvedLayout.positions,
+      })
+
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 409 })
+      }
+
+      const { data: asset } = await supabase
+        .from('assets')
+        .select('current_kilometers, current_hours')
+        .eq('id', assetId)
+        .single()
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('asset_tire_installations')
+        .update({
+          position_code: body.to_position_code,
+          position_label: body.to_position_label,
+          axle_number: body.to_axle_number ?? null,
+          notes: body.notes?.trim() || inst.notes,
+        })
+        .eq('id', body.installation_id)
+        .select('*, tire:tires(*)')
+        .single()
+
+      if (updateErr) {
+        return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      }
+
+      const { error: eventErr } = await supabase.from('tire_events').insert({
+        tire_id: inst.tire_id,
+        installation_id: inst.id,
+        asset_id: assetId,
+        event_type: 'rotacion',
+        work_order_id: body.work_order_id ?? inst.work_order_id ?? null,
+        odometer_km: asset?.current_kilometers ?? null,
+        horometer_hours: asset?.current_hours ?? null,
+        from_position: inst.position_code,
+        to_position: body.to_position_code,
+        created_by: user.id,
+        notes: body.notes?.trim() || null,
+      })
+
+      if (eventErr) {
+        return NextResponse.json({ error: eventErr.message }, { status: 500 })
+      }
+
+      return NextResponse.json({ installation: updated })
     }
 
     return NextResponse.json({ error: 'Acción no válida' }, { status: 400 })

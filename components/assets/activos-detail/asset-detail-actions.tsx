@@ -1,20 +1,21 @@
-"use client"
+'use client'
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import Link from "next/link"
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import Link from 'next/link'
 import {
   AlertTriangle,
   CircleDot,
   Edit,
   FileText,
   Wrench,
-} from "lucide-react"
+} from 'lucide-react'
 import {
   CreateWorkOrderIntentDialog,
   type WorkOrderIntent,
-} from "@/components/assets/dialogs/create-work-order-intent-dialog"
+} from '@/components/assets/dialogs/create-work-order-intent-dialog'
 
 interface AssetDetailActionsProps {
   assetId: string
@@ -27,6 +28,38 @@ interface AssetDetailActionsProps {
   }
 }
 
+function useAssetTireCoverageBadge(assetId: string) {
+  const [label, setLabel] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/assets/${assetId}/tires`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        const subState = data.asset_sub_state as string | undefined
+        const coverage = data.coverage as { pct?: number; mounted?: number; total?: number } | undefined
+        if (subState === 'no-layout') {
+          setLabel('Sin layout')
+        } else if (coverage?.total && coverage.total > 0) {
+          setLabel(`${coverage.pct ?? 0}%`)
+        } else if (subState === 'no-stock') {
+          setLabel('Sin stock')
+        } else {
+          setLabel(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLabel(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [assetId])
+
+  return label
+}
+
 export function AssetDetailActions({
   assetId,
   hasComposite,
@@ -36,13 +69,14 @@ export function AssetDetailActions({
 }: AssetDetailActionsProps) {
   const router = useRouter()
   const [workOrderIntentOpen, setWorkOrderIntentOpen] = useState(false)
+  const tireCoverageLabel = useAssetTireCoverageBadge(assetId)
 
   const handleWorkOrderIntent = (intent: WorkOrderIntent) => {
-    if (intent === "preventive") {
+    if (intent === 'preventive') {
       router.push(`/activos/${assetId}/mantenimiento/nuevo`)
       return
     }
-    if (intent === "corrective") {
+    if (intent === 'corrective') {
       router.push(`/ordenes/crear?assetId=${assetId}`)
       return
     }
@@ -51,7 +85,7 @@ export function AssetDetailActions({
 
   return (
     <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:flex-wrap sm:gap-2">
-      {ui.shouldShowInNavigation("work_orders") && (
+      {ui.shouldShowInNavigation('work_orders') && (
         <>
           <Button
             type="button"
@@ -66,11 +100,11 @@ export function AssetDetailActions({
             open={workOrderIntentOpen}
             onOpenChange={setWorkOrderIntentOpen}
             onSelectIntent={handleWorkOrderIntent}
-            showIncidentFirstOption={ui.shouldShowInNavigation("maintenance")}
+            showIncidentFirstOption={ui.shouldShowInNavigation('maintenance')}
           />
         </>
       )}
-      {ui.shouldShowInNavigation("maintenance") && (
+      {ui.shouldShowInNavigation('maintenance') && (
         <Button
           size="sm"
           variant="outline"
@@ -92,7 +126,7 @@ export function AssetDetailActions({
           Reporte Producción
         </Link>
       </Button>
-      {ui.shouldShowInNavigation("assets") && (
+      {ui.shouldShowInNavigation('assets') && (
         <Button
           size="sm"
           variant="outline"
@@ -102,10 +136,18 @@ export function AssetDetailActions({
           <Link href={`/activos/${assetId}/llantas`}>
             <CircleDot className="h-4 w-4 mr-2" />
             Llantas
+            {tireCoverageLabel && (
+              <Badge
+                variant="outline"
+                className="ml-2 border-amber-500/50 text-amber-700 dark:text-amber-400"
+              >
+                {tireCoverageLabel}
+              </Badge>
+            )}
           </Link>
         </Button>
       )}
-      {ui.canShowEditButton("assets") && (
+      {ui.canShowEditButton?.('assets') && (
         <Button
           size="sm"
           variant="outline"

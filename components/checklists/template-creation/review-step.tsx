@@ -23,6 +23,7 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   evidence: "Evidencia",
   cleanliness_bonus: "Limpieza",
   security_talk: "Seguridad",
+  tire_readings: "Llantas",
 }
 
 interface ReviewStepProps {
@@ -90,6 +91,7 @@ export function ReviewStep({
             evidence_config: section.evidence_config || null,
             cleanliness_config: section.cleanliness_config || null,
             security_config: section.security_config || null,
+            tire_readings_config: section.tire_readings_config || null,
           })
           .select("id")
           .single()

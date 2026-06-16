@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { MovementService } from '@/lib/services/movement-service'
 import { StockService } from '@/lib/services/stock-service'
+import { insertTireWithIdentity } from '@/lib/tires/identifier'
 
 export function isTireSkuLabel(name: string): boolean {
   return /llanta|neum[aá]tico/i.test(name)
@@ -35,10 +36,9 @@ export async function createTiresFromReceipt(
 
   for (let i = 0; i < qty; i++) {
     const unit = params.tire_units?.[i]
-    const { data, error } = await supabase
-      .from('tires')
-      .insert({
-        serial_number: unit?.serial_number?.trim() || null,
+    const createdRow = await insertTireWithIdentity(
+      supabase,
+      {
         brand: unit?.brand?.trim() || defaultBrand,
         model: unit?.model?.trim() || null,
         size: unit?.size?.trim() || sizeMatch?.[0] || params.part_name,
@@ -51,15 +51,13 @@ export async function createTiresFromReceipt(
         plant_id: params.plant_id ?? null,
         po_line_index: i,
         status: 'en_almacen',
-      })
-      .select('id')
-      .single()
-
-    if (error) {
-      console.error('[tires] create from receipt', error)
-      throw new Error(`No se pudo crear la llanta ${i + 1}: ${error.message}`)
-    }
-    created.push(data.id)
+      },
+      {
+        plantId: params.plant_id ?? null,
+        serialNumber: unit?.serial_number ?? null,
+      }
+    )
+    created.push(createdRow.id)
   }
 
   return created

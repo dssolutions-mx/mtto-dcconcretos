@@ -147,11 +147,11 @@ export function WorkOrderForm() {
     fetchData()
   }, [supabase])
 
-  // Pre-select asset from URL parameters
+  // Pre-select asset / description from URL parameters
   useEffect(() => {
     const assetIdParam = searchParams.get('assetId')
+    const descriptionParam = searchParams.get('description')
     if (assetIdParam && assets.length > 0) {
-      // Check if the asset exists in our assets list
       const assetExists = assets.find(asset => asset.id === assetIdParam)
       if (assetExists) {
         setFormData(prev => ({ ...prev, asset_id: assetIdParam }))
@@ -159,6 +159,13 @@ export function WorkOrderForm() {
           setSelectedAssetPlantId(assetExists.plant_id)
         }
       }
+    }
+    if (descriptionParam) {
+      setFormData(prev =>
+        prev.description?.trim()
+          ? prev
+          : { ...prev, description: descriptionParam }
+      )
     }
   }, [searchParams, assets])
   

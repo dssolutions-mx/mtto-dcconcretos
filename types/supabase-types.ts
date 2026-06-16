@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       additional_expenses: {
@@ -107,6 +82,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts_payable_summary"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "additional_expenses_adjustment_po_id_fkey"
+            columns: ["adjustment_po_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "additional_expenses_adjustment_po_id_fkey"
+            columns: ["adjustment_po_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
           },
           {
             foreignKeyName: "additional_expenses_adjustment_po_id_fkey"
@@ -562,6 +551,128 @@ export type Database = {
           },
         ]
       }
+      asset_diesel_efficiency_monthly: {
+        Row: {
+          anomaly_flags: Json
+          asset_id: string
+          computed_at: string
+          concrete_m3: number | null
+          equipment_category: string | null
+          hours_merged: number
+          hours_sum_raw: number
+          hours_trusted: number
+          id: string
+          kilometers_merged: number
+          kilometers_sum_raw: number
+          kilometers_trusted: number
+          liters_per_hour_trusted: number | null
+          liters_per_km: number | null
+          liters_per_m3: number | null
+          plant_concrete_m3: number | null
+          plant_id: string | null
+          quality_flags: Json
+          thresholds_version: string
+          total_liters: number
+          year_month: string
+        }
+        Insert: {
+          anomaly_flags?: Json
+          asset_id: string
+          computed_at?: string
+          concrete_m3?: number | null
+          equipment_category?: string | null
+          hours_merged?: number
+          hours_sum_raw?: number
+          hours_trusted?: number
+          id?: string
+          kilometers_merged?: number
+          kilometers_sum_raw?: number
+          kilometers_trusted?: number
+          liters_per_hour_trusted?: number | null
+          liters_per_km?: number | null
+          liters_per_m3?: number | null
+          plant_concrete_m3?: number | null
+          plant_id?: string | null
+          quality_flags?: Json
+          thresholds_version?: string
+          total_liters?: number
+          year_month: string
+        }
+        Update: {
+          anomaly_flags?: Json
+          asset_id?: string
+          computed_at?: string
+          concrete_m3?: number | null
+          equipment_category?: string | null
+          hours_merged?: number
+          hours_sum_raw?: number
+          hours_trusted?: number
+          id?: string
+          kilometers_merged?: number
+          kilometers_sum_raw?: number
+          kilometers_trusted?: number
+          liters_per_hour_trusted?: number | null
+          liters_per_km?: number | null
+          liters_per_m3?: number | null
+          plant_concrete_m3?: number | null
+          plant_id?: string | null
+          quality_flags?: Json
+          thresholds_version?: string
+          total_liters?: number
+          year_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "asset_diesel_efficiency_monthly_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_field_verifications: {
         Row: {
           asset_id: string
@@ -929,6 +1040,155 @@ export type Database = {
             columns: ["operator_id"]
             isOneToOne: false
             referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_tire_installations: {
+        Row: {
+          asset_id: string
+          axle_number: number | null
+          created_at: string
+          hours_at_install: number | null
+          hours_at_remove: number | null
+          id: string
+          installed_at: string
+          installed_by: string | null
+          km_at_install: number | null
+          km_at_remove: number | null
+          notes: string | null
+          position_code: string
+          position_label: string
+          removed_at: string | null
+          tire_id: string
+          work_order_id: string | null
+        }
+        Insert: {
+          asset_id: string
+          axle_number?: number | null
+          created_at?: string
+          hours_at_install?: number | null
+          hours_at_remove?: number | null
+          id?: string
+          installed_at?: string
+          installed_by?: string | null
+          km_at_install?: number | null
+          km_at_remove?: number | null
+          notes?: string | null
+          position_code: string
+          position_label: string
+          removed_at?: string | null
+          tire_id: string
+          work_order_id?: string | null
+        }
+        Update: {
+          asset_id?: string
+          axle_number?: number | null
+          created_at?: string
+          hours_at_install?: number | null
+          hours_at_remove?: number | null
+          id?: string
+          installed_at?: string
+          installed_by?: string | null
+          km_at_install?: number | null
+          km_at_remove?: number | null
+          notes?: string | null
+          position_code?: string
+          position_label?: string
+          removed_at?: string | null
+          tire_id?: string
+          work_order_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_tire_installations_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_installed_by_fkey"
+            columns: ["installed_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_tire_id_fkey"
+            columns: ["tire_id"]
+            isOneToOne: false
+            referencedRelation: "tires"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_stale_reservations"
+            referencedColumns: ["work_order_id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tire_installations_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders_with_checklist_status"
             referencedColumns: ["id"]
           },
         ]
@@ -1697,6 +1957,53 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_work_orders: {
+        Row: {
+          added_at: string
+          campaign_id: string
+          work_order_id: string
+        }
+        Insert: {
+          added_at?: string
+          campaign_id: string
+          work_order_id: string
+        }
+        Update: {
+          added_at?: string
+          campaign_id?: string
+          work_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_work_orders_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_work_orders_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_stale_reservations"
+            referencedColumns: ["work_order_id"]
+          },
+          {
+            foreignKeyName: "campaign_work_orders_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_work_orders_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders_with_checklist_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checklist_evidence: {
         Row: {
           category: string
@@ -1776,6 +2083,7 @@ export type Database = {
           work_order_id: string | null
         }
         Insert: {
+          canonical_issue_key?: string | null
           checklist_id?: string | null
           consolidation_window?: string | null
           created_at?: string | null
@@ -1798,6 +2106,7 @@ export type Database = {
           work_order_id?: string | null
         }
         Update: {
+          canonical_issue_key?: string | null
           checklist_id?: string | null
           consolidation_window?: string | null
           created_at?: string | null
@@ -1833,6 +2142,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "incident_history"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_issues_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
           },
           {
             foreignKeyName: "checklist_issues_parent_issue_id_fkey"
@@ -2009,6 +2325,7 @@ export type Database = {
           order_index: number
           section_type: string | null
           security_config: Json | null
+          tire_readings_config: Json | null
           title: string
           updated_at: string | null
           updated_by: string | null
@@ -2023,6 +2340,7 @@ export type Database = {
           order_index: number
           section_type?: string | null
           security_config?: Json | null
+          tire_readings_config?: Json | null
           title: string
           updated_at?: string | null
           updated_by?: string | null
@@ -2037,6 +2355,7 @@ export type Database = {
           order_index?: number
           section_type?: string | null
           security_config?: Json | null
+          tire_readings_config?: Json | null
           title?: string
           updated_at?: string | null
           updated_by?: string | null
@@ -2203,12 +2522,14 @@ export type Database = {
           previous_hours: number | null
           previous_kilometers: number | null
           reading_timestamp: string | null
+          schedule_id: string | null
           security_data: Json | null
           service_order_id: string | null
           signature_data: string | null
           status: string | null
           technician: string
           template_version_id: string | null
+          tire_readings_snapshot: Json | null
           updated_at: string | null
           updated_by: string | null
         }
@@ -2226,12 +2547,14 @@ export type Database = {
           previous_hours?: number | null
           previous_kilometers?: number | null
           reading_timestamp?: string | null
+          schedule_id?: string | null
           security_data?: Json | null
           service_order_id?: string | null
           signature_data?: string | null
           status?: string | null
           technician: string
           template_version_id?: string | null
+          tire_readings_snapshot?: Json | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -2249,12 +2572,14 @@ export type Database = {
           previous_hours?: number | null
           previous_kilometers?: number | null
           reading_timestamp?: string | null
+          schedule_id?: string | null
           security_data?: Json | null
           service_order_id?: string | null
           signature_data?: string | null
           status?: string | null
           technician?: string
           template_version_id?: string | null
+          tire_readings_snapshot?: Json | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -3765,6 +4090,90 @@ export type Database = {
           },
         ]
       }
+      equipment_category_efficiency_bands: {
+        Row: {
+          band_comfort_max: number | null
+          band_comfort_min: number | null
+          band_severe_above: number | null
+          band_watch_above: number | null
+          category_key: string
+          created_at: string
+          display_name: string
+          id: string
+          reference_liters_per_hour: number
+          version: string
+        }
+        Insert: {
+          band_comfort_max?: number | null
+          band_comfort_min?: number | null
+          band_severe_above?: number | null
+          band_watch_above?: number | null
+          category_key: string
+          created_at?: string
+          display_name: string
+          id?: string
+          reference_liters_per_hour: number
+          version?: string
+        }
+        Update: {
+          band_comfort_max?: number | null
+          band_comfort_min?: number | null
+          band_severe_above?: number | null
+          band_watch_above?: number | null
+          category_key?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          reference_liters_per_hour?: number
+          version?: string
+        }
+        Relationships: []
+      }
+      equipment_model_tire_layouts: {
+        Row: {
+          created_at: string
+          id: string
+          model_id: string
+          positions: Json
+          svg_variant: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          model_id: string
+          positions?: Json
+          svg_variant?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          model_id?: string
+          positions?: Json
+          svg_variant?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_model_tire_layouts_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: true
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["model_uuid"]
+          },
+          {
+            foreignKeyName: "equipment_model_tire_layouts_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: true
+            referencedRelation: "equipment_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       equipment_models: {
         Row: {
           category: string
@@ -3973,9 +4382,208 @@ export type Database = {
         }
         Relationships: []
       }
+      incident_assignment_log: {
+        Row: {
+          changed_by: string | null
+          created_at: string
+          from_assignee_id: string | null
+          from_department_id: string | null
+          from_pipeline_stage: string | null
+          id: string
+          incident_id: string
+          reason: string | null
+          to_assignee_id: string | null
+          to_department_id: string | null
+          to_pipeline_stage: string | null
+        }
+        Insert: {
+          changed_by?: string | null
+          created_at?: string
+          from_assignee_id?: string | null
+          from_department_id?: string | null
+          from_pipeline_stage?: string | null
+          id?: string
+          incident_id: string
+          reason?: string | null
+          to_assignee_id?: string | null
+          to_department_id?: string | null
+          to_pipeline_stage?: string | null
+        }
+        Update: {
+          changed_by?: string | null
+          created_at?: string
+          from_assignee_id?: string | null
+          from_department_id?: string | null
+          from_pipeline_stage?: string | null
+          id?: string
+          incident_id?: string
+          reason?: string | null
+          to_assignee_id?: string | null
+          to_department_id?: string | null
+          to_pipeline_stage?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_assignee_id_fkey"
+            columns: ["from_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_from_department_id_fkey"
+            columns: ["from_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_assignee_id_fkey"
+            columns: ["to_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_assignment_log_to_department_id_fkey"
+            columns: ["to_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incident_history: {
         Row: {
           asset_id: string | null
+          assigned_at: string | null
+          assigned_to_id: string | null
           canonical_issue_key: string | null
           checklist_id: string | null
           created_at: string | null
@@ -3984,17 +4592,26 @@ export type Database = {
           description: string
           documents: Json | null
           downtime: number | null
+          first_assigned_at: string | null
+          first_planned_at: string | null
+          first_wo_created_at: string | null
           id: string
           impact: string | null
-          merged_into_id: string | null
           labor_cost: number | null
           labor_hours: number | null
+          merged_into_id: string | null
           parts: Json | null
+          pipeline_stage: string
           reported_by: string
           reported_by_id: string | null
           resolution: string | null
+          resolved_at: string | null
+          routed_at: string | null
+          routing_department_id: string | null
+          routing_rule_id: string | null
           service_order_id: string | null
           status: string | null
+          target_response_hours: number | null
           total_cost: number | null
           type: string
           updated_at: string | null
@@ -4004,6 +4621,9 @@ export type Database = {
         }
         Insert: {
           asset_id?: string | null
+          assigned_at?: string | null
+          assigned_to_id?: string | null
+          canonical_issue_key?: string | null
           checklist_id?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -4011,16 +4631,26 @@ export type Database = {
           description: string
           documents?: Json | null
           downtime?: number | null
+          first_assigned_at?: string | null
+          first_planned_at?: string | null
+          first_wo_created_at?: string | null
           id?: string
           impact?: string | null
           labor_cost?: number | null
           labor_hours?: number | null
+          merged_into_id?: string | null
           parts?: Json | null
+          pipeline_stage?: string
           reported_by: string
           reported_by_id?: string | null
           resolution?: string | null
+          resolved_at?: string | null
+          routed_at?: string | null
+          routing_department_id?: string | null
+          routing_rule_id?: string | null
           service_order_id?: string | null
           status?: string | null
+          target_response_hours?: number | null
           total_cost?: number | null
           type: string
           updated_at?: string | null
@@ -4030,6 +4660,9 @@ export type Database = {
         }
         Update: {
           asset_id?: string | null
+          assigned_at?: string | null
+          assigned_to_id?: string | null
+          canonical_issue_key?: string | null
           checklist_id?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -4037,16 +4670,26 @@ export type Database = {
           description?: string
           documents?: Json | null
           downtime?: number | null
+          first_assigned_at?: string | null
+          first_planned_at?: string | null
+          first_wo_created_at?: string | null
           id?: string
           impact?: string | null
           labor_cost?: number | null
           labor_hours?: number | null
+          merged_into_id?: string | null
           parts?: Json | null
+          pipeline_stage?: string
           reported_by?: string
           reported_by_id?: string | null
           resolution?: string | null
+          resolved_at?: string | null
+          routed_at?: string | null
+          routing_department_id?: string | null
+          routing_rule_id?: string | null
           service_order_id?: string | null
           status?: string | null
+          target_response_hours?: number | null
           total_cost?: number | null
           type?: string
           updated_at?: string | null
@@ -4077,10 +4720,80 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_history_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "incident_history_checklist_id_fkey"
             columns: ["checklist_id"]
             isOneToOne: false
             referencedRelation: "checklists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_history_merged_into_id_fkey"
+            columns: ["merged_into_id"]
+            isOneToOne: false
+            referencedRelation: "incident_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_history_merged_into_id_fkey"
+            columns: ["merged_into_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
+          },
+          {
+            foreignKeyName: "incident_history_routing_department_id_fkey"
+            columns: ["routing_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_history_routing_rule_id_fkey"
+            columns: ["routing_rule_id"]
+            isOneToOne: false
+            referencedRelation: "incident_routing_rules"
             referencedColumns: ["id"]
           },
           {
@@ -4109,6 +4822,388 @@ export type Database = {
             columns: ["work_order_id"]
             isOneToOne: false
             referencedRelation: "work_orders_with_checklist_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incident_routing_rules: {
+        Row: {
+          confidence: number
+          created_at: string
+          created_by: string | null
+          default_assignee_id: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          match_description_contains: string | null
+          match_impact: string | null
+          match_incident_type: string | null
+          name: string
+          pattern_key: string | null
+          plant_id: string | null
+          priority: number
+          sample_count: number
+          source: string
+          target_department_id: string
+          target_response_hours: number
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          created_by?: string | null
+          default_assignee_id?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          match_description_contains?: string | null
+          match_impact?: string | null
+          match_incident_type?: string | null
+          name: string
+          pattern_key?: string | null
+          plant_id?: string | null
+          priority?: number
+          sample_count?: number
+          source?: string
+          target_department_id: string
+          target_response_hours?: number
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          created_by?: string | null
+          default_assignee_id?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          match_description_contains?: string | null
+          match_impact?: string | null
+          match_incident_type?: string | null
+          name?: string
+          pattern_key?: string | null
+          plant_id?: string | null
+          priority?: number
+          sample_count?: number
+          source?: string
+          target_department_id?: string
+          target_response_hours?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_rules_target_department_id_fkey"
+            columns: ["target_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incident_routing_signals: {
+        Row: {
+          chosen_assignee_id: string | null
+          chosen_department_id: string
+          created_at: string
+          created_by: string | null
+          description_keyword: string | null
+          id: string
+          incident_id: string
+          incident_impact: string | null
+          incident_type: string
+          plant_id: string | null
+          previous_department_id: string | null
+          previous_rule_id: string | null
+          signal_kind: string
+        }
+        Insert: {
+          chosen_assignee_id?: string | null
+          chosen_department_id: string
+          created_at?: string
+          created_by?: string | null
+          description_keyword?: string | null
+          id?: string
+          incident_id: string
+          incident_impact?: string | null
+          incident_type: string
+          plant_id?: string | null
+          previous_department_id?: string | null
+          previous_rule_id?: string | null
+          signal_kind?: string
+        }
+        Update: {
+          chosen_assignee_id?: string | null
+          chosen_department_id?: string
+          created_at?: string
+          created_by?: string | null
+          description_keyword?: string | null
+          id?: string
+          incident_id?: string
+          incident_impact?: string | null
+          incident_type?: string
+          plant_id?: string | null
+          previous_department_id?: string | null
+          previous_rule_id?: string | null
+          signal_kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_assignee_id_fkey"
+            columns: ["chosen_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_chosen_department_id_fkey"
+            columns: ["chosen_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_previous_department_id_fkey"
+            columns: ["previous_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_routing_signals_previous_rule_id_fkey"
+            columns: ["previous_rule_id"]
+            isOneToOne: false
+            referencedRelation: "incident_routing_rules"
             referencedColumns: ["id"]
           },
         ]
@@ -4260,6 +5355,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts_payable_summary"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_movements_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "inventory_movements_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
           },
           {
             foreignKeyName: "inventory_movements_purchase_order_id_fkey"
@@ -4579,6 +5688,170 @@ export type Database = {
           },
           {
             foreignKeyName: "inventory_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_campaigns: {
+        Row: {
+          cohort_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          notes: string | null
+          owner_id: string | null
+          plant_id: string | null
+          status: string
+          target_end: string | null
+          target_start: string | null
+          theme: string | null
+          updated_at: string
+        }
+        Insert: {
+          cohort_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          owner_id?: string | null
+          plant_id?: string | null
+          status?: string
+          target_end?: string | null
+          target_start?: string | null
+          theme?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cohort_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          owner_id?: string | null
+          plant_id?: string | null
+          status?: string
+          target_end?: string | null
+          target_start?: string | null
+          theme?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "maintenance_campaigns_plant_id_fkey"
             columns: ["plant_id"]
             isOneToOne: false
             referencedRelation: "plants"
@@ -5703,6 +6976,20 @@ export type Database = {
             foreignKeyName: "po_action_tokens_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_action_tokens_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_action_tokens_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -5718,6 +7005,228 @@ export type Database = {
             columns: ["quotation_id"]
             isOneToOne: false
             referencedRelation: "purchase_order_quotations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_credit_note_invoice_allocations: {
+        Row: {
+          allocated_subtotal: number
+          allocated_tax: number
+          allocated_total: number | null
+          created_at: string
+          credit_note_id: string
+          id: string
+          invoice_id: string
+        }
+        Insert: {
+          allocated_subtotal: number
+          allocated_tax?: number
+          allocated_total?: number | null
+          created_at?: string
+          credit_note_id: string
+          id?: string
+          invoice_id: string
+        }
+        Update: {
+          allocated_subtotal?: number
+          allocated_tax?: number
+          allocated_total?: number | null
+          created_at?: string
+          credit_note_id?: string
+          id?: string
+          invoice_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_credit_note_invoice_allocations_credit_note_id_fkey"
+            columns: ["credit_note_id"]
+            isOneToOne: false
+            referencedRelation: "po_credit_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_credit_note_invoice_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_balances"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_credit_note_invoice_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_credit_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_credit_note_invoice_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_credit_note_invoice_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_supplier_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_credit_notes: {
+        Row: {
+          amount: number
+          applied_by: string | null
+          cfdi_capture_mode: string
+          cfdi_emisor_rfc: string | null
+          cfdi_folio: string | null
+          cfdi_receptor_rfc: string | null
+          cfdi_relacionado_uuid: string | null
+          cfdi_serie: string | null
+          cfdi_uuid: string | null
+          created_at: string
+          credit_date: string
+          credit_number: string | null
+          id: string
+          notes: string | null
+          plant_id: string
+          reason: string
+          status: string
+          supplier_id: string | null
+          tax_amount: number
+          total: number
+          updated_at: string
+          vat_rate: number
+          xml_url: string | null
+        }
+        Insert: {
+          amount: number
+          applied_by?: string | null
+          cfdi_capture_mode?: string
+          cfdi_emisor_rfc?: string | null
+          cfdi_folio?: string | null
+          cfdi_receptor_rfc?: string | null
+          cfdi_relacionado_uuid?: string | null
+          cfdi_serie?: string | null
+          cfdi_uuid?: string | null
+          created_at?: string
+          credit_date: string
+          credit_number?: string | null
+          id?: string
+          notes?: string | null
+          plant_id: string
+          reason: string
+          status?: string
+          supplier_id?: string | null
+          tax_amount?: number
+          total: number
+          updated_at?: string
+          vat_rate?: number
+          xml_url?: string | null
+        }
+        Update: {
+          amount?: number
+          applied_by?: string | null
+          cfdi_capture_mode?: string
+          cfdi_emisor_rfc?: string | null
+          cfdi_folio?: string | null
+          cfdi_receptor_rfc?: string | null
+          cfdi_relacionado_uuid?: string | null
+          cfdi_serie?: string | null
+          cfdi_uuid?: string | null
+          created_at?: string
+          credit_date?: string
+          credit_number?: string | null
+          id?: string
+          notes?: string | null
+          plant_id?: string
+          reason?: string
+          status?: string
+          supplier_id?: string | null
+          tax_amount?: number
+          total?: number
+          updated_at?: string
+          vat_rate?: number
+          xml_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_credit_notes_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -5774,6 +7283,20 @@ export type Database = {
             foreignKeyName: "po_inventory_receipts_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_inventory_receipts_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_inventory_receipts_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -5803,6 +7326,490 @@ export type Database = {
             columns: ["warehouse_id"]
             isOneToOne: false
             referencedRelation: "inventory_warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_invoice_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          invoice_id: string
+          notes: string | null
+          payment_date: string
+          payment_method: string | null
+          plant_id: string
+          purchase_order_id: string
+          recorded_by: string | null
+          reference: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          invoice_id: string
+          notes?: string | null
+          payment_date: string
+          payment_method?: string | null
+          plant_id: string
+          purchase_order_id: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          notes?: string | null
+          payment_date?: string
+          payment_method?: string | null
+          plant_id?: string
+          purchase_order_id?: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_balances"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_credit_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_supplier_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "accounts_payable_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders_expense_classification"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_invoice_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_supplier_invoice_items: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          expense_type: string | null
+          id: string
+          invoice_id: string
+          po_line_index: number | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description: string
+          expense_type?: string | null
+          id?: string
+          invoice_id: string
+          po_line_index?: number | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          expense_type?: string | null
+          id?: string
+          invoice_id?: string
+          po_line_index?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_supplier_invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_balances"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoice_credit_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["invoice_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "po_supplier_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_supplier_invoices: {
+        Row: {
+          cfdi_capture_mode: string
+          cfdi_emisor_rfc: string | null
+          cfdi_fecha_emision: string | null
+          cfdi_fecha_timbrado: string | null
+          cfdi_folio: string | null
+          cfdi_forma_pago: string | null
+          cfdi_metodo_pago: string | null
+          cfdi_receptor_rfc: string | null
+          cfdi_serie: string | null
+          cfdi_tipo_comprobante: string | null
+          cfdi_uso: string | null
+          cfdi_uuid: string | null
+          created_at: string
+          discount_amount: number
+          document_url: string | null
+          due_date: string | null
+          expense_category: string
+          id: string
+          invoice_date: string
+          invoice_number: string
+          notes: string | null
+          payment_reference: string | null
+          plant_id: string
+          po_purpose_snapshot: string | null
+          po_type_snapshot: string | null
+          purchase_order_id: string
+          receipt_id: string | null
+          registered_by: string | null
+          retention_isr_amount: number
+          retention_isr_rate: number
+          retention_iva_amount: number
+          retention_iva_rate: number
+          status: string
+          subtotal: number
+          supplier_id: string | null
+          tax: number
+          total: number
+          updated_at: string
+          vat_rate: number
+          xml_url: string | null
+        }
+        Insert: {
+          cfdi_capture_mode?: string
+          cfdi_emisor_rfc?: string | null
+          cfdi_fecha_emision?: string | null
+          cfdi_fecha_timbrado?: string | null
+          cfdi_folio?: string | null
+          cfdi_forma_pago?: string | null
+          cfdi_metodo_pago?: string | null
+          cfdi_receptor_rfc?: string | null
+          cfdi_serie?: string | null
+          cfdi_tipo_comprobante?: string | null
+          cfdi_uso?: string | null
+          cfdi_uuid?: string | null
+          created_at?: string
+          discount_amount?: number
+          document_url?: string | null
+          due_date?: string | null
+          expense_category: string
+          id?: string
+          invoice_date: string
+          invoice_number: string
+          notes?: string | null
+          payment_reference?: string | null
+          plant_id: string
+          po_purpose_snapshot?: string | null
+          po_type_snapshot?: string | null
+          purchase_order_id: string
+          receipt_id?: string | null
+          registered_by?: string | null
+          retention_isr_amount?: number
+          retention_isr_rate?: number
+          retention_iva_amount?: number
+          retention_iva_rate?: number
+          status?: string
+          subtotal: number
+          supplier_id?: string | null
+          tax: number
+          total: number
+          updated_at?: string
+          vat_rate?: number
+          xml_url?: string | null
+        }
+        Update: {
+          cfdi_capture_mode?: string
+          cfdi_emisor_rfc?: string | null
+          cfdi_fecha_emision?: string | null
+          cfdi_fecha_timbrado?: string | null
+          cfdi_folio?: string | null
+          cfdi_forma_pago?: string | null
+          cfdi_metodo_pago?: string | null
+          cfdi_receptor_rfc?: string | null
+          cfdi_serie?: string | null
+          cfdi_tipo_comprobante?: string | null
+          cfdi_uso?: string | null
+          cfdi_uuid?: string | null
+          created_at?: string
+          discount_amount?: number
+          document_url?: string | null
+          due_date?: string | null
+          expense_category?: string
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          notes?: string | null
+          payment_reference?: string | null
+          plant_id?: string
+          po_purpose_snapshot?: string | null
+          po_type_snapshot?: string | null
+          purchase_order_id?: string
+          receipt_id?: string | null
+          registered_by?: string | null
+          retention_isr_amount?: number
+          retention_isr_rate?: number
+          retention_iva_amount?: number
+          retention_iva_rate?: number
+          status?: string
+          subtotal?: number
+          supplier_id?: string | null
+          tax?: number
+          total?: number
+          updated_at?: string
+          vat_rate?: number
+          xml_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "accounts_payable_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders_expense_classification"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_order_receipts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_registered_by_fkey"
+            columns: ["registered_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -6419,6 +8426,20 @@ export type Database = {
             foreignKeyName: "purchase_order_quotations_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_quotations_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_quotations_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -6487,6 +8508,20 @@ export type Database = {
             foreignKeyName: "purchase_order_receipts_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_receipts_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_receipts_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -6501,6 +8536,7 @@ export type Database = {
       }
       purchase_orders: {
         Row: {
+          accounting_status: string
           actual_amount: number | null
           actual_delivery_date: string | null
           adjusted_at: string | null
@@ -6574,6 +8610,7 @@ export type Database = {
           work_order_type: string | null
         }
         Insert: {
+          accounting_status?: string
           actual_amount?: number | null
           actual_delivery_date?: string | null
           adjusted_at?: string | null
@@ -6647,6 +8684,7 @@ export type Database = {
           work_order_type?: string | null
         }
         Update: {
+          accounting_status?: string
           actual_amount?: number | null
           actual_delivery_date?: string | null
           adjusted_at?: string | null
@@ -6768,6 +8806,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts_payable_summary"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
+            columns: ["original_purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
+            columns: ["original_purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
           },
           {
             foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
@@ -7501,6 +9553,20 @@ export type Database = {
             foreignKeyName: "supplier_performance_history_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "supplier_performance_history_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "supplier_performance_history_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -8175,6 +10241,588 @@ export type Database = {
           },
         ]
       }
+      tire_events: {
+        Row: {
+          asset_id: string | null
+          cost: number | null
+          created_at: string
+          created_by: string | null
+          event_at: string
+          event_type: string
+          from_position: string | null
+          horometer_hours: number | null
+          id: string
+          installation_id: string | null
+          notes: string | null
+          odometer_km: number | null
+          tire_id: string
+          to_position: string | null
+          work_order_id: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          event_at?: string
+          event_type: string
+          from_position?: string | null
+          horometer_hours?: number | null
+          id?: string
+          installation_id?: string | null
+          notes?: string | null
+          odometer_km?: number | null
+          tire_id: string
+          to_position?: string | null
+          work_order_id?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string | null
+          event_at?: string
+          event_type?: string
+          from_position?: string | null
+          horometer_hours?: number | null
+          id?: string
+          installation_id?: string | null
+          notes?: string | null
+          odometer_km?: number | null
+          tire_id?: string
+          to_position?: string | null
+          work_order_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tire_events_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "tire_events_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "asset_tire_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_tire_id_fkey"
+            columns: ["tire_id"]
+            isOneToOne: false
+            referencedRelation: "tires"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_stale_reservations"
+            referencedColumns: ["work_order_id"]
+          },
+          {
+            foreignKeyName: "tire_events_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_events_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders_with_checklist_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tire_fleet_settings: {
+        Row: {
+          checklist_defaults: Json
+          created_at: string
+          id: string
+          id_rules: Json
+          plant_id: string | null
+          thresholds: Json
+          updated_at: string
+        }
+        Insert: {
+          checklist_defaults?: Json
+          created_at?: string
+          id?: string
+          id_rules?: Json
+          plant_id?: string | null
+          thresholds?: Json
+          updated_at?: string
+        }
+        Update: {
+          checklist_defaults?: Json
+          created_at?: string
+          id?: string
+          id_rules?: Json
+          plant_id?: string | null
+          thresholds?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tire_fleet_settings_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: true
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tire_fleet_settings_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: true
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tire_fleet_settings_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: true
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "tire_fleet_settings_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: true
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tire_onboarding_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          id: string
+          payload: Json
+          plant_id: string | null
+          step: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          payload?: Json
+          plant_id?: string | null
+          step: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          payload?: Json
+          plant_id?: string | null
+          step?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tire_onboarding_progress_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tire_onboarding_progress_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tire_onboarding_progress_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "tire_onboarding_progress_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tire_readings: {
+        Row: {
+          asset_id: string
+          checklist_id: string | null
+          created_at: string
+          horometer_hours: number | null
+          id: string
+          installation_id: string
+          notes: string | null
+          odometer_km: number | null
+          position_code: string | null
+          pressure_psi: number | null
+          read_at: string
+          recorded_by: string | null
+          tire_id: string
+          tread_depth_mm: number | null
+        }
+        Insert: {
+          asset_id: string
+          checklist_id?: string | null
+          created_at?: string
+          horometer_hours?: number | null
+          id?: string
+          installation_id: string
+          notes?: string | null
+          odometer_km?: number | null
+          position_code?: string | null
+          pressure_psi?: number | null
+          read_at?: string
+          recorded_by?: string | null
+          tire_id: string
+          tread_depth_mm?: number | null
+        }
+        Update: {
+          asset_id?: string
+          checklist_id?: string | null
+          created_at?: string
+          horometer_hours?: number | null
+          id?: string
+          installation_id?: string
+          notes?: string | null
+          odometer_km?: number | null
+          position_code?: string | null
+          pressure_psi?: number | null
+          read_at?: string
+          recorded_by?: string | null
+          tire_id?: string
+          tread_depth_mm?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tire_readings_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "tire_readings_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_checklist_id_fkey"
+            columns: ["checklist_id"]
+            isOneToOne: false
+            referencedRelation: "completed_checklists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "asset_tire_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "tire_readings_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tire_readings_tire_id_fkey"
+            columns: ["tire_id"]
+            isOneToOne: false
+            referencedRelation: "tires"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tires: {
+        Row: {
+          brand: string
+          condition: string
+          created_at: string
+          id: string
+          internal_code: string | null
+          inventory_part_id: string | null
+          min_tread_mm: number
+          model: string | null
+          notes: string | null
+          plant_id: string | null
+          po_line_index: number | null
+          purchase_cost: number | null
+          purchase_date: string | null
+          purchase_order_id: string | null
+          serial_number: string | null
+          size: string
+          status: string
+          supplier_id: string | null
+          updated_at: string
+          warehouse_id: string | null
+        }
+        Insert: {
+          brand: string
+          condition?: string
+          created_at?: string
+          id?: string
+          internal_code?: string | null
+          inventory_part_id?: string | null
+          min_tread_mm?: number
+          model?: string | null
+          notes?: string | null
+          plant_id?: string | null
+          po_line_index?: number | null
+          purchase_cost?: number | null
+          purchase_date?: string | null
+          purchase_order_id?: string | null
+          serial_number?: string | null
+          size: string
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Update: {
+          brand?: string
+          condition?: string
+          created_at?: string
+          id?: string
+          internal_code?: string | null
+          inventory_part_id?: string | null
+          min_tread_mm?: number
+          model?: string | null
+          notes?: string | null
+          plant_id?: string | null
+          po_line_index?: number | null
+          purchase_cost?: number | null
+          purchase_date?: string | null
+          purchase_order_id?: string | null
+          serial_number?: string | null
+          size?: string
+          status?: string
+          supplier_id?: string | null
+          updated_at?: string
+          warehouse_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tires_inventory_part_id_fkey"
+            columns: ["inventory_part_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["part_id"]
+          },
+          {
+            foreignKeyName: "tires_inventory_part_id_fkey"
+            columns: ["inventory_part_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tires_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "tires_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "tires_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "accounts_payable_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "tires_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "tires_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders_expense_classification"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tires_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "tires_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_valuation"
+            referencedColumns: ["warehouse_id"]
+          },
+          {
+            foreignKeyName: "tires_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_warehouses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trust_field_policies: {
         Row: {
           field: string
@@ -8693,6 +11341,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "work_orders_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
+          },
+          {
             foreignKeyName: "work_orders_plant_id_fkey"
             columns: ["plant_id"]
             isOneToOne: false
@@ -8733,6 +11388,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts_payable_summary"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
           },
           {
             foreignKeyName: "work_orders_purchase_order_id_fkey"
@@ -9606,6 +12275,198 @@ export type Database = {
           },
         ]
       }
+      diesel_efficiency_bucket_daily_mex: {
+        Row: {
+          asset_id: string | null
+          bucket_day: string | null
+          liters_per_sum_hour: number | null
+          liters_per_sum_km: number | null
+          plant_id: string | null
+          sum_hours_consumed: number | null
+          sum_km_consumed: number | null
+          total_liters: number | null
+          transaction_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diesel_efficiency_bucket_monthly_mex: {
+        Row: {
+          asset_id: string | null
+          bucket_month: string | null
+          liters_per_sum_hour: number | null
+          liters_per_sum_km: number | null
+          plant_id: string | null
+          sum_hours_consumed: number | null
+          sum_km_consumed: number | null
+          total_liters: number | null
+          transaction_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      diesel_efficiency_bucket_weekly_mex: {
+        Row: {
+          asset_id: string | null
+          bucket_week: string | null
+          liters_per_sum_hour: number | null
+          liters_per_sum_km: number | null
+          plant_id: string | null
+          sum_hours_consumed: number | null
+          sum_km_consumed: number | null
+          total_liters: number | null
+          transaction_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "diesel_warehouses_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       diesel_inventory_detailed: {
         Row: {
           adjustments: number | null
@@ -9786,6 +12647,76 @@ export type Database = {
         }
         Relationships: []
       }
+      incident_response_metrics: {
+        Row: {
+          asset_id: string | null
+          first_assigned_at: string | null
+          first_planned_at: string | null
+          first_wo_created_at: string | null
+          hours_to_resolve: number | null
+          hours_to_schedule: number | null
+          hours_to_work_order: number | null
+          incident_id: string | null
+          met_schedule_target: boolean | null
+          reported_at: string | null
+          resolved_at: string | null
+          status: string | null
+          target_response_hours: number | null
+        }
+        Insert: {
+          asset_id?: string | null
+          first_assigned_at?: string | null
+          first_planned_at?: string | null
+          first_wo_created_at?: string | null
+          hours_to_resolve?: never
+          hours_to_schedule?: never
+          hours_to_work_order?: never
+          incident_id?: string | null
+          met_schedule_target?: never
+          reported_at?: string | null
+          resolved_at?: string | null
+          status?: string | null
+          target_response_hours?: number | null
+        }
+        Update: {
+          asset_id?: string | null
+          first_assigned_at?: string | null
+          first_planned_at?: string | null
+          first_wo_created_at?: string | null
+          hours_to_resolve?: never
+          hours_to_schedule?: never
+          hours_to_work_order?: never
+          incident_id?: string | null
+          met_schedule_target?: never
+          reported_at?: string | null
+          resolved_at?: string | null
+          status?: string | null
+          target_response_hours?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_history_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "active_assets_without_recent_inspection"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_history_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_uuid"]
+          },
+          {
+            foreignKeyName: "incident_history_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_low_stock_alerts: {
         Row: {
           available_quantity: number | null
@@ -9925,6 +12856,20 @@ export type Database = {
             foreignKeyName: "work_orders_purchase_order_id_fkey"
             columns: ["purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -9933,6 +12878,183 @@ export type Database = {
             columns: ["purchase_order_id"]
             isOneToOne: false
             referencedRelation: "purchase_orders_expense_classification"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_invoice_balances: {
+        Row: {
+          balance: number | null
+          created_at: string | null
+          credit_applied_total: number | null
+          days_until_due: number | null
+          discount_amount: number | null
+          document_url: string | null
+          due_date: string | null
+          expense_category: string | null
+          invoice_date: string | null
+          invoice_id: string | null
+          invoice_number: string | null
+          invoice_status: string | null
+          is_overdue: boolean | null
+          notes: string | null
+          order_id: string | null
+          paid_to_date: number | null
+          plant_id: string | null
+          po_purpose: string | null
+          po_status: string | null
+          po_type: string | null
+          purchase_order_id: string | null
+          retention_isr_amount: number | null
+          retention_iva_amount: number | null
+          subtotal: number | null
+          supplier: string | null
+          supplier_id: string | null
+          tax: number | null
+          total: number | null
+          updated_at: string | null
+          vat_rate: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "accounts_payable_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "purchase_orders_expense_classification"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "po_supplier_invoices_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      po_invoice_credit_summary: {
+        Row: {
+          credit_applied_subtotal: number | null
+          credit_applied_tax: number | null
+          credit_applied_total: number | null
+          invoice_id: string | null
+        }
+        Relationships: []
+      }
+      po_invoices_accounting_summary: {
+        Row: {
+          accounting_status: string | null
+          document_url: string | null
+          due_date: string | null
+          expense_category: string | null
+          invoice_date: string | null
+          invoice_id: string | null
+          invoice_number: string | null
+          invoice_registered_at: string | null
+          invoice_status: string | null
+          invoice_total: number | null
+          order_id: string | null
+          plant_id: string | null
+          po_actual_amount: number | null
+          po_purpose: string | null
+          po_total_amount: number | null
+          po_type: string | null
+          purchase_order_id: string | null
+          subtotal: number | null
+          supplier: string | null
+          supplier_id: string | null
+          tax: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -9947,6 +13069,68 @@ export type Database = {
           total_value: number | null
         }
         Relationships: []
+      }
+      po_without_supplier_invoice: {
+        Row: {
+          accounting_status: string | null
+          actual_amount: number | null
+          approval_date: string | null
+          created_at: string | null
+          enhanced_status: string | null
+          has_receipt: boolean | null
+          max_payment_date: string | null
+          order_id: string | null
+          payment_condition: string | null
+          plant_id: string | null
+          plant_name: string | null
+          po_purpose: string | null
+          po_status: string | null
+          po_type: string | null
+          purchase_order_id: string | null
+          purchased_at: string | null
+          receipt_count: number | null
+          supplier: string | null
+          supplier_id: string | null
+          total_amount: number | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       purchase_order_metrics: {
         Row: {
@@ -10248,6 +13432,20 @@ export type Database = {
             foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
             columns: ["original_purchase_order_id"]
             isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
+            columns: ["original_purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "purchase_orders_original_purchase_order_id_fkey"
+            columns: ["original_purchase_order_id"]
+            isOneToOne: false
             referencedRelation: "purchase_orders"
             referencedColumns: ["id"]
           },
@@ -10525,6 +13723,80 @@ export type Database = {
           updated_by: string | null
           used_parts: Json | null
         }
+        Insert: {
+          approval_date?: string | null
+          approval_status?: string | null
+          approved_by?: string | null
+          asset_id?: string | null
+          assigned_to?: string | null
+          checklist_id?: string | null
+          checklist_status?: never
+          completed_at?: string | null
+          completion_photos?: Json | null
+          created_at?: string | null
+          creation_photos?: Json | null
+          description?: string | null
+          estimated_cost?: number | null
+          estimated_duration?: number | null
+          id?: string | null
+          incident_id?: string | null
+          issue_items?: Json | null
+          maintenance_plan_id?: string | null
+          order_id?: string | null
+          planned_date?: string | null
+          preventive_checklist_completed?: boolean | null
+          preventive_checklist_id?: string | null
+          priority?: string | null
+          progress_photos?: Json | null
+          purchase_order_id?: string | null
+          purchase_order_status?: never
+          ready_to_execute?: never
+          requested_by?: string | null
+          required_parts?: Json | null
+          service_order_id?: string | null
+          status?: string | null
+          type?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          used_parts?: Json | null
+        }
+        Update: {
+          approval_date?: string | null
+          approval_status?: string | null
+          approved_by?: string | null
+          asset_id?: string | null
+          assigned_to?: string | null
+          checklist_id?: string | null
+          checklist_status?: never
+          completed_at?: string | null
+          completion_photos?: Json | null
+          created_at?: string | null
+          creation_photos?: Json | null
+          description?: string | null
+          estimated_cost?: number | null
+          estimated_duration?: number | null
+          id?: string | null
+          incident_id?: string | null
+          issue_items?: Json | null
+          maintenance_plan_id?: string | null
+          order_id?: string | null
+          planned_date?: string | null
+          preventive_checklist_completed?: boolean | null
+          preventive_checklist_id?: string | null
+          priority?: string | null
+          progress_photos?: Json | null
+          purchase_order_id?: string | null
+          purchase_order_status?: never
+          ready_to_execute?: never
+          requested_by?: string | null
+          required_parts?: Json | null
+          service_order_id?: string | null
+          status?: string | null
+          type?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          used_parts?: Json | null
+        }
         Relationships: [
           {
             foreignKeyName: "work_orders_asset_id_fkey"
@@ -10555,6 +13827,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "work_orders_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_response_metrics"
+            referencedColumns: ["incident_id"]
+          },
+          {
             foreignKeyName: "work_orders_preventive_checklist_id_fkey"
             columns: ["preventive_checklist_id"]
             isOneToOne: false
@@ -10567,6 +13846,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "accounts_payable_summary"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_invoices_accounting_summary"
+            referencedColumns: ["purchase_order_id"]
+          },
+          {
+            foreignKeyName: "work_orders_purchase_order_id_fkey"
+            columns: ["purchase_order_id"]
+            isOneToOne: false
+            referencedRelation: "po_without_supplier_invoice"
+            referencedColumns: ["purchase_order_id"]
           },
           {
             foreignKeyName: "work_orders_purchase_order_id_fkey"
@@ -10620,6 +13913,10 @@ export type Database = {
             }
             Returns: Json
           }
+      apply_incident_routing: {
+        Args: { p_incident_id: string }
+        Returns: undefined
+      }
       apply_supplier_verification_event: {
         Args: {
           p_action: string
@@ -10669,6 +13966,16 @@ export type Database = {
           order_id: string
           po_id: string
         }[]
+      }
+      build_incident_routing_pattern_key: {
+        Args: {
+          p_department_id: string
+          p_description_keyword: string
+          p_incident_impact: string
+          p_incident_type: string
+          p_plant_id: string
+        }
+        Returns: string
       }
       calculate_actual_due_hour: {
         Args: {
@@ -10868,6 +14175,25 @@ export type Database = {
         Returns: string
       }
       escalate_forgotten_assets: { Args: never; Returns: undefined }
+      extract_incident_routing_keyword: {
+        Args: { p_description: string }
+        Returns: string
+      }
+      find_active_issue_thread: {
+        Args: { p_asset_id: string; p_canonical_key: string }
+        Returns: {
+          created_at: string
+          incident_id: string
+          issue_id: string
+          item_description: string
+          notes: string
+          priority: string
+          recurrence_count: number
+          should_reopen: boolean
+          wo_status: string
+          work_order_id: string
+        }[]
+      }
       find_missing_weekly_schedules: {
         Args: { p_date?: string; p_days?: number; p_template_id: string }
         Returns: {
@@ -10931,6 +14257,10 @@ export type Database = {
         }
         Returns: string
       }
+      generate_canonical_issue_key: {
+        Args: { p_asset_id: string; p_description: string }
+        Returns: string
+      }
       generate_checklists_from_maintenance_plan: {
         Args: {
           assigned_to: string
@@ -10948,25 +14278,6 @@ export type Database = {
         Args: { po_order_id: string }
         Returns: string
       }
-      find_active_issue_thread: {
-        Args: { p_asset_id: string; p_canonical_key: string }
-        Returns: {
-          created_at: string
-          incident_id: string | null
-          issue_id: string | null
-          item_description: string
-          notes: string | null
-          priority: string
-          recurrence_count: number
-          should_reopen: boolean
-          wo_status: string
-          work_order_id: string | null
-        }[]
-      }
-      generate_canonical_issue_key: {
-        Args: { p_asset_id: string; p_description: string }
-        Returns: string
-      }
       generate_issue_fingerprint: {
         Args: {
           p_asset_id: string
@@ -10975,10 +14286,6 @@ export type Database = {
           p_status?: string
         }
         Returns: string
-      }
-      resolve_issues_for_completed_work_order: {
-        Args: { p_work_order_id: string }
-        Returns: undefined
       }
       generate_maintenance_plans: {
         Args: { p_asset_id: string }
@@ -11397,6 +14704,39 @@ export type Database = {
         }
         Returns: Json
       }
+      match_incident_routing_rule: {
+        Args: {
+          p_incident: Database["public"]["Tables"]["incident_history"]["Row"]
+          p_plant_id?: string
+        }
+        Returns: {
+          confidence: number
+          created_at: string
+          created_by: string | null
+          default_assignee_id: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          match_description_contains: string | null
+          match_impact: string | null
+          match_incident_type: string | null
+          name: string
+          pattern_key: string | null
+          plant_id: string | null
+          priority: number
+          sample_count: number
+          source: string
+          target_department_id: string
+          target_response_hours: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "incident_routing_rules"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       migrate_all_legacy_quotations: {
         Args: { p_limit?: number }
         Returns: Json
@@ -11408,6 +14748,10 @@ export type Database = {
         Returns: string
       }
       normalize_asset_name: { Args: { input_name: string }; Returns: string }
+      normalize_issue_core_item: {
+        Args: { p_description: string }
+        Returns: string
+      }
       po_resolve_workflow_path: {
         Args: {
           p_approval_amount: number
@@ -11453,6 +14797,10 @@ export type Database = {
         Args: { p_transaction_id: string }
         Returns: undefined
       }
+      recalc_po_invoice_status: {
+        Args: { p_invoice_id: string }
+        Returns: undefined
+      }
       recalculate_warehouse_balances: {
         Args: { p_warehouse_id: string }
         Returns: Json
@@ -11475,6 +14823,18 @@ export type Database = {
         }
         Returns: string
       }
+      record_incident_routing_signal: {
+        Args: {
+          p_chosen_assignee_id?: string
+          p_chosen_department_id: string
+          p_created_by?: string
+          p_incident_id: string
+          p_previous_department_id?: string
+          p_previous_rule_id?: string
+          p_signal_kind?: string
+        }
+        Returns: string
+      }
       recover_from_duplicate_work_order_id: { Args: never; Returns: string }
       recover_missing_weekly_schedules: {
         Args: { p_date?: string; p_days?: number; p_template_id: string }
@@ -11482,6 +14842,10 @@ export type Database = {
       }
       refresh_asset_accountability: { Args: never; Returns: undefined }
       refresh_diesel_inventory: { Args: never; Returns: undefined }
+      refresh_learned_incident_routing_rules: {
+        Args: { p_min_confidence?: number; p_min_samples?: number }
+        Returns: number
+      }
       reject_additional_expense: {
         Args: {
           p_expense_id: string
@@ -11507,6 +14871,10 @@ export type Database = {
           exception_asset_id: string
           resolution_type: string
         }[]
+      }
+      resolve_issues_for_completed_work_order: {
+        Args: { p_work_order_id: string }
+        Returns: undefined
       }
       restore_template_version: {
         Args: { p_version_id: string }
@@ -11537,6 +14905,12 @@ export type Database = {
           details: string
           status: string
         }[]
+      }
+      routing_rule_specificity: {
+        Args: {
+          r: Database["public"]["Tables"]["incident_routing_rules"]["Row"]
+        }
+        Returns: number
       }
       rpc_get_supplier_suggestions: {
         Args: {
@@ -11664,6 +15038,10 @@ export type Database = {
       }
       validate_evidence_requirements: {
         Args: { p_completed_checklist_id: string; p_evidence_data: Json }
+        Returns: Json
+      }
+      validate_po_invoice_vs_oc: {
+        Args: { p_invoice_id: string }
         Returns: Json
       }
       validate_schedule_integrity: {
@@ -11821,9 +15199,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       assignment_type: ["primary", "secondary"],

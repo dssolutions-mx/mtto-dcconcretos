@@ -15,6 +15,8 @@ import {
 import { SecurityConfig } from "@/types"
 import type { CompletedChecklistData, CompletedItem, ChecklistSectionDefinition, ChecklistItemDefinition } from "./types"
 import { CompletedItemRow } from "./completed-item-row"
+import { CompletedTireReadingsSection } from "./completed-tire-readings-section"
+import type { ChecklistTireReadingInput } from "@/lib/tires/checklist-readings"
 
 interface CompletedChecklistItemsBySectionProps {
   data: CompletedChecklistData
@@ -96,6 +98,18 @@ export function CompletedChecklistItemsBySection({ data, operatorNames }: Comple
       }
       const isSecuritySection = section.section_type === 'security_talk' || !!securityData
       const isPlantManagerMode = baseConfig.mode === 'plant_manager' || (!section.security_config && hasAttendeeList)
+
+      if (section.section_type === 'tire_readings') {
+        const snapshot = (data.tire_readings_snapshot ?? []) as ChecklistTireReadingInput[]
+        return (
+          <CompletedTireReadingsSection
+            key={section.id || `tire-${section.title}`}
+            sectionTitle={section.title || 'Lecturas de llantas'}
+            config={section.tire_readings_config}
+            readings={snapshot}
+          />
+        )
+      }
 
       if (isSecuritySection) {
         if (!securityData) return null

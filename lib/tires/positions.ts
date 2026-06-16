@@ -1,4 +1,4 @@
-import type { TirePosition } from '@/types/tires'
+import type { TireLayoutTemplateKey, TirePosition, TireThresholds } from '@/types/tires'
 
 /** Standard 6-wheel truck layout (3 axles). */
 export const TRUCK_6WHEEL_POSITIONS: TirePosition[] = [
@@ -24,8 +24,26 @@ export const VEHICLE_4WHEEL_POSITIONS: TirePosition[] = [
 
 export const DEFAULT_TIRE_POSITIONS = TRUCK_6WHEEL_POSITIONS
 
+/** Template catalog keyed by template_key (DB fallback during migration). */
+export const TIRE_LAYOUT_TEMPLATES: Record<
+  Exclude<TireLayoutTemplateKey, 'custom'>,
+  TirePosition[]
+> = {
+  truck_6x4: TRUCK_6WHEEL_POSITIONS,
+  vehicle_4wheel: VEHICLE_4WHEEL_POSITIONS,
+}
+
+export function getPositionsForTemplate(templateKey: TireLayoutTemplateKey): TirePosition[] {
+  if (templateKey === 'custom') return []
+  return TIRE_LAYOUT_TEMPLATES[templateKey] ?? DEFAULT_TIRE_POSITIONS
+}
+
+export function getAllKnownPositions(): TirePosition[] {
+  return [...TRUCK_6WHEEL_POSITIONS, ...VEHICLE_4WHEEL_POSITIONS]
+}
+
 export function getPositionByCode(code: string): TirePosition | undefined {
-  return [...TRUCK_6WHEEL_POSITIONS, ...VEHICLE_4WHEEL_POSITIONS].find((p) => p.code === code)
+  return getAllKnownPositions().find((p) => p.code === code)
 }
 
 export const PRESSURE_RANGE_PSI = { min: 80, max: 120 } as const
@@ -36,7 +54,21 @@ export function isTreadLow(treadMm: number | null | undefined, minMm: number): b
   return treadMm <= minMm
 }
 
-export function isPressureOutOfRange(psi: number | null | undefined): boolean {
+export function resolvePressureRange(thresholds?: TireThresholds): {
+  min: number
+  max: number
+} {
+  return {
+    min: thresholds?.pressure_min_psi ?? PRESSURE_RANGE_PSI.min,
+    max: thresholds?.pressure_max_psi ?? PRESSURE_RANGE_PSI.max,
+  }
+}
+
+export function isPressureOutOfRange(
+  psi: number | null | undefined,
+  thresholds?: TireThresholds
+): boolean {
   if (psi == null) return false
-  return psi < PRESSURE_RANGE_PSI.min || psi > PRESSURE_RANGE_PSI.max
+  const range = resolvePressureRange(thresholds)
+  return psi < range.min || psi > range.max
 }

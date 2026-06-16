@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { insertTireWithIdentity } from '@/lib/tires/identifier'
 import { NextRequest, NextResponse } from 'next/server'
 import type { CreateTireInput } from '@/types/tires'
 
@@ -46,10 +47,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Marca y medida son obligatorias' }, { status: 400 })
     }
 
-    const { data, error } = await supabase
-      .from('tires')
-      .insert({
-        serial_number: body.serial_number?.trim() || null,
+    const created = await insertTireWithIdentity(
+      supabase,
+      {
         brand: body.brand.trim(),
         model: body.model?.trim() || null,
         size: body.size.trim(),
@@ -58,13 +58,25 @@ export async function POST(request: NextRequest) {
         purchase_date: body.purchase_date ?? null,
         min_tread_mm: body.min_tread_mm ?? 3.0,
         notes: body.notes?.trim() || null,
+        plant_id: body.plant_id ?? null,
+        warehouse_id: body.warehouse_id ?? null,
         status: 'en_almacen',
-      })
-      .select()
+      },
+      {
+        plantId: body.plant_id ?? null,
+        serialNumber: body.serial_number ?? null,
+        internalCode: body.internal_code ?? null,
+      }
+    )
+
+    const { data, error } = await supabase
+      .from('tires')
+      .select('*')
+      .eq('id', created.id)
       .single()
 
     if (error) {
-      console.error('[tires] create', error)
+      console.error('[tires] create fetch', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 

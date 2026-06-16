@@ -2,71 +2,91 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { isPressureOutOfRange, isTreadLow } from "@/lib/tires/positions"
-import { DEFAULT_TIRE_POSITIONS } from "@/lib/tires/positions"
-import type { AssetTireInstallation } from "@/types/tires"
+import { cn } from "@/lib/utils"
+import {
+  getTireHealthStatus,
+  treadFraction,
+  TIRE_STATUS_VISUALS,
+} from "@/lib/tires/status"
+import type { AssetTireInstallation, TirePosition } from "@/types/tires"
 import { AlertTriangle } from "lucide-react"
 
 interface TirePositionMapProps {
+  positions: TirePosition[]
   activeInstallations: AssetTireInstallation[]
 }
 
-export function TirePositionMap({ activeInstallations }: TirePositionMapProps) {
-  const byPosition = new Map(
-    activeInstallations.map((i) => [i.position_code, i])
-  )
+export function TirePositionMap({ positions, activeInstallations }: TirePositionMapProps) {
+  const byPosition = new Map(activeInstallations.map((i) => [i.position_code, i]))
 
   return (
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {DEFAULT_TIRE_POSITIONS.map((pos) => {
+      {positions.map((pos) => {
         const inst = byPosition.get(pos.code)
         const tire = inst?.tire
         const reading = inst?.latest_reading
-        const treadLow =
-          tire && isTreadLow(reading?.tread_depth_mm, tire.min_tread_mm)
-        const pressureBad = isPressureOutOfRange(reading?.pressure_psi)
+        const status = getTireHealthStatus(inst)
+        const visual = TIRE_STATUS_VISUALS[status]
+        const attention = status === "warning" || status === "critical"
+        const frac = treadFraction(reading?.tread_depth_mm)
 
         return (
           <Card
             key={pos.code}
-            className={
-              inst
-                ? treadLow || pressureBad
-                  ? "border-amber-500"
-                  : "border-primary/30"
-                : "border-dashed opacity-70"
-            }
+            className={cn(
+              "border-l-4 transition-colors",
+              inst ? visual.borderClass : "border-l-transparent border-dashed opacity-80"
+            )}
           >
-            <CardHeader className="py-3 px-4">
-              <CardTitle className="text-sm font-medium flex items-center justify-between gap-2">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm font-medium">
                 <span>{pos.label}</span>
-                {(treadLow || pressureBad) && (
-                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+                {attention ? (
+                  <AlertTriangle className={cn("h-4 w-4 shrink-0", visual.textClass)} />
+                ) : (
+                  inst && (
+                    <span
+                      className={cn(
+                        "rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+                        visual.badgeClass
+                      )}
+                    >
+                      {visual.label}
+                    </span>
+                  )
                 )}
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3 pt-0 text-sm">
               {inst && tire ? (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <p className="font-medium">
                     {tire.brand} {tire.size}
                   </p>
                   {tire.serial_number && (
-                    <p className="text-muted-foreground text-xs">DOT: {tire.serial_number}</p>
+                    <p className="font-mono text-xs text-muted-foreground">DOT: {tire.serial_number}</p>
                   )}
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    <Badge variant="outline">{tire.condition}</Badge>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Badge variant="outline" className="capitalize">
+                      {tire.condition}
+                    </Badge>
                     {reading?.tread_depth_mm != null && (
-                      <Badge variant={treadLow ? "destructive" : "secondary"}>
+                      <Badge variant="outline" className={visual.badgeClass}>
                         {reading.tread_depth_mm} mm
                       </Badge>
                     )}
                     {reading?.pressure_psi != null && (
-                      <Badge variant={pressureBad ? "destructive" : "secondary"}>
-                        {reading.pressure_psi} psi
-                      </Badge>
+                      <Badge variant="outline">{reading.pressure_psi} psi</Badge>
                     )}
                   </div>
+                  {frac != null && (
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${frac * 100}%`, backgroundColor: visual.stroke }}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-muted-foreground">Vacío</p>

@@ -113,6 +113,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           ...section,
           section_type: section.section_type ?? 'checklist', // Only default if null/undefined
           security_config: section.security_config || null,
+          tire_readings_config: section.tire_readings_config || null,
           checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
         }))
         
@@ -139,6 +140,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             security_config,
             evidence_config,
             cleanliness_config,
+            tire_readings_config,
             checklist_items (*)
           )
         `)
@@ -156,7 +158,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             ...section,
             // Only set default if section_type is null/undefined, not if it's already set
             section_type: section.section_type ?? 'checklist',
-            security_config: section.security_config || null
+            security_config: section.security_config || null,
+            tire_readings_config: section.tire_readings_config || null
           }))
           console.log('🔍 Processed checklist sections:', data.checklist_sections.map((s: any) => ({
             id: s.id,

@@ -20,14 +20,14 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2 } from "lucide-react"
-import { DEFAULT_TIRE_POSITIONS } from "@/lib/tires/positions"
-import type { Tire } from "@/types/tires"
+import type { Tire, TirePosition } from "@/types/tires"
 
 interface MountTireDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   assetId: string
   workOrderId?: string | null
+  positions: TirePosition[]
   occupiedPositions: string[]
   onMounted: () => void
 }
@@ -37,6 +37,7 @@ export function MountTireDialog({
   onOpenChange,
   assetId,
   workOrderId,
+  positions,
   occupiedPositions,
   onMounted,
 }: MountTireDialogProps) {
@@ -46,7 +47,7 @@ export function MountTireDialog({
   const [positionCode, setPositionCode] = useState("")
   const [notes, setNotes] = useState("")
 
-  const availablePositions = DEFAULT_TIRE_POSITIONS.filter(
+  const availablePositions = positions.filter(
     (p) => !occupiedPositions.includes(p.code)
   )
 
@@ -60,7 +61,7 @@ export function MountTireDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const pos = DEFAULT_TIRE_POSITIONS.find((p) => p.code === positionCode)
+    const pos = positions.find((p) => p.code === positionCode)
     if (!tireId || !pos) return
 
     setLoading(true)

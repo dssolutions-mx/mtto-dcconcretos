@@ -30,6 +30,8 @@ export interface SecurityConfig {
   allow_evidence: boolean
 }
 
+import type { TireReadingsSectionConfig } from "@/types/tires"
+
 export interface ChecklistSection {
   id?: string
   title: string
@@ -38,6 +40,7 @@ export interface ChecklistSection {
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig
+  tire_readings_config?: TireReadingsSectionConfig
   items: ChecklistItem[]
 }
 
