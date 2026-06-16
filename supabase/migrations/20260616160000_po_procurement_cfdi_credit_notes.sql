@@ -212,6 +212,8 @@ CREATE POLICY "po_cn_alloc_insert" ON public.po_credit_note_invoice_allocations
 -- ---------------------------------------------------------------------------
 -- 7) Wire credit notes into balances and payment recalc
 -- ---------------------------------------------------------------------------
+DROP VIEW IF EXISTS public.po_invoice_balances;
+
 CREATE OR REPLACE VIEW public.po_invoice_balances AS
 SELECT
   inv.id AS invoice_id,
