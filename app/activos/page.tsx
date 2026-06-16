@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AssetsList } from "@/components/assets/assets-list"
-import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3, MoreVertical, Network } from "lucide-react"
+import { Plus, Calendar, CheckCircle, AlertTriangle, Package, Wrench, FileText, Settings, BarChart3, MoreVertical, Network, CircleDot } from "lucide-react"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -110,6 +110,12 @@ export default function AssetsPage() {
                     Reportes
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/activos/llantas">
+                    <CircleDot className="mr-2 h-4 w-4" />
+                    Inventario de llantas
+                  </Link>
+                </DropdownMenuItem>
                 {ui.canShowCreateButton('assets') && (
                   <DropdownMenuItem asChild>
                     <Link href="/activos/crear">
@@ -132,6 +138,12 @@ export default function AssetsPage() {
                 <Link href="/activos/reportes">
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Reportes
+                </Link>
+              </Button>
+              <Button variant="outline" asChild size="default">
+                <Link href="/activos/llantas">
+                  <CircleDot className="mr-2 h-4 w-4" />
+                  Llantas
                 </Link>
               </Button>
               {ui.canShowCreateButton('assets') && (
