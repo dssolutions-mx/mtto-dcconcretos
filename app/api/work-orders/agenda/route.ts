@@ -4,9 +4,9 @@
 
 import { createClient } from "@/lib/supabase-server"
 import { NextRequest, NextResponse } from "next/server"
-import { inferWorkOrderOrigin } from "@/lib/agenda/agenda-utils"
+import { AGENDA_ACTIVE_STATUSES, inferWorkOrderOrigin } from "@/lib/agenda/agenda-utils"
 
-const ACTIVE_STATUSES = ["Pendiente", "Programada", "Esperando repuestos"]
+const ACTIVE_STATUSES = [...AGENDA_ACTIVE_STATUSES]
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,6 +16,26 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get("to")
     const assignedTo = searchParams.get("assigned_to")
     const includeUnscheduled = searchParams.get("include_unscheduled") === "true"
+    const techniciansOnly = searchParams.get("technicians_only") === "true"
+
+    if (techniciansOnly) {
+      const { data: techs, error: techsError } = await supabase
+        .from("profiles")
+        .select("id, nombre, apellido")
+        .eq("is_active", true)
+        .limit(500)
+
+      if (techsError) {
+        return NextResponse.json({ error: techsError.message }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        technicians: (techs ?? []).map((t) => ({
+          id: t.id,
+          name: [t.nombre, t.apellido].filter(Boolean).join(" ") || "Sin nombre",
+        })),
+      })
+    }
 
     if (!from || !to) {
       return NextResponse.json(

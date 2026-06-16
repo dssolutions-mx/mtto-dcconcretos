@@ -95,7 +95,7 @@ export function PlanWorkOrderDialog({
     setStatus(workOrder.status || WorkOrderStatus.Pending)
     setPriority(workOrder.priority || ServiceOrderPriority.Medium)
 
-    fetch("/api/work-orders/agenda?from=2000-01-01&to=2099-12-31")
+    fetch("/api/work-orders/agenda?technicians_only=true&from=1970-01-01&to=1970-01-01")
       .then((r) => (r.ok ? r.json() : { technicians: [] }))
       .then((data) => setTechnicians(data.technicians ?? []))
       .catch(() => setTechnicians([]))
@@ -104,7 +104,7 @@ export function PlanWorkOrderDialog({
   const handleSave = async () => {
     if (!workOrder) return
 
-    if (!plannedDate && !assignedTo) {
+    if (!plannedDate && !assignedTo && !workOrder.planned_date && !workOrder.assigned_to) {
       toast({
         title: "Datos incompletos",
         description: "Seleccione al menos un técnico o una fecha.",
@@ -119,9 +119,7 @@ export function PlanWorkOrderDialog({
       if (plannedDate) {
         body.planned_date = format(plannedDate, "yyyy-MM-dd")
       }
-      if (assignedTo) {
-        body.assigned_to = assignedTo
-      }
+      body.assigned_to = assignedTo || null
       if (status) {
         body.status = status
       }

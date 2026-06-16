@@ -8,6 +8,15 @@ import {
 } from "date-fns"
 import { es } from "date-fns/locale"
 
+/** Statuses included on agenda board, mechanic sheet, and daily-kit APIs. */
+export const AGENDA_ACTIVE_STATUSES = [
+  "Pendiente",
+  "Programada",
+  "Esperando repuestos",
+  "En ejecución",
+  "En Progreso",
+] as const
+
 export interface AgendaWorkOrder {
   id: string
   order_id: string

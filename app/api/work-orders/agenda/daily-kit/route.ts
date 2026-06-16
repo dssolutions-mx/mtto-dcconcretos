@@ -10,9 +10,10 @@ import {
   recomputeKitSufficiency,
   type ConsolidatedKitLine,
 } from "@/lib/agenda/aggregate-daily-kit"
+import { AGENDA_ACTIVE_STATUSES } from "@/lib/agenda/agenda-utils"
 import { StockService, type PartAvailability } from "@/lib/services/stock-service"
 
-const ACTIVE_STATUSES = ["Pendiente", "Programada", "Esperando repuestos"]
+const ACTIVE_STATUSES = [...AGENDA_ACTIVE_STATUSES]
 
 export type DailyKitWorkOrderParts = {
   work_order_id: string
@@ -77,15 +78,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const allLines = (workOrders ?? []).flatMap((wo) =>
-      extractPartsFromWorkOrder({
-        id: wo.id,
-        order_id: wo.order_id,
-        asset_id: wo.asset_id,
-        required_parts: wo.required_parts,
-        required_tasks: wo.required_tasks,
-      }),
-    )
+    const allLines = (workOrders ?? []).flatMap((wo) => {
+      const asset = wo.asset as { plant_id?: string | null } | null
+      return extractPartsFromWorkOrder(
+        {
+          id: wo.id,
+          order_id: wo.order_id,
+          asset_id: wo.asset_id,
+          required_parts: wo.required_parts,
+          required_tasks: wo.required_tasks,
+        },
+        asset?.plant_id,
+      )
+    })
 
     const partsByPlant = new Map<string, Map<string, number>>()
     for (const wo of workOrders ?? []) {
@@ -95,13 +100,16 @@ export async function GET(request: NextRequest) {
       const plantId = asset?.plant_id
       if (!plantId) continue
 
-      const woLines = extractPartsFromWorkOrder({
-        id: wo.id,
-        order_id: wo.order_id,
-        asset_id: wo.asset_id,
-        required_parts: wo.required_parts,
-        required_tasks: wo.required_tasks,
-      })
+      const woLines = extractPartsFromWorkOrder(
+        {
+          id: wo.id,
+          order_id: wo.order_id,
+          asset_id: wo.asset_id,
+          required_parts: wo.required_parts,
+          required_tasks: wo.required_tasks,
+        },
+        plantId,
+      )
 
       if (!partsByPlant.has(plantId)) partsByPlant.set(plantId, new Map())
       const plantParts = partsByPlant.get(plantId)!
@@ -120,10 +128,7 @@ export async function GET(request: NextRequest) {
       }))
       const availabilities = await StockService.checkMultiplePartsAvailability(parts, plantId)
       for (const row of availabilities) {
-        const existing = availabilityByPartId.get(row.part_id)
-        if (!existing || row.total_available > existing.total_available) {
-          availabilityByPartId.set(row.part_id, row)
-        }
+        availabilityByPartId.set(`${plantId}:${row.part_id}`, row)
       }
     }
 
@@ -135,13 +140,16 @@ export async function GET(request: NextRequest) {
         name?: string | null
         plant_id?: string | null
       } | null
-      const woLines = extractPartsFromWorkOrder({
-        id: wo.id,
-        order_id: wo.order_id,
-        asset_id: wo.asset_id,
-        required_parts: wo.required_parts,
-        required_tasks: wo.required_tasks,
-      })
+      const woLines = extractPartsFromWorkOrder(
+        {
+          id: wo.id,
+          order_id: wo.order_id,
+          asset_id: wo.asset_id,
+          required_parts: wo.required_parts,
+          required_tasks: wo.required_tasks,
+        },
+        asset?.plant_id,
+      )
       const woKit = consolidateKitLines(woLines, availabilityByPartId)
 
       return {

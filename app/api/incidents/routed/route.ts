@@ -226,13 +226,21 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const body = (await req.json()) as { incident_ids?: string[] }
     const incidentIds = body.incident_ids ?? []
     if (incidentIds.length === 0) {
       return NextResponse.json({ error: "incident_ids requerido" }, { status: 400 })
     }
 
-    const supabase = await createClient()
     const results: { id: string; ok: boolean; error?: string }[] = []
 
     for (const incidentId of incidentIds) {

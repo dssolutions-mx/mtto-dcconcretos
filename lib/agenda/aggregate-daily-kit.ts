@@ -5,8 +5,24 @@ export type RawPartLine = {
   part_number?: string | null
   name?: string | null
   quantity?: number | null
+  plant_id?: string | null
   source_work_order_id?: string
   source_order_id?: string
+}
+
+export function plantPartAvailabilityKey(plantId: string, partId: string): string {
+  return `${plantId}:${partId}`
+}
+
+function lookupPartAvailability(
+  line: RawPartLine,
+  availabilityMap: Map<string, PartAvailability>,
+): PartAvailability | undefined {
+  if (!line.part_id) return undefined
+  if (line.plant_id) {
+    return availabilityMap.get(plantPartAvailabilityKey(line.plant_id, line.part_id))
+  }
+  return availabilityMap.get(line.part_id)
 }
 
 export type ConsolidatedKitLine = {
@@ -45,13 +61,17 @@ function parseJsonArray<T>(value: unknown): T[] {
 }
 
 function partKey(part: RawPartLine): string {
-  if (part.part_id) return `id:${part.part_id}`
+  const plantPrefix = part.plant_id ? `plant:${part.plant_id}:` : ""
+  if (part.part_id) return `${plantPrefix}id:${part.part_id}`
   const num = (part.part_number ?? "").trim().toUpperCase()
   const name = (part.name ?? "").trim().toUpperCase()
-  return `manual:${num}|${name}`
+  return `${plantPrefix}manual:${num}|${name}`
 }
 
-export function extractPartsFromWorkOrder(wo: WorkOrderPartsSource): RawPartLine[] {
+export function extractPartsFromWorkOrder(
+  wo: WorkOrderPartsSource,
+  plantId?: string | null,
+): RawPartLine[] {
   const lines: RawPartLine[] = []
 
   for (const part of parseJsonArray<RawPartLine>(wo.required_parts)) {
@@ -60,6 +80,7 @@ export function extractPartsFromWorkOrder(wo: WorkOrderPartsSource): RawPartLine
     lines.push({
       ...part,
       quantity: qty > 0 ? qty : 1,
+      plant_id: plantId ?? part.plant_id ?? null,
       source_work_order_id: wo.id,
       source_order_id: wo.order_id,
     })
@@ -72,6 +93,7 @@ export function extractPartsFromWorkOrder(wo: WorkOrderPartsSource): RawPartLine
       lines.push({
         ...part,
         quantity: qty > 0 ? qty : 1,
+        plant_id: plantId ?? part.plant_id ?? null,
         source_work_order_id: wo.id,
         source_order_id: wo.order_id,
       })
@@ -103,7 +125,7 @@ export function consolidateKitLines(
     }
 
     const partId = line.part_id ?? null
-    const availability = partId ? availabilityByPartId.get(partId) : undefined
+    const availability = lookupPartAvailability(line, availabilityByPartId)
 
     map.set(key, {
       key,

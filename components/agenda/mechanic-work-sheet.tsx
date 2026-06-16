@@ -94,18 +94,20 @@ export function MechanicWorkSheet() {
             ] as string[]
 
             const remisionesByAsset = new Map<string, RemisionRow[]>()
-            await Promise.all(
-              dayAssets.map(async (assetCode) => {
-                const remParams = new URLSearchParams({
-                  assetId: assetCode,
-                  from: dayKey,
-                  to: dayKey,
-                })
-                const remRes = await fetch(`/api/integrations/cotizador/remisiones?${remParams}`)
-                const remJson = remRes.ok ? await remRes.json() : { remisiones: [] }
-                remisionesByAsset.set(assetCode, remJson.remisiones ?? [])
-              }),
-            )
+            if (dayAssets.length > 0) {
+              const remParams = new URLSearchParams({
+                assetIds: dayAssets.join(","),
+                from: dayKey,
+                to: dayKey,
+              })
+              const remRes = await fetch(`/api/integrations/cotizador/remisiones?${remParams}`)
+              const remJson = remRes.ok ? await remRes.json() : { remisiones_by_asset: {} }
+              for (const [assetCode, rows] of Object.entries(
+                remJson.remisiones_by_asset ?? {},
+              )) {
+                remisionesByAsset.set(assetCode, rows as RemisionRow[])
+              }
+            }
 
             contextMap.set(dayKey, {
               kitByWo,

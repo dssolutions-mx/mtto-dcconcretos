@@ -6,6 +6,7 @@ import {
   resolveCotizadorPlantIds,
 } from "@/lib/agenda/cotizador-plant-map"
 import { flattenCotizadorOrders, type CotizadorOrderItemRow } from "@/lib/agenda/cotizador-orders"
+import { canAccessAgendaIntegrations, canViewCotizadorPlantMapping } from "@/lib/agenda/agenda-auth"
 
 export type { CotizadorOrderItemRow }
 
@@ -22,6 +23,20 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .single()
+
+    if (profileError || !profile || !profile.is_active) {
+      return NextResponse.json({ error: "Perfil no encontrado o inactivo" }, { status: 403 })
+    }
+
+    if (!canAccessAgendaIntegrations(profile.role)) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 })
     }
 
     const { searchParams } = new URL(req.url)
@@ -83,7 +98,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       configured: true,
       orders,
-      plant_mapping: Object.fromEntries(plantMaps.cotizadorToMaintenance),
+      ...(canViewCotizadorPlantMapping(profile.role)
+        ? { plant_mapping: Object.fromEntries(plantMaps.cotizadorToMaintenance) }
+        : {}),
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error interno"

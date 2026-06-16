@@ -5,6 +5,9 @@
 
 import { createClient } from "@/lib/supabase-server"
 import { NextResponse } from "next/server"
+import { AGENDA_ACTIVE_STATUSES } from "@/lib/agenda/agenda-utils"
+
+const SCHEDULABLE_STATUSES = new Set<string>(AGENDA_ACTIVE_STATUSES)
 
 export async function PATCH(
   request: Request,
@@ -61,6 +64,9 @@ export async function PATCH(
     const nextAssigned = assigned_to !== undefined ? assigned_to : existing.assigned_to
 
     if (status !== undefined && status !== null) {
+      if (!SCHEDULABLE_STATUSES.has(status)) {
+        return NextResponse.json({ error: "Estado no permitido para programación" }, { status: 400 })
+      }
       updatePayload.status = status
     } else if (nextPlanned && nextAssigned && existing.status === "Pendiente") {
       updatePayload.status = "Programada"

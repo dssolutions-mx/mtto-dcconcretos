@@ -5,6 +5,7 @@
 import { createClient } from "@/lib/supabase-server"
 import { WorkOrderStatus } from "@/types"
 import { NextResponse } from "next/server"
+import { canQuickUpdateWorkOrderStatus } from "@/lib/agenda/agenda-auth"
 
 const ALLOWED_STATUSES = new Set([
   WorkOrderStatus.Pending,
@@ -30,6 +31,16 @@ export async function PATCH(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .single()
+
+    if (profileError || !profile || !profile.is_active) {
+      return NextResponse.json({ error: "Perfil no encontrado o inactivo" }, { status: 403 })
+    }
+
     const body = await request.json()
     const { status } = body as { status?: string }
 
@@ -39,12 +50,18 @@ export async function PATCH(
 
     const { data: existing, error: fetchError } = await supabase
       .from("work_orders")
-      .select("id, status")
+      .select("id, status, assigned_to")
       .eq("id", id)
       .single()
 
     if (fetchError || !existing) {
       return NextResponse.json({ error: "Orden de trabajo no encontrada" }, { status: 404 })
+    }
+
+    if (
+      !canQuickUpdateWorkOrderStatus(profile.role, user.id, existing.assigned_to as string | null)
+    ) {
+      return NextResponse.json({ error: "No autorizado para actualizar esta orden" }, { status: 403 })
     }
 
     if (existing.status === WorkOrderStatus.Completed) {
