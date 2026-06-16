@@ -240,7 +240,7 @@ export function RoutingRulesTab() {
               required
               value={form.target_department_id}
               onValueChange={(v) => setForm((f) => ({ ...f, target_department_id: v }))}
-              showPlantName
+              canonicalOnly
             />
             <div className="space-y-2">
               <Label>Planta (opcional)</Label>

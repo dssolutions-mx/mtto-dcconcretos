@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Department, Plant } from "@/types"
 import { Users, Building } from "lucide-react"
+import { resolveCanonicalRoutingDepartments } from "@/lib/incidents/incident-routing-departments"
 
 interface DepartmentSelectorProps {
   value?: string
@@ -18,6 +19,7 @@ interface DepartmentSelectorProps {
   required?: boolean
   className?: string
   showPlantName?: boolean
+  canonicalOnly?: boolean
 }
 
 export function DepartmentSelector({
@@ -29,7 +31,8 @@ export function DepartmentSelector({
   description,
   required = false,
   className,
-  showPlantName = false
+  showPlantName = false,
+  canonicalOnly = false,
 }: DepartmentSelectorProps) {
   const [departments, setDepartments] = useState<(Department & { plant?: Plant })[]>([])
   const [loading, setLoading] = useState(true)
@@ -57,7 +60,14 @@ export function DepartmentSelector({
 
         if (error) throw error
 
-        setDepartments(data || [])
+        let rows = data || []
+        if (canonicalOnly) {
+          const canonical = resolveCanonicalRoutingDepartments(rows)
+          const allowed = new Set(canonical.flatMap((c) => c.departmentIds))
+          rows = rows.filter((d) => allowed.has(d.id))
+        }
+
+        setDepartments(rows)
       } catch (err) {
         console.error('Error fetching departments:', err)
         setError('Error al cargar los departamentos')
@@ -67,7 +77,7 @@ export function DepartmentSelector({
     }
 
     fetchDepartments()
-  }, [plantId])
+  }, [plantId, canonicalOnly])
 
   // Group departments by plant if showing multiple plants
   const groupedDepartments = departments.reduce((acc, dept) => {

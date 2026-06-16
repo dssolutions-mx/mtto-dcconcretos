@@ -146,7 +146,7 @@ export function IncidentRoutingPanel({
           onValueChange={(v) =>
             setState((s) => ({ ...s, routing_department_id: v || null }))
           }
-          showPlantName
+          canonicalOnly
         />
         <div className="space-y-2">
           <Label>Responsable</Label>

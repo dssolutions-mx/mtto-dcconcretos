@@ -28,7 +28,7 @@ function PipelinePageContent() {
         </Button>
       </div>
 
-      <Tabs defaultValue="pipeline" className="mt-2">
+      <Tabs defaultValue="inbox" className="mt-2">
         <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="pipeline">Tablero</TabsTrigger>
           <TabsTrigger value="inbox">Bandeja</TabsTrigger>
