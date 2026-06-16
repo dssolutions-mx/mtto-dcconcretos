@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ArrowLeft, Loader2, RefreshCw, TrendingDown } from 'lucide-react'
+import { ArrowLeft, Loader2, RefreshCw, TrendingDown, Gauge } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,7 @@ import {
 import { DashboardHeader } from '@/components/dashboard/dashboard-header'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { getTireHealthStatus, TIRE_STATUS_VISUALS } from '@/lib/tires/status'
+import { formatReadingContextLabel } from '@/lib/tires/readings'
 import type {
   AssetTireInstallation,
   Tire,
@@ -161,6 +162,22 @@ export function TireDetailPage({ tireId }: TireDetailPageProps) {
       .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
   }, [data])
 
+  const pressureSeries = useMemo(() => {
+    if (!data) return []
+    return data.readings
+      .filter((r) => r.pressure_psi != null)
+      .map((r) => ({ at: r.read_at, value: r.pressure_psi as number }))
+      .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  }, [data])
+
+  const positionLabelByCode = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const inst of data?.installations ?? []) {
+      map.set(inst.position_code, inst.position_label)
+    }
+    return map
+  }, [data?.installations])
+
   const title = data
     ? `${data.tire.brand} ${data.tire.size}${data.tire.serial_number ? ` · DOT …${data.tire.serial_number.slice(-3)}` : ''}`
     : 'Detalle de llanta'
@@ -283,9 +300,32 @@ export function TireDetailPage({ tireId }: TireDetailPageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <TreadSparkline
+                <ReadingSparkline
                   series={treadSeries}
-                  minTread={data.tire.min_tread_mm}
+                  unit="mm"
+                  referenceLine={data.tire.min_tread_mm}
+                  referenceLabel={`mínimo (${data.tire.min_tread_mm} mm)`}
+                  strokeColor="hsl(var(--tire-ok))"
+                  areaId="tread-area"
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {pressureSeries.length >= 2 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  Tendencia de presión
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReadingSparkline
+                  series={pressureSeries}
+                  unit="psi"
+                  strokeColor="hsl(var(--primary))"
+                  areaId="pressure-area"
                 />
               </CardContent>
             </Card>
@@ -340,9 +380,9 @@ export function TireDetailPage({ tireId }: TireDetailPageProps) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Fecha</TableHead>
+                        <TableHead>Contexto</TableHead>
                         <TableHead>Banda (mm)</TableHead>
                         <TableHead>Presión (psi)</TableHead>
-                        <TableHead>Posición</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -358,9 +398,11 @@ export function TireDetailPage({ tireId }: TireDetailPageProps) {
                             <TableCell>
                               {format(new Date(r.read_at), 'dd MMM yyyy HH:mm', { locale: es })}
                             </TableCell>
+                            <TableCell>
+                              {formatReadingContextLabel(r, positionLabelByCode)}
+                            </TableCell>
                             <TableCell>{r.tread_depth_mm ?? '—'}</TableCell>
                             <TableCell>{r.pressure_psi ?? '—'}</TableCell>
-                            <TableCell>{r.position_code ?? '—'}</TableCell>
                           </TableRow>
                         ))
                       )}
@@ -456,27 +498,35 @@ export function TireDetailPage({ tireId }: TireDetailPageProps) {
   )
 }
 
-function TreadSparkline({
+function ReadingSparkline({
   series,
-  minTread,
+  unit,
+  referenceLine,
+  referenceLabel,
+  strokeColor,
+  areaId,
 }: {
   series: { at: string; value: number }[]
-  minTread: number
+  unit: string
+  referenceLine?: number
+  referenceLabel?: string
+  strokeColor: string
+  areaId: string
 }) {
   const W = 320
   const H = 90
   const padX = 6
   const padY = 12
   const values = series.map((s) => s.value)
-  const maxV = Math.max(...values, minTread + 2)
-  const minV = Math.min(...values, minTread, 0)
+  const maxV = Math.max(...values, referenceLine ?? 0)
+  const minV = Math.min(...values, referenceLine ?? values[0], 0)
   const span = maxV - minV || 1
   const x = (i: number) => padX + (i / (series.length - 1)) * (W - padX * 2)
   const y = (v: number) => padY + (1 - (v - minV) / span) * (H - padY * 2)
 
   const linePath = series.map((s, i) => `${i === 0 ? 'M' : 'L'} ${x(i)} ${y(s.value)}`).join(' ')
   const areaPath = `${linePath} L ${x(series.length - 1)} ${H - padY} L ${x(0)} ${H - padY} Z`
-  const minY = y(minTread)
+  const refY = referenceLine != null ? y(referenceLine) : null
   const last = series[series.length - 1]
   const first = series[0]
   const trend = last.value - first.value
@@ -484,42 +534,67 @@ function TreadSparkline({
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between text-sm">
-        <span className="tabular-num font-medium">{last.value} mm</span>
+        <span className="tabular-nums font-medium">
+          {last.value} {unit}
+        </span>
         <span
           className={cn(
-            'tabular-num text-xs',
-            trend < 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+            'tabular-nums text-xs',
+            unit === 'mm' && trend < 0
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-muted-foreground'
           )}
         >
           {trend > 0 ? '+' : ''}
-          {trend.toFixed(1)} mm desde la primera lectura
+          {trend.toFixed(1)} {unit} desde la primera lectura
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-24 w-full" preserveAspectRatio="none" role="img" aria-label="Tendencia de profundidad de banda">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-24 w-full"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Tendencia en ${unit}`}
+      >
         <defs>
-          <linearGradient id="tread-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(var(--tire-ok))" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="hsl(var(--tire-ok))" stopOpacity={0} />
+          <linearGradient id={areaId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
           </linearGradient>
         </defs>
-        {/* Minimum threshold line */}
-        <line
-          x1={padX}
-          y1={minY}
-          x2={W - padX}
-          y2={minY}
-          stroke="hsl(var(--tire-critical))"
-          strokeWidth={1}
-          strokeDasharray="4 3"
-          opacity={0.7}
+        {refY != null && (
+          <line
+            x1={padX}
+            y1={refY}
+            x2={W - padX}
+            y2={refY}
+            stroke="hsl(var(--tire-critical))"
+            strokeWidth={1}
+            strokeDasharray="4 3"
+            opacity={0.7}
+          />
+        )}
+        <path d={areaPath} fill={`url(#${areaId})`} />
+        <path
+          d={linePath}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
         />
-        <path d={areaPath} fill="url(#tread-area)" />
-        <path d={linePath} fill="none" stroke="hsl(var(--tire-ok))" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        <circle cx={x(series.length - 1)} cy={y(last.value)} r={3.5} fill="hsl(var(--tire-ok))" stroke="hsl(var(--card))" strokeWidth={1.5} />
+        <circle
+          cx={x(series.length - 1)}
+          cy={y(last.value)}
+          r={3.5}
+          fill={strokeColor}
+          stroke="hsl(var(--card))"
+          strokeWidth={1.5}
+        />
       </svg>
-      <p className="text-xs text-muted-foreground">
-        Línea roja punteada = mínimo permitido ({minTread} mm).
-      </p>
+      {referenceLabel && (
+        <p className="text-xs text-muted-foreground">Línea roja punteada = {referenceLabel}.</p>
+      )}
     </div>
   )
 }

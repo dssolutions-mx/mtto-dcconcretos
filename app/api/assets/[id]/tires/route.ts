@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { computeAssetTireSubState } from '@/lib/tires/fleet-status'
 import { getPositionsForAsset } from '@/lib/tires/layout-resolver'
+import { enrichInstallationsWithReadings } from '@/lib/tires/readings'
 import { validateRotation } from '@/lib/tires/rotation'
 import { NextRequest, NextResponse } from 'next/server'
 import {
@@ -63,26 +64,36 @@ export async function GET(
     const activeIds = (installations ?? [])
       .filter((i) => !i.removed_at)
       .map((i) => i.id)
+    const tireIds = [...new Set((installations ?? []).map((i) => i.tire_id as string))]
 
-    let latestReadings: Record<string, unknown> = {}
-    if (activeIds.length > 0) {
-      const { data: readings } = await supabase
-        .from('tire_readings')
-        .select('*')
-        .in('installation_id', activeIds)
-        .order('read_at', { ascending: false })
+    let allReadings: Record<string, unknown>[] = []
+    let rotationEvents: { installation_id: string | null; event_type: string; event_at: string }[] =
+      []
 
-      for (const r of readings ?? []) {
-        if (!latestReadings[r.installation_id as string]) {
-          latestReadings[r.installation_id as string] = r
-        }
-      }
+    if (activeIds.length > 0 && tireIds.length > 0) {
+      const installFilter = `installation_id.in.(${activeIds.join(',')})`
+      const tireFilter = `tire_id.in.(${tireIds.join(',')})`
+      const [{ data: readings }, { data: rotations }] = await Promise.all([
+        supabase
+          .from('tire_readings')
+          .select('*')
+          .or(`${installFilter},${tireFilter}`)
+          .order('read_at', { ascending: false }),
+        supabase
+          .from('tire_events')
+          .select('installation_id, event_type, event_at')
+          .in('installation_id', activeIds)
+          .eq('event_type', 'rotacion'),
+      ])
+      allReadings = readings ?? []
+      rotationEvents = rotations ?? []
     }
 
-    const enriched = (installations ?? []).map((inst) => ({
-      ...inst,
-      latest_reading: latestReadings[inst.id] ?? null,
-    }))
+    const enriched = enrichInstallationsWithReadings(
+      installations ?? [],
+      allReadings as Parameters<typeof enrichInstallationsWithReadings>[1],
+      rotationEvents
+    )
 
     const { data: events } = await supabase
       .from('tire_events')
@@ -248,7 +259,22 @@ export async function POST(
 
       if (eventErr) throw eventErr
 
-      return NextResponse.json({ installation }, { status: 201 })
+      const { data: tireReadings } = await supabase
+        .from('tire_readings')
+        .select('*')
+        .eq('tire_id', body.tire_id)
+        .order('read_at', { ascending: false })
+
+      const mounted = enrichInstallationsWithReadings(
+        [installation],
+        tireReadings ?? [],
+        []
+      )[0]
+
+      return NextResponse.json(
+        { installation: mounted, needs_pressure_reading: mounted.needs_pressure_reading ?? true },
+        { status: 201 }
+      )
     } catch (mountErr) {
       await supabase.from('asset_tire_installations').delete().eq('id', installation.id)
       const msg = mountErr instanceof Error ? mountErr.message : 'Error al montar llanta'
@@ -289,7 +315,7 @@ export async function PATCH(
     if (body.action === 'reading' && body.reading) {
       const { data: inst, error: instErr } = await supabase
         .from('asset_tire_installations')
-        .select('id, tire_id, asset_id')
+        .select('id, tire_id, asset_id, position_code')
         .eq('id', body.reading.installation_id)
         .eq('asset_id', assetId)
         .is('removed_at', null)
@@ -313,6 +339,7 @@ export async function PATCH(
           asset_id: assetId,
           tread_depth_mm: body.reading.tread_depth_mm ?? null,
           pressure_psi: body.reading.pressure_psi ?? null,
+          position_code: inst.position_code,
           odometer_km: asset?.current_kilometers ?? null,
           horometer_hours: asset?.current_hours ?? null,
           recorded_by: user.id,
@@ -502,7 +529,31 @@ export async function PATCH(
         return NextResponse.json({ error: eventErr.message }, { status: 500 })
       }
 
-      return NextResponse.json({ installation: updated })
+      const [{ data: tireReadings }, { data: rotEvents }] = await Promise.all([
+        supabase
+          .from('tire_readings')
+          .select('*')
+          .or(
+            `installation_id.eq.${updated.id},tire_id.eq.${updated.tire_id}`
+          )
+          .order('read_at', { ascending: false }),
+        supabase
+          .from('tire_events')
+          .select('installation_id, event_type, event_at')
+          .eq('installation_id', updated.id)
+          .eq('event_type', 'rotacion'),
+      ])
+
+      const rotated = enrichInstallationsWithReadings(
+        [updated],
+        tireReadings ?? [],
+        rotEvents ?? []
+      )[0]
+
+      return NextResponse.json({
+        installation: rotated,
+        needs_pressure_reading: rotated.needs_pressure_reading ?? true,
+      })
     }
 
     return NextResponse.json({ error: 'Acción no válida' }, { status: 400 })

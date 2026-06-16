@@ -171,6 +171,8 @@ export function getTireStatusDetail(
   if (pressure != null) {
     const out = isPressureOutOfRange(pressure, thresholds)
     parts.push(`${pressure} psi${out ? ` (fuera de ${range.min}–${range.max})` : ''}`)
+  } else if (installation?.needs_pressure_reading) {
+    parts.push('presión pendiente')
   }
   return parts.join(' · ') || TIRE_STATUS_VISUALS[status].label
 }

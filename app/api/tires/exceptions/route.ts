@@ -9,8 +9,9 @@ import {
   resolveThresholds,
 } from '@/lib/tires/exceptions'
 import { resolvePositionsFromLayout } from '@/lib/tires/layout-resolver'
+import { enrichInstallationsWithReadings } from '@/lib/tires/readings'
 import { NextRequest, NextResponse } from 'next/server'
-import type { AssetTireInstallation, TireLayoutTemplateKey, TireReading, TireThresholds } from '@/types/tires'
+import type { AssetTireInstallation, TireLayoutTemplateKey, TireThresholds } from '@/types/tires'
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
       { data: tires },
       { data: events },
       { data: readings },
+      { data: rotationEvents },
     ] = await Promise.all([
       settingsQuery,
       supabase.from('equipment_model_tire_layouts').select('model_id, template_key, positions, svg_variant'),
@@ -55,6 +57,10 @@ export async function GET(request: NextRequest) {
       supabase.from('tires').select('*'),
       supabase.from('tire_events').select('*'),
       supabase.from('tire_readings').select('*').order('read_at', { ascending: false }),
+      supabase
+        .from('tire_events')
+        .select('installation_id, event_type, event_at')
+        .eq('event_type', 'rotacion'),
     ])
 
     if (assetsErr) {
@@ -65,13 +71,11 @@ export async function GET(request: NextRequest) {
     const thresholds = (settingsRow?.thresholds ?? {}) as TireThresholds
     const layoutByModel = new Map((layouts ?? []).map((l) => [l.model_id as string, l]))
 
-    const latestReadingByInstallation = new Map<string, TireReading>()
-    for (const reading of readings ?? []) {
-      const instId = reading.installation_id as string
-      if (!latestReadingByInstallation.has(instId)) {
-        latestReadingByInstallation.set(instId, reading as TireReading)
-      }
-    }
+    const enrichedActive = enrichInstallationsWithReadings(
+      (activeInstallations ?? []) as AssetTireInstallation[],
+      readings ?? [],
+      rotationEvents ?? []
+    )
 
     const mountedByAsset = new Map<string, number>()
     for (const inst of activeInstallations ?? []) {
@@ -96,13 +100,12 @@ export async function GET(request: NextRequest) {
       if (cpk != null) fleetCostPerKmValues.push(cpk)
     }
 
-    const installationExceptions = (activeInstallations ?? []).flatMap((inst) => {
-      const assetRow = inst.assets as { name?: string; asset_id?: string | null } | null
+    const installationExceptions = enrichedActive.flatMap((inst) => {
+      const assetRow = inst.assets as { name?: string; asset_id?: string | null } | undefined
       return detectInstallationExceptions({
         installation: {
-          ...(inst as AssetTireInstallation),
+          ...inst,
           tire: inst.tire as AssetTireInstallation['tire'],
-          latest_reading: latestReadingByInstallation.get(inst.id as string) ?? null,
         },
         asset_name: assetRow?.name ?? 'Activo',
         asset_code: assetRow?.asset_id ?? null,

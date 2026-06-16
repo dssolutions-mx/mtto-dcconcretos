@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -200,6 +201,11 @@ function MountPositionForm({
         const err = await res.json()
         throw new Error(err.error || 'Error al montar')
       }
+      const data = await res.json()
+      toast.success('Llanta montada')
+      if (data.needs_pressure_reading) {
+        toast.info('Registre la presión en esta posición', { duration: 6000 })
+      }
       setTireId('')
       setNotes('')
       onSuccess()
@@ -333,6 +339,14 @@ function DetailPositionPanel({
 
       <p className="text-xs text-muted-foreground leading-snug">{thresholdLine}</p>
 
+      {installation.needs_pressure_reading && (
+        <Alert className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+          <AlertDescription className="text-amber-900 dark:text-amber-200">
+            Falta registrar presión para esta posición.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-2">
         <p className="font-mono text-base font-semibold">{primaryId}</p>
         <p className="text-sm text-muted-foreground">
@@ -367,7 +381,11 @@ function DetailPositionPanel({
         <div>
           <p className="text-muted-foreground">Presión</p>
           <p className="font-medium tabular-num">
-            {reading?.pressure_psi != null ? `${reading.pressure_psi} psi` : '—'}
+            {reading?.pressure_psi != null
+              ? `${reading.pressure_psi} psi`
+              : installation.needs_pressure_reading
+                ? 'Pendiente'
+                : '—'}
           </p>
         </div>
         <div className="col-span-2">

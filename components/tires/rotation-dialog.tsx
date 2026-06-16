@@ -79,6 +79,9 @@ export function RotationDialog({
       if (!res.ok) throw new Error(data.error || 'Error al rotar')
 
       toast.success(`Llanta rotada a ${target.label}`)
+      if (data.needs_pressure_reading) {
+        toast.info('Registre la presión en la nueva posición', { duration: 6000 })
+      }
       setToCode('')
       setNotes('')
       onOpenChange(false)

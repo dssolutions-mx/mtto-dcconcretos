@@ -109,7 +109,10 @@ export function TireReadingsSection({
     if (!inst.latest_reading) return
     updateReading(inst.id, {
       tread_depth_mm: showTread ? inst.latest_reading.tread_depth_mm : null,
-      pressure_psi: showPressure ? inst.latest_reading.pressure_psi : null,
+      pressure_psi:
+        showPressure && inst.latest_reading.pressure_psi != null
+          ? inst.latest_reading.pressure_psi
+          : null,
     })
   }
 

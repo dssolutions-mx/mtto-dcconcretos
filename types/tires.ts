@@ -50,13 +50,15 @@ export interface AssetTireInstallation {
   created_at: string
   tire?: Tire
   latest_reading?: TireReading | null
+  /** True when mounted but no PSI recorded for the current position context. */
+  needs_pressure_reading?: boolean
 }
 
 export interface TireReading {
   id: string
-  installation_id: string
+  installation_id: string | null
   tire_id: string
-  asset_id: string
+  asset_id: string | null
   read_at: string
   tread_depth_mm: number | null
   pressure_psi: number | null

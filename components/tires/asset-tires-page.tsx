@@ -425,7 +425,11 @@ export function AssetTiresPageClient({ assetId, assetName }: AssetTiresPageProps
                                 {inst.latest_reading ? (
                                   <span>
                                     {inst.latest_reading.tread_depth_mm ?? '—'} mm /{' '}
-                                    {inst.latest_reading.pressure_psi ?? '—'} psi
+                                    {inst.latest_reading.pressure_psi != null
+                                      ? `${inst.latest_reading.pressure_psi} psi`
+                                      : inst.needs_pressure_reading
+                                        ? 'presión pendiente'
+                                        : '—'}
                                   </span>
                                 ) : (
                                   <span className="text-muted-foreground">Sin lectura</span>
