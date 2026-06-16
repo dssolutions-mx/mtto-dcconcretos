@@ -15,6 +15,7 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { getIncidentEvidence } from "./incident-utils"
 import { IncidentThreadHistory, type IncidentThreadHistoryItem } from "./incident-thread-history"
+import { IncidentRoutingPanel } from "./incident-routing-panel"
 import {
   cohortToBounds,
   incidentInCohort,
@@ -100,15 +101,22 @@ interface IncidentReviewContentProps {
     parts?: string
     documents?: unknown
     created_at?: string
+    routing_department_id?: string | null
+    assigned_to_id?: string | null
+    pipeline_stage?: string | null
+    target_response_hours?: number | null
+    routed_at?: string | null
   }
   threadIncidents?: IncidentThreadHistoryItem[]
   onWorkOrderGenerated?: () => void
+  onRoutingUpdated?: () => void
 }
 
 export function IncidentReviewContent({
   incident,
   threadIncidents = [],
   onWorkOrderGenerated,
+  onRoutingUpdated,
 }: IncidentReviewContentProps) {
   const { toast } = useToast()
   const reporterName =
@@ -264,6 +272,25 @@ export function IncidentReviewContent({
           </CardContent>
         </Card>
       </div>
+
+      <IncidentRoutingPanel
+        incidentId={incident.id}
+        initial={{
+          routing_department_id: incident.routing_department_id ?? null,
+          assigned_to_id: incident.assigned_to_id ?? null,
+          pipeline_stage:
+            (incident.pipeline_stage as
+              | "bandeja"
+              | "asignado"
+              | "en_atencion"
+              | "esperando"
+              | "cerrado"
+              | undefined) ?? "bandeja",
+          target_response_hours: incident.target_response_hours ?? null,
+          routed_at: incident.routed_at ?? null,
+        }}
+        onUpdated={onRoutingUpdated}
+      />
 
       {/* Descripción */}
       <Card>
