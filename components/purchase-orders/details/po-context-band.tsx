@@ -112,6 +112,7 @@ export function POContextBand({ order, workOrder }: POContextBandProps) {
           <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-0.5">
             Monto autorizado
           </p>
+          <p className="text-[10px] font-medium text-primary/80 mb-1">Sin IVA</p>
           <p
             className="font-bold tabular-num leading-none text-foreground"
             style={{ fontSize: "clamp(1.35rem, 4vw, 1.75rem)" }}
@@ -119,6 +120,9 @@ export function POContextBand({ order, workOrder }: POContextBandProps) {
             {formatCurrency(
               Number(order.approval_amount) > 0 ? order.approval_amount : (order.total_amount ?? 0)
             )}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+            El pago al proveedor se calcula sobre la factura con IVA y retenciones.
           </p>
         </div>
 

@@ -12,6 +12,7 @@ import {
   ShoppingCart,
 } from "lucide-react"
 import Link from "next/link"
+import { useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { getIncidentEvidence } from "./incident-utils"
 import { IncidentThreadHistory, type IncidentThreadHistoryItem } from "./incident-thread-history"
@@ -21,6 +22,8 @@ import {
   incidentInCohort,
   INSPECTION_COHORTS,
 } from "@/lib/incidents/inspection-cohort"
+import { ScheduleWorkOrderDialog } from "@/components/agenda/schedule-work-order-dialog"
+import { computeResponseMetrics, formatHoursLabel } from "@/lib/agenda/response-metrics"
 
 function formatDate(dateString: string | null): string {
   if (!dateString) return "No disponible"
@@ -104,6 +107,10 @@ interface IncidentReviewContentProps {
     routing_department_id?: string | null
     assigned_to_id?: string | null
     pipeline_stage?: string | null
+    first_wo_created_at?: string | null
+    first_planned_at?: string | null
+    first_assigned_at?: string | null
+    resolved_at?: string | null
     target_response_hours?: number | null
     routed_at?: string | null
   }
@@ -119,6 +126,9 @@ export function IncidentReviewContent({
   onRoutingUpdated,
 }: IncidentReviewContentProps) {
   const { toast } = useToast()
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [generatedWorkOrderId, setGeneratedWorkOrderId] = useState<string | null>(null)
+  const [generatedWorkOrderLabel, setGeneratedWorkOrderLabel] = useState<string | undefined>()
   const reporterName =
     incident.reported_by_name || incident.reported_by || "Usuario desconocido"
 
@@ -139,14 +149,17 @@ export function IncidentReviewContent({
       })
 
       if (response.ok) {
-        const { work_order_id } = await response.json()
+        const data = await response.json()
+        const workOrderId = data.work_order_id as string | undefined
         onWorkOrderGenerated?.()
         toast({
           title: "Orden de trabajo generada",
-          description: "Se ha creado una orden de trabajo a partir del incidente.",
+          description: "Programe mecánico y fecha para la agenda.",
         })
-        if (work_order_id) {
-          window.location.href = `/ordenes/${work_order_id}`
+        if (workOrderId) {
+          setGeneratedWorkOrderId(workOrderId)
+          setGeneratedWorkOrderLabel(data.work_order?.order_id)
+          setScheduleDialogOpen(true)
         } else {
           window.location.reload()
         }
@@ -181,6 +194,17 @@ export function IncidentReviewContent({
   } catch {
     /* ignore */
   }
+
+  const responseMetrics = computeResponseMetrics({
+    id: incident.id,
+    created_at: incident.created_at,
+    first_wo_created_at: incident.first_wo_created_at,
+    first_planned_at: incident.first_planned_at,
+    first_assigned_at: incident.first_assigned_at,
+    resolved_at: incident.resolved_at,
+    target_response_hours: incident.target_response_hours,
+    status: incident.status,
+  })
 
   return (
     <div className="space-y-6">
@@ -219,6 +243,19 @@ export function IncidentReviewContent({
             <div>
               <span className="text-sm font-medium">Reportado por:</span>
               <p className="text-sm text-muted-foreground">{reporterName}</p>
+            </div>
+            <div className="pt-2 border-t">
+              <span className="text-sm font-medium">Tiempos de atención:</span>
+              <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                <p>→ OT: {formatHoursLabel(responseMetrics.hoursToWorkOrder)}</p>
+                <p>→ Programado: {formatHoursLabel(responseMetrics.hoursToSchedule)}</p>
+                <p>→ Cierre: {formatHoursLabel(responseMetrics.hoursToResolve)}</p>
+                {responseMetrics.metScheduleTarget === false && (
+                  <p className="text-amber-700 font-medium">
+                    Fuera de meta ({responseMetrics.targetResponseHours}h)
+                  </p>
+                )}
+              </div>
             </div>
             {incident.asset_id && (
               <div>
@@ -402,6 +439,18 @@ export function IncidentReviewContent({
           )}
         </CardContent>
       </Card>
+
+      {generatedWorkOrderId && (
+        <ScheduleWorkOrderDialog
+          open={scheduleDialogOpen}
+          onOpenChange={setScheduleDialogOpen}
+          workOrderId={generatedWorkOrderId}
+          workOrderLabel={generatedWorkOrderLabel}
+          onScheduled={() => {
+            window.location.href = `/ordenes/${generatedWorkOrderId}`
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -129,6 +129,10 @@ export async function POST(req: NextRequest) {
         updates.routed_at = now
       }
 
+      if (incident.target_response_hours == null) {
+        updates.target_response_hours = 48
+      }
+
       const { error: updateError } = await supabase
         .from("incident_history")
         .update(updates)

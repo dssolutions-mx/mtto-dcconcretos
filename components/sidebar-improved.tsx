@@ -33,6 +33,7 @@ import {
   Building2,
   Target,
   Layers,
+  CalendarDays,
 } from "lucide-react"
 import { UserNav } from "@/components/user-nav"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -252,7 +253,18 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 </Link>
               </Button>
               <Button
-                variant={isPathActive("/ordenes") && !isPathActive("/ordenes/planificacion") && !isPathActive("/ordenes/campanas") ? "secondary" : "ghost"}
+                variant={isPathActive("/ordenes/agenda") ? "secondary" : "ghost"}
+                className="w-full justify-start pl-8"
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/ordenes/agenda">
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Agenda
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/ordenes") && !isPathActive("/ordenes/planificacion") && !isPathActive("/ordenes/campanas") && !isPathActive("/ordenes/agenda") ? "secondary" : "ghost"}
                 className="w-full justify-start pl-8"
                 asChild
                 onClick={handleLinkClick}
@@ -421,13 +433,14 @@ export function CollapsedSidebar({ className, onLinkClick }: SidebarProps) {
       id: "operations",
       icon: ClipboardCheck,
       label: "Operaciones",
-      active: isSectionActive(["/checklists", "/incidentes", "/ordenes", "/calendario", "/ordenes/planificacion", "/ordenes/campanas"]),
+      active: isSectionActive(["/checklists", "/incidentes", "/ordenes", "/calendario", "/ordenes/planificacion", "/ordenes/campanas", "/ordenes/agenda"]),
       items: [
         { href: "/checklists", icon: ClipboardCheck, label: "Checklists", active: isPathActive("/checklists") },
         { href: "/incidentes", icon: AlertTriangle, label: "Incidentes", active: isPathActive("/incidentes") },
         { href: "/ordenes/planificacion", icon: Target, label: "Planificación", active: isPathActive("/ordenes/planificacion") },
+        { href: "/ordenes/agenda", icon: CalendarDays, label: "Agenda", active: isPathActive("/ordenes/agenda") },
         { href: "/ordenes/campanas", icon: Layers, label: "Campañas", active: isPathActive("/ordenes/campanas") },
-        { href: "/ordenes", icon: Tool, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") && !isPathActive("/ordenes/planificacion") && !isPathActive("/ordenes/campanas") },
+        { href: "/ordenes", icon: Tool, label: "Órdenes de Trabajo", active: isPathActive("/ordenes") && !isPathActive("/ordenes/planificacion") && !isPathActive("/ordenes/campanas") && !isPathActive("/ordenes/agenda") },
         { href: "/calendario", icon: Calendar, label: "Calendario", active: isPathActive("/calendario") }
       ]
     },
