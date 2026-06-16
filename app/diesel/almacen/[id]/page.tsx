@@ -35,8 +35,22 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { TransactionEditModal } from "@/components/diesel-inventory/transaction-edit-modal"
 import { TransactionEvidenceModal } from "@/components/diesel-inventory/transaction-evidence-modal"
+import { CuentaLitrosGapModal } from "@/components/diesel-inventory/cuenta-litros-gap-modal"
 import { MarkTransferModal } from "@/components/diesel-inventory/mark-transfer-modal"
 import { formatLocalDateForAccounting } from "@/lib/diesel/date-utils"
+import {
+  buildCuentaLitrosGaps,
+  getSignificantGaps,
+  indexGapsByTransactionId,
+  sumUnregisteredLiters,
+  type CuentaLitrosGap,
+} from "@/lib/diesel-cuenta-litros-gaps"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface WarehouseDetails {
   id: string
@@ -118,6 +132,10 @@ export default function WarehouseDetailPage() {
   // Evidence modal state
   const [evidenceTransaction, setEvidenceTransaction] = useState<Transaction | null>(null)
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false)
+
+  // Cuenta litros gap modal state
+  const [selectedGap, setSelectedGap] = useState<CuentaLitrosGap | null>(null)
+  const [isGapModalOpen, setIsGapModalOpen] = useState(false)
   
   // Mark transfer modal state
   const [transferTransaction, setTransferTransaction] = useState<Transaction | null>(null)
@@ -128,6 +146,7 @@ export default function WarehouseDetailPage() {
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [validationOnly, setValidationOnly] = useState<boolean>(false)
+  const [gapsOnly, setGapsOnly] = useState<boolean>(false)
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -140,6 +159,36 @@ export default function WarehouseDetailPage() {
 
   // Precompute max balance for chart scaling (avoid division by zero)
   const maxBalanceForChart = balanceHistory.reduce((max, p) => Math.max(max, p.balance), 0) || 1
+
+  const cuentaLitrosGaps = useMemo(() => {
+    if (!warehouse?.has_cuenta_litros) return []
+    return buildCuentaLitrosGaps(transactions, {
+      warehouse_id: warehouseId,
+      has_cuenta_litros: true,
+    })
+  }, [transactions, warehouse?.has_cuenta_litros, warehouseId])
+
+  const significantCuentaLitrosGaps = useMemo(
+    () => getSignificantGaps(cuentaLitrosGaps),
+    [cuentaLitrosGaps],
+  )
+
+  const gapsByTransactionId = useMemo(
+    () => indexGapsByTransactionId(significantCuentaLitrosGaps),
+    [significantCuentaLitrosGaps],
+  )
+
+  const gapTxIdSet = useMemo(() => {
+    const ids = new Set<string>()
+    for (const gap of significantCuentaLitrosGaps) {
+      ids.add(gap.prev_anchor.tx_id)
+      ids.add(gap.curr_anchor.tx_id)
+      for (const txId of gap.transaction_ids_in_interval) {
+        ids.add(txId)
+      }
+    }
+    return ids
+  }, [significantCuentaLitrosGaps])
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -244,7 +293,7 @@ export default function WarehouseDetailPage() {
 
   useEffect(() => {
     applyFilters()
-  }, [transactions, typeFilter, dateFrom, dateTo, validationOnly])
+  }, [transactions, typeFilter, dateFrom, dateTo, validationOnly, gapsOnly, gapTxIdSet])
 
   // Calculate stats from filtered transactions
   const filteredStats = useMemo(() => {
@@ -623,6 +672,10 @@ export default function WarehouseDetailPage() {
       filtered = filtered.filter(t => t.requires_validation)
     }
 
+    if (gapsOnly && gapTxIdSet.size > 0) {
+      filtered = filtered.filter(t => gapTxIdSet.has(t.id))
+    }
+
     setFilteredTransactions(filtered)
     setCurrentPage(1) // Reset to first page when filters change
   }
@@ -633,6 +686,7 @@ export default function WarehouseDetailPage() {
     setDateTo("")
     setCurrentPage(1)
     setValidationOnly(false)
+    setGapsOnly(false)
   }
 
   const handleEditTransaction = (transaction: Transaction) => {
@@ -640,9 +694,37 @@ export default function WarehouseDetailPage() {
     setIsEditModalOpen(true)
   }
 
+  const handleOpenGap = (gap: CuentaLitrosGap) => {
+    setSelectedGap(gap)
+    setIsGapModalOpen(true)
+    setIsEvidenceModalOpen(false)
+    setEvidenceTransaction(null)
+  }
+
   const handleOpenEvidence = (transaction: Transaction) => {
+    const gap = gapsByTransactionId.get(transaction.id)
+    if (gap && warehouse?.has_cuenta_litros) {
+      handleOpenGap(gap)
+      return
+    }
     setEvidenceTransaction(transaction)
     setIsEvidenceModalOpen(true)
+  }
+
+  const handleViewEvidenceFromGap = (txId: string) => {
+    const transaction = transactions.find((t) => t.id === txId) ?? null
+    setSelectedGap(null)
+    setIsGapModalOpen(false)
+    setEvidenceTransaction(transaction)
+    setIsEvidenceModalOpen(true)
+  }
+
+  const handleViewIntervalGapFromEvidence = () => {
+    if (!evidenceTransaction) return
+    const gap = gapsByTransactionId.get(evidenceTransaction.id)
+    if (!gap) return
+    setIsEvidenceModalOpen(false)
+    handleOpenGap(gap)
   }
 
   const isLatestTransaction = (transaction: Transaction) => {
@@ -1127,6 +1209,66 @@ export default function WarehouseDetailPage() {
         </Card>
       </div>
 
+      {warehouse.has_cuenta_litros && (
+        <Card className={significantCuentaLitrosGaps.length > 0 ? "border-orange-400" : undefined}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-5 w-5 text-orange-600" />
+              Salidas faltantes (cuenta litros)
+            </CardTitle>
+            <CardDescription>
+              Huecos detectados entre lecturas consecutivas del medidor
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {significantCuentaLitrosGaps.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No se detectaron huecos significativos (tolerancia ±2 L).
+              </p>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="destructive">
+                    {significantCuentaLitrosGaps.length} hueco
+                    {significantCuentaLitrosGaps.length !== 1 ? "s" : ""}
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">
+                    ~{sumUnregisteredLiters(significantCuentaLitrosGaps).toFixed(0)} L sin registrar en total
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {significantCuentaLitrosGaps.slice(0, 5).map((gap) => (
+                    <button
+                      key={gap.id}
+                      type="button"
+                      onClick={() => handleOpenGap(gap)}
+                      className="w-full text-left p-3 rounded-lg border hover:bg-orange-50/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge
+                          variant={
+                            gap.gap_type === "unregistered_dispense" ? "destructive" : "secondary"
+                          }
+                        >
+                          {gap.short_label}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{gap.time_window_label}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{gap.narrative}</p>
+                    </button>
+                  ))}
+                </div>
+                {significantCuentaLitrosGaps.length > 5 && (
+                  <p className="text-xs text-muted-foreground">
+                    Y {significantCuentaLitrosGaps.length - 5} huecos más en el historial…
+                  </p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Balance History Chart */}
       {balanceHistory.length > 0 && (
         <Card>
@@ -1241,7 +1383,7 @@ export default function WarehouseDetailPage() {
           <div className="flex items-center gap-2 mb-3">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Filtros</span>
-            {(typeFilter !== "all" || dateFrom || dateTo || validationOnly) && (
+            {(typeFilter !== "all" || dateFrom || dateTo || validationOnly || gapsOnly) && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="h-3 w-3 mr-1" />
                 Limpiar
@@ -1287,21 +1429,41 @@ export default function WarehouseDetailPage() {
           </div>
 
           {/* Validation-only toggle */}
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              id="validation-only"
-              type="checkbox"
-              checked={validationOnly}
-              onChange={(e) => setValidationOnly(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <Label htmlFor="validation-only" className="text-sm">Solo marcadas para validación</Label>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                id="validation-only"
+                type="checkbox"
+                checked={validationOnly}
+                onChange={(e) => setValidationOnly(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="validation-only" className="text-sm">Solo marcadas para validación</Label>
+            </div>
+            {warehouse.has_cuenta_litros && (
+              <div className="flex items-center gap-2">
+                <input
+                  id="gaps-only"
+                  type="checkbox"
+                  checked={gapsOnly}
+                  onChange={(e) => setGapsOnly(e.target.checked)}
+                  className="h-4 w-4"
+                  disabled={gapTxIdSet.size === 0}
+                />
+                <Label htmlFor="gaps-only" className="text-sm">Solo huecos cuenta litros</Label>
+              </div>
+            )}
           </div>
         </CardContent>
         
         <CardContent className="pt-4">
+          <TooltipProvider>
           <div className="space-y-2">
-            {paginatedTransactions.map((transaction) => (
+            {paginatedTransactions.map((transaction) => {
+              const txGap = gapsByTransactionId.get(transaction.id)
+              const isGapAnchorB = txGap?.curr_anchor.tx_id === transaction.id
+
+              return (
               <div
                 key={transaction.id}
                 className="flex items-center justify-between p-4 rounded-lg border hover:bg-gray-50 transition-colors cursor-pointer"
@@ -1354,6 +1516,49 @@ export default function WarehouseDetailPage() {
                         <Badge variant="outline" className="text-xs bg-orange-50">
                           Externo: {transaction.exception_asset_name}
                         </Badge>
+                      )}
+                      {transaction.cuenta_litros != null && (
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-800 border-blue-200">
+                          CL: {transaction.cuenta_litros.toFixed(0)} L
+                        </Badge>
+                      )}
+                      {isGapAnchorB && txGap && txGap.gap_type === "unregistered_dispense" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="destructive"
+                              className="text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenGap(txGap)
+                              }}
+                            >
+                              {txGap.short_label}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            {txGap.narrative}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {isGapAnchorB && txGap && txGap.gap_type === "over_registered" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="secondary"
+                              className="text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenGap(txGap)
+                              }}
+                            >
+                              {txGap.short_label}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            {txGap.narrative}
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
@@ -1470,7 +1675,8 @@ export default function WarehouseDetailPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            )})}
+          </div>
 
             {filteredTransactions.length === 0 && transactions.length > 0 && (
               <div className="text-center py-8 text-muted-foreground">
@@ -1483,7 +1689,7 @@ export default function WarehouseDetailPage() {
                 No hay transacciones registradas para este almacén
               </div>
             )}
-          </div>
+          </TooltipProvider>
           
           {/* Pagination Controls */}
           {filteredTransactions.length > itemsPerPage && (
@@ -1611,6 +1817,15 @@ export default function WarehouseDetailPage() {
         onClose={() => { setIsEvidenceModalOpen(false); setEvidenceTransaction(null) }}
         headerTitle={evidenceTransaction ? `Evidencia • ${getTransactionLabel(evidenceTransaction)} • ${evidenceTransaction.quantity_liters.toFixed(1)}L` : 'Evidencia'}
         subheader={evidenceTransaction ? new Date(evidenceTransaction.transaction_date).toLocaleString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : undefined}
+        intervalGap={evidenceTransaction ? gapsByTransactionId.get(evidenceTransaction.id) ?? null : null}
+        onViewIntervalGap={handleViewIntervalGapFromEvidence}
+      />
+
+      <CuentaLitrosGapModal
+        gap={selectedGap}
+        isOpen={isGapModalOpen}
+        onClose={() => { setIsGapModalOpen(false); setSelectedGap(null) }}
+        onViewEvidence={handleViewEvidenceFromGap}
       />
 
       {/* Mark Transfer Modal */}

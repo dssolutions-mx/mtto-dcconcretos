@@ -5,7 +5,9 @@ import { createBrowserClient } from "@supabase/ssr"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Camera, MapPin } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Loader2, Camera, MapPin, AlertTriangle } from "lucide-react"
+import type { CuentaLitrosGap } from "@/lib/diesel-cuenta-litros-gaps"
 import { EvidenceViewer } from "@/components/ui/evidence-viewer"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 import {
@@ -21,6 +23,8 @@ interface TransactionEvidenceModalProps {
   onClose: () => void
   headerTitle?: string
   subheader?: string
+  intervalGap?: CuentaLitrosGap | null
+  onViewIntervalGap?: () => void
 }
 
 interface EvidenceRow {
@@ -51,7 +55,9 @@ export function TransactionEvidenceModal({
   isOpen,
   onClose,
   headerTitle = "Evidencia de la Transacción",
-  subheader
+  subheader,
+  intervalGap,
+  onViewIntervalGap,
 }: TransactionEvidenceModalProps) {
   const [loading, setLoading] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
@@ -238,7 +244,7 @@ export function TransactionEvidenceModal({
                     <div className="font-medium">{varianceInfo?.expected != null ? `${varianceInfo.expected.toFixed(1)}L` : 'N/A'}</div>
                   </div>
                   <div>
-                    <div className="text-muted-foreground">Varianza</div>
+                    <div className="text-muted-foreground">Varianza en esta transacción</div>
                     <div className={`font-medium ${varianceInfo ? (varianceInfo.valid ? 'text-green-700' : 'text-orange-700') : 'text-muted-foreground'}`}>
                       {varianceInfo?.variance != null ? `${varianceInfo.variance.toFixed(1)}L ${varianceInfo.valid ? '✓ dentro de tolerancia' : '⚠️ requiere validación'}` : (warehouseMeta?.has_cuenta_litros ? 'No disponible' : 'Sin cuenta litros')}
                     </div>
@@ -246,6 +252,21 @@ export function TransactionEvidenceModal({
                 </div>
               )}
             </div>
+
+            {intervalGap && intervalGap.gap_type !== "within_tolerance" && onViewIntervalGap && (
+              <div className="mb-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-orange-300 text-orange-800 hover:bg-orange-50"
+                  onClick={onViewIntervalGap}
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  Ver hueco de intervalo ({intervalGap.short_label})
+                </Button>
+              </div>
+            )}
 
             {/* EXIF / executive: registered time vs camera capture */}
             {timeComparison && (
