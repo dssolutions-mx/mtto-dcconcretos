@@ -21,6 +21,9 @@ import {
 } from "@/components/purchase-orders/workflow/WorkflowStatusDisplay"
 import { TypeBadge } from "@/components/purchase-orders/shared/TypeBadge"
 import { ReceiptDisplaySection } from "@/components/purchase-orders/ReceiptDisplaySection"
+import { PoSupplierInvoiceSection } from "@/components/purchase-orders/PoSupplierInvoiceSection"
+import { PoLifecycleStrip } from "@/components/compras/procurement/ProcurementDashboardTab"
+import { suggestExpenseCategory } from "@/lib/ap/po-invoice-utils"
 import { PurchaseOrderDetailsRouter } from "@/components/purchase-orders/purchase-order-details-router"
 import { loadActorContext } from "@/lib/auth/server-authorization"
 import { computeCoordinatorQuotationUiState } from "@/lib/purchase-orders/coordinator-quotation-mutations"
@@ -200,6 +203,15 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
     status: order.status,
   })
 
+  const canRegisterInvoice =
+    !!actor?.profile?.role &&
+    ["GERENCIA_GENERAL", "AREA_ADMINISTRATIVA", "GERENTE_MANTENIMIENTO"].includes(actor.profile.role)
+
+  const defaultExpenseCategory = suggestExpenseCategory({
+    po_type: order.po_type,
+    po_purpose: order.po_purpose,
+  })
+
   // ── Desktop layout ─────────────────────────────────────────────────────────
   const hasCatalogItems = items.some((i: any) => i.part_id || i.partNumber)
   const showReceiptsCard = order.status &&
@@ -265,6 +277,17 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
 
       {/* ── Lifecycle strip ─────────────────────────────────────────────────── */}
       <POLifecycleStrip status={order.status ?? "draft"} />
+
+      {showReceiptsCard && (
+        <Card className="rounded-2xl border border-border/60">
+          <CardContent className="pt-4 pb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+              Ciclo contable post-aprobación
+            </p>
+            <PoLifecycleStrip purchaseOrderId={order.id} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Context band ────────────────────────────────────────────────────── */}
       <POContextBand order={order} workOrder={workOrder} />
@@ -485,6 +508,16 @@ async function PurchaseOrderDetailsContent({ id }: { id: string }) {
           {/* Receipts / Comprobantes card */}
           {showReceiptsCard && (
             <ReceiptDisplaySection purchaseOrderId={order.id} poType={order.po_type} />
+          )}
+
+          {/* Fiscal supplier invoice */}
+          {showReceiptsCard && (
+            <PoSupplierInvoiceSection
+              purchaseOrderId={order.id}
+              canRegister={canRegisterInvoice}
+              defaultExpenseCategory={defaultExpenseCategory}
+              poPreTaxAmount={Number(order.actual_amount) > 0 ? Number(order.actual_amount) : Number(order.approval_amount) > 0 ? Number(order.approval_amount) : Number(order.total_amount ?? 0)}
+            />
           )}
         </div>
 
