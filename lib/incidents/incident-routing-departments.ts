@@ -34,8 +34,16 @@ export const CANONICAL_ROUTING_DEPARTMENTS: CanonicalRoutingDepartment[] = [
     slug: "operaciones",
     label: "Operaciones",
     shortLabel: "Ops",
-    preferredCodes: ["OPER", "OPS", "OPERACIONES"],
-    namePatterns: ["operaciones", "operacion", "oper", "operations", "planta"],
+    preferredCodes: ["OPER", "OPS", "OPERACIONES", "PROD"],
+    namePatterns: [
+      "operaciones",
+      "operacion",
+      "oper",
+      "operations",
+      "produccion",
+      "producción",
+      "planta",
+    ],
     colorClass: "border-amber-300 bg-amber-50 text-amber-900",
   },
   {

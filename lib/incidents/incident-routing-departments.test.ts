@@ -10,6 +10,7 @@ describe("incident-routing-departments", () => {
       "mantenimiento",
     )
     expect(matchDepartmentToCanonical({ name: "Operaciones", code: "OPER" })).toBe("operaciones")
+    expect(matchDepartmentToCanonical({ name: "Producción", code: "PROD" })).toBe("operaciones")
     expect(matchDepartmentToCanonical({ name: "Recursos Humanos", code: "RH" })).toBe(
       "recursos_humanos",
     )
