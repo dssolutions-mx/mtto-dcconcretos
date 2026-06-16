@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { addWeeks, format, parseISO, startOfWeek, subWeeks } from "date-fns"
+import { addWeeks, endOfWeek, format, parseISO, startOfWeek, subWeeks } from "date-fns"
 import { es } from "date-fns/locale"
 import { CalendarDays, ChevronLeft, ChevronRight, Printer, Wrench } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -84,7 +84,7 @@ export function WorkAgendaBoard({ initialTechnicianId }: WorkAgendaBoardProps) {
   )
 
   const weekLabel = format(weekStart, "d MMM", { locale: es })
-  const weekEndLabel = format(addWeeks(weekStart, 1), "d MMM yyyy", { locale: es })
+  const weekEndLabel = format(endOfWeek(weekStart, { weekStartsOn: 1 }), "d MMM yyyy", { locale: es })
 
   const hojaHref =
     technicianId && technicianId !== "all"

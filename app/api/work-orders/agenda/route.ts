@@ -59,7 +59,6 @@ export async function GET(request: NextRequest) {
             .in("status", ACTIVE_STATUSES)
             .order("created_at", { ascending: false })
             .limit(50)
-          if (assignedTo) q = q.eq("assigned_to", assignedTo)
           return q
         })()
       : null
