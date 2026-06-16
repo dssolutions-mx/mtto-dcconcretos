@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   buildCuentaLitrosGaps,
   buildGapNarrative,
+  CUENTA_LITROS_GAP_AUDIT_FROM,
   formatTimeWindow,
   getSignificantGaps,
   indexGapsByTransactionId,
@@ -146,6 +147,69 @@ test("buildCuentaLitrosGaps excludes transfers and adjustments from registered s
   assert.equal(gaps[0]!.meter_delta, 60)
   assert.equal(gaps[0]!.gap_liters, 50)
   assert.equal(gaps[0]!.gap_type, "unregistered_dispense")
+})
+
+test("buildCuentaLitrosGaps excludes pre-April 2026 transactions from anchors and intervals", () => {
+  const transactions = [
+    tx({
+      id: "pre",
+      transaction_id: "TX-PRE",
+      quantity_liters: 80,
+      cuenta_litros: 100,
+      transaction_date: "2026-03-15T18:00:00.000Z",
+    }),
+    tx({
+      id: "apr",
+      transaction_id: "TX-APR",
+      quantity_liters: 50,
+      cuenta_litros: 200,
+      transaction_date: "2026-04-15T18:00:00.000Z",
+    }),
+    tx({
+      id: "jun",
+      transaction_id: "TX-JUN",
+      quantity_liters: 30,
+      cuenta_litros: 300,
+      transaction_date: "2026-06-15T18:00:00.000Z",
+    }),
+  ]
+
+  const gaps = buildCuentaLitrosGaps(transactions, {
+    warehouse_id: WAREHOUSE_ID,
+    has_cuenta_litros: true,
+    audit_from: CUENTA_LITROS_GAP_AUDIT_FROM,
+  })
+
+  assert.equal(gaps.length, 1)
+  assert.equal(gaps[0]!.prev_anchor.tx_id, "apr")
+  assert.equal(gaps[0]!.curr_anchor.tx_id, "jun")
+  assert.deepEqual(gaps[0]!.transaction_ids_in_interval, ["jun"])
+})
+
+test("buildCuentaLitrosGaps returns empty when only pre-April anchors exist", () => {
+  const transactions = [
+    tx({
+      id: "pre-a",
+      transaction_id: "TX-PRE-A",
+      quantity_liters: 50,
+      cuenta_litros: 100,
+      transaction_date: "2026-02-01T18:00:00.000Z",
+    }),
+    tx({
+      id: "pre-b",
+      transaction_id: "TX-PRE-B",
+      quantity_liters: 40,
+      cuenta_litros: 200,
+      transaction_date: "2026-03-20T18:00:00.000Z",
+    }),
+  ]
+
+  const gaps = buildCuentaLitrosGaps(transactions, {
+    warehouse_id: WAREHOUSE_ID,
+    has_cuenta_litros: true,
+  })
+
+  assert.deepEqual(gaps, [])
 })
 
 test("buildCuentaLitrosGaps returns empty for warehouse without meter", () => {
