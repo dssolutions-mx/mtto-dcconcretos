@@ -208,3 +208,118 @@ CREATE POLICY "po_cn_alloc_insert" ON public.po_credit_note_invoice_allocations
         AND p.role IN ('GERENCIA_GENERAL', 'AREA_ADMINISTRATIVA')
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- 7) Wire credit notes into balances and payment recalc
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.po_invoice_balances AS
+SELECT
+  inv.id AS invoice_id,
+  inv.purchase_order_id,
+  inv.plant_id,
+  inv.supplier_id,
+  inv.invoice_number,
+  inv.invoice_date,
+  inv.due_date,
+  inv.subtotal,
+  inv.discount_amount,
+  inv.vat_rate,
+  inv.tax,
+  inv.retention_isr_amount,
+  inv.retention_iva_amount,
+  inv.total,
+  inv.status AS invoice_status,
+  inv.expense_category,
+  inv.document_url,
+  inv.notes,
+  inv.created_at,
+  inv.updated_at,
+  po.order_id,
+  po.supplier,
+  po.po_type,
+  po.po_purpose,
+  po.status AS po_status,
+  COALESCE(pay.paid_to_date, 0) AS paid_to_date,
+  COALESCE(cred.credit_applied_total, 0) AS credit_applied_total,
+  GREATEST(
+    inv.total - COALESCE(pay.paid_to_date, 0) - COALESCE(cred.credit_applied_total, 0),
+    0
+  ) AS balance,
+  CASE
+    WHEN inv.due_date IS NOT NULL AND inv.due_date < CURRENT_DATE
+      AND inv.status IN ('open', 'partially_paid')
+    THEN true
+    ELSE false
+  END AS is_overdue,
+  CASE
+    WHEN inv.due_date IS NOT NULL
+    THEN (inv.due_date - CURRENT_DATE)
+    ELSE NULL
+  END AS days_until_due
+FROM public.po_supplier_invoices inv
+JOIN public.purchase_orders po ON po.id = inv.purchase_order_id
+LEFT JOIN (
+  SELECT invoice_id, SUM(amount) AS paid_to_date
+  FROM public.po_invoice_payments
+  GROUP BY invoice_id
+) pay ON pay.invoice_id = inv.id
+LEFT JOIN public.po_invoice_credit_summary cred ON cred.invoice_id = inv.id
+WHERE inv.status <> 'void';
+
+CREATE OR REPLACE FUNCTION public.recalc_po_invoice_status(p_invoice_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_total numeric(12, 2);
+  v_credits numeric(12, 2);
+  v_net_payable numeric(12, 2);
+  v_paid numeric(12, 2);
+  v_new_status text;
+  v_po_id uuid;
+BEGIN
+  SELECT total, purchase_order_id
+  INTO v_total, v_po_id
+  FROM public.po_supplier_invoices
+  WHERE id = p_invoice_id;
+
+  IF v_total IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT COALESCE(credit_applied_total, 0)
+  INTO v_credits
+  FROM public.po_invoice_credit_summary
+  WHERE invoice_id = p_invoice_id;
+
+  v_net_payable := GREATEST(v_total - COALESCE(v_credits, 0), 0);
+
+  SELECT COALESCE(SUM(amount), 0)
+  INTO v_paid
+  FROM public.po_invoice_payments
+  WHERE invoice_id = p_invoice_id;
+
+  IF v_paid <= 0 THEN
+    v_new_status := 'open';
+  ELSIF v_paid + 0.01 >= v_net_payable THEN
+    v_new_status := 'paid';
+  ELSE
+    v_new_status := 'partially_paid';
+  END IF;
+
+  UPDATE public.po_supplier_invoices
+  SET status = v_new_status, updated_at = now()
+  WHERE id = p_invoice_id
+    AND status <> 'void';
+
+  UPDATE public.purchase_orders
+  SET accounting_status = CASE
+    WHEN v_new_status = 'paid' THEN 'paid'
+    ELSE 'invoiced'
+  END,
+  updated_at = now()
+  WHERE id = v_po_id;
+END;
+$function$;

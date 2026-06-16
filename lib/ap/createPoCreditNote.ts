@@ -184,12 +184,17 @@ export async function createPoCreditNote(
     const inv = invoices.find((i) => i.id === alloc.invoice_id)!
     const allocTax = roundMoney(Number(alloc.allocated_subtotal) * Number(inv.vat_rate))
 
-    await supabase.from('po_credit_note_invoice_allocations').insert({
+    const { error: allocErr } = await supabase.from('po_credit_note_invoice_allocations').insert({
       credit_note_id: creditNote.id,
       invoice_id: alloc.invoice_id,
       allocated_subtotal: Number(alloc.allocated_subtotal),
       allocated_tax: allocTax,
     })
+
+    if (allocErr) {
+      await supabase.from('po_credit_notes').delete().eq('id', creditNote.id)
+      return { ok: false, error: allocErr.message, status: 500 }
+    }
   }
 
   const cnStatus = 'fully_applied'

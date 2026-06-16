@@ -110,27 +110,35 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
+DECLARE
+  v_po_id uuid;
+  v_active_count int;
+  v_paid_count int;
+  v_new_status text;
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    UPDATE public.purchase_orders
-    SET accounting_status = CASE
-      WHEN NEW.status = 'paid' THEN 'paid'
-      ELSE 'invoiced'
-    END,
-    updated_at = now()
-    WHERE id = NEW.purchase_order_id
-      AND accounting_status = 'pending_invoice';
-  ELSIF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status THEN
-    UPDATE public.purchase_orders
-    SET accounting_status = CASE
-      WHEN NEW.status = 'paid' THEN 'paid'
-      WHEN NEW.status = 'void' THEN 'pending_invoice'
-      ELSE 'invoiced'
-    END,
-    updated_at = now()
-    WHERE id = NEW.purchase_order_id;
+  v_po_id := COALESCE(NEW.purchase_order_id, OLD.purchase_order_id);
+
+  SELECT
+    COUNT(*) FILTER (WHERE status <> 'void'),
+    COUNT(*) FILTER (WHERE status = 'paid')
+  INTO v_active_count, v_paid_count
+  FROM public.po_supplier_invoices
+  WHERE purchase_order_id = v_po_id;
+
+  IF v_active_count = 0 THEN
+    v_new_status := 'pending_invoice';
+  ELSIF v_paid_count = v_active_count THEN
+    v_new_status := 'paid';
+  ELSE
+    v_new_status := 'invoiced';
   END IF;
-  RETURN NEW;
+
+  UPDATE public.purchase_orders
+  SET accounting_status = v_new_status,
+      updated_at = now()
+  WHERE id = v_po_id;
+
+  RETURN COALESCE(NEW, OLD);
 END;
 $function$;
 

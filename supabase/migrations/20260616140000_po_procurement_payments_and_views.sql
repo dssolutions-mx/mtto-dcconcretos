@@ -205,11 +205,6 @@ BEGIN
     WHEN v_new_status = 'paid' THEN 'paid'
     ELSE 'invoiced'
   END,
-  payment_status = CASE
-    WHEN v_new_status = 'paid' THEN 'paid'
-    WHEN v_new_status = 'partially_paid' THEN 'pending'
-    ELSE payment_status
-  END,
   updated_at = now()
   WHERE id = v_po_id;
 END;

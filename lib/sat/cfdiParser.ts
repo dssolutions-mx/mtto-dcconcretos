@@ -111,7 +111,9 @@ export function parseCfdiXml(xml: string): ParsedCfdi {
   const retention_isr_rate =
     taxable_base > 0 ? Math.round((isr_retenido / taxable_base) * 1000000) / 1000000 : 0
   const retention_iva_rate =
-    taxable_base > 0 ? Math.round((iva_retenido / taxable_base) * 1000000) / 1000000 : 0
+    iva_trasladado > 0
+      ? Math.round((iva_retenido / iva_trasladado) * 1000000) / 1000000
+      : 0
 
   const conceptos: CfdiConcepto[] = []
   const conceptoNodes = asArray(
