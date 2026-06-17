@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
-import { createClient } from "@/lib/supabase"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,10 +29,16 @@ type AssignmentState = {
   assignee_name?: string | null
   target_response_hours?: number | null
   routed_at?: string | null
+  acknowledged_at?: string | null
   sla_breached?: boolean
 }
 
-type ProfileOption = { id: string; nombre: string | null; apellido: string | null }
+type ProfileOption = {
+  id: string
+  nombre: string | null
+  apellido: string | null
+  is_supervisor?: boolean
+}
 
 export function IncidentRoutingPanel({
   incidentId,
@@ -55,11 +60,14 @@ export function IncidentRoutingPanel({
     assignee_name: initial?.assignee_name,
     target_response_hours: initial?.target_response_hours,
     routed_at: initial?.routed_at,
+    acknowledged_at: initial?.acknowledged_at,
     sla_breached: initial?.sla_breached,
   })
   const [profiles, setProfiles] = useState<ProfileOption[]>([])
   const [saving, setSaving] = useState(false)
   const [routing, setRouting] = useState(false)
+  const [claiming, setClaiming] = useState(false)
+  const [acknowledging, setAcknowledging] = useState(false)
 
   useEffect(() => {
     setState({
@@ -70,6 +78,7 @@ export function IncidentRoutingPanel({
       assignee_name: initial?.assignee_name,
       target_response_hours: initial?.target_response_hours,
       routed_at: initial?.routed_at,
+      acknowledged_at: initial?.acknowledged_at,
       sla_breached: initial?.sla_breached,
     })
   }, [
@@ -79,27 +88,34 @@ export function IncidentRoutingPanel({
     initial?.pipeline_stage,
     initial?.target_response_hours,
     initial?.routed_at,
+    initial?.acknowledged_at,
     initial?.sla_breached,
     initial?.department_name,
     initial?.assignee_name,
   ])
 
   useEffect(() => {
-    const loadProfiles = async () => {
+    const loadMembers = async () => {
+      if (!state.routing_department_id || !plantId) {
+        setProfiles([])
+        return
+      }
       try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from("profiles")
-          .select("id, nombre, apellido")
-          .eq("is_active", true)
-          .order("nombre")
-        setProfiles(data ?? [])
+        const res = await fetch(
+          `/api/departments/${state.routing_department_id}/members?plant_id=${plantId}`,
+        )
+        if (res.ok) {
+          const data = (await res.json()) as { members: ProfileOption[] }
+          setProfiles(data.members ?? [])
+        } else {
+          setProfiles([])
+        }
       } catch {
-        // optional
+        setProfiles([])
       }
     }
-    void loadProfiles()
-  }, [])
+    void loadMembers()
+  }, [state.routing_department_id, plantId])
 
   const saveAssignment = async () => {
     setSaving(true)
@@ -156,6 +172,59 @@ export function IncidentRoutingPanel({
     }
   }
 
+  const runAcknowledge = async () => {
+    setAcknowledging(true)
+    try {
+      const res = await fetch(`/api/incidents/${incidentId}/acknowledge`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Error al acusar recibo")
+      toast({ title: "Acuse registrado" })
+      onUpdated?.()
+    } catch (err) {
+      toast({
+        title: "No se pudo acusar recibo",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      })
+    } finally {
+      setAcknowledging(false)
+    }
+  }
+
+  const runClaim = async () => {
+    setClaiming(true)
+    try {
+      const res = await fetch(`/api/incidents/${incidentId}/claim`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Error al tomar incidente")
+      toast({ title: "Incidente asignado a ti" })
+      onUpdated?.()
+    } catch (err) {
+      toast({
+        title: "No se pudo tomar el incidente",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      })
+    } finally {
+      setClaiming(false)
+    }
+  }
+
+  const assigneeOptions = useMemo(() => {
+    const options = [...profiles]
+    if (
+      state.assigned_to_id &&
+      !options.some((profile) => profile.id === state.assigned_to_id)
+    ) {
+      options.unshift({
+        id: state.assigned_to_id,
+        nombre: state.assignee_name?.split(" ")[0] ?? null,
+        apellido: state.assignee_name?.split(" ").slice(1).join(" ") ?? null,
+      })
+    }
+    return options
+  }, [profiles, state.assigned_to_id, state.assignee_name])
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -190,9 +259,10 @@ export function IncidentRoutingPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">Sin asignar</SelectItem>
-              {profiles.map((p) => (
+              {assigneeOptions.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {`${p.nombre ?? ""} ${p.apellido ?? ""}`.trim() || p.id}
+                  {p.is_supervisor ? " · Supervisor" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -222,12 +292,31 @@ export function IncidentRoutingPanel({
           <p className="text-xs text-muted-foreground">
             SLA: {state.target_response_hours}h
             {state.routed_at ? ` · Ruteado ${new Date(state.routed_at).toLocaleString("es-MX")}` : ""}
+            {state.acknowledged_at
+              ? ` · Acuse ${new Date(state.acknowledged_at).toLocaleString("es-MX")}`
+              : ""}
           </p>
         )}
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void saveAssignment()} disabled={saving}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Guardar
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void runAcknowledge()}
+            disabled={acknowledging || !!state.acknowledged_at || !state.routing_department_id}
+          >
+            {acknowledging && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Acusar recibo
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => void runClaim()}
+            disabled={claiming || !state.routing_department_id}
+          >
+            {claiming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Tomar incidente
           </Button>
           <Button variant="outline" onClick={() => void runAutoRoute()} disabled={routing}>
             {routing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

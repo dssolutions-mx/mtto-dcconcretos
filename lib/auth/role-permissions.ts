@@ -576,6 +576,7 @@ export const ROUTE_PERMISSIONS: Record<string, keyof ModulePermissions> = {
 /** Sorted longest-prefix-first at module init. */
 const ROUTE_MODULE_RULES: Array<[string, keyof ModulePermissions]> = [
   ['/gestion/personal', 'personnel'],
+  ['/gestion/departamentos', 'personnel'],
   ['/gestion/autorizaciones', 'personnel'],
   ['/gestion/asignaciones', 'personnel'],
   ['/gestion/credenciales', 'personnel'],

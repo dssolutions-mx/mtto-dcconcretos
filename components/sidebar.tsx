@@ -1451,7 +1451,8 @@ function buildNavigationSections(
     if (ui.shouldShowInNavigation('personnel')) {
       orgItems.push(
         { href: "/gestion/asignaciones", icon: Target, label: "Asignaciones Organizacionales", active: isPathActive("/gestion/asignaciones"), badge: "Nuevo" },
-        { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") }
+        { href: "/gestion/personal", icon: Users, label: "Gestión de Personal", active: isPathActive("/gestion/personal") || isPathActive("/personal") },
+        { href: "/gestion/departamentos", icon: Users, label: "Departamentos de ruteo", active: isPathActive("/gestion/departamentos") }
       )
     }
     if (ui.canShowEditButton?.('assets') || profile.role === 'AREA_ADMINISTRATIVA') {
@@ -1483,7 +1484,7 @@ function buildNavigationSections(
       id: "organization",
       icon: Building2,
       label: "Organización",
-      active: isSectionActive(["/gestion/asignaciones", "/gestion/personal", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
+      active: isSectionActive(["/gestion/asignaciones", "/gestion/personal", "/gestion/departamentos", "/personal", "/activos/asignacion", "/gestion/activos/asignacion-plantas", "/plantas", "/gestion/autorizaciones", "/gestion/credenciales"]),
       items: orgItems,
     })
   }

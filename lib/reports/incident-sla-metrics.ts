@@ -215,12 +215,13 @@ export function computeSlaRowFromIncident(input: {
   first_wo_created_at?: string | null
   first_planned_at?: string | null
   resolved_at?: string | null
+  acknowledged_at?: string | null
   plant_id?: string | null
   department_name?: string | null
   department_code?: string | null
 }): IncidentSlaRow {
   const reportedAt = input.created_at ?? new Date().toISOString()
-  const ackAt = input.first_wo_created_at ?? input.routed_at ?? null
+  const ackAt = input.acknowledged_at ?? input.first_wo_created_at ?? input.routed_at ?? null
   const hoursToAck = ackAt
     ? Math.round(((new Date(ackAt).getTime() - new Date(reportedAt).getTime()) / 3_600_000) * 10) / 10
     : null

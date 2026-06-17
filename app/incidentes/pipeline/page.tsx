@@ -11,6 +11,7 @@ import { RoutingRulesTab } from "@/components/incidents/tabs/routing-rules-tab"
 import { DepartmentInboxTab } from "@/components/incidents/tabs/department-inbox-tab"
 import { PipelineBoardTab } from "@/components/incidents/tabs/pipeline-board-tab"
 import { RoutingLearningTab } from "@/components/incidents/tabs/routing-learning-tab"
+import { RoutingCoverageTab } from "@/components/incidents/tabs/routing-coverage-tab"
 
 function PipelinePageContent() {
   return (
@@ -29,9 +30,10 @@ function PipelinePageContent() {
       </div>
 
       <Tabs defaultValue="inbox" className="mt-2">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
           <TabsTrigger value="pipeline">Tablero</TabsTrigger>
           <TabsTrigger value="inbox">Bandeja</TabsTrigger>
+          <TabsTrigger value="coverage">Base SLA</TabsTrigger>
           <TabsTrigger value="rules">Reglas</TabsTrigger>
           <TabsTrigger value="learning">Aprendizaje</TabsTrigger>
         </TabsList>
@@ -40,6 +42,9 @@ function PipelinePageContent() {
         </TabsContent>
         <TabsContent value="inbox" className="mt-4">
           <DepartmentInboxTab />
+        </TabsContent>
+        <TabsContent value="coverage" className="mt-4">
+          <RoutingCoverageTab />
         </TabsContent>
         <TabsContent value="rules" className="mt-4">
           <RoutingRulesTab />

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server"
 import { NextRequest, NextResponse } from "next/server"
+import { isDepartmentMember } from "@/lib/departments/department-membership"
 import {
   INCIDENT_PIPELINE_STAGES,
   type IncidentAssignmentInput,
@@ -48,6 +49,31 @@ export async function PATCH(
     }
 
     if (body.assigned_to_id !== undefined) {
+      if (body.assigned_to_id) {
+        const { data: asset } = await supabase
+          .from("assets")
+          .select("plant_id")
+          .eq("id", current.asset_id)
+          .maybeSingle()
+
+        const deptId =
+          (body.routing_department_id ?? current.routing_department_id) as string | null
+
+        if (asset?.plant_id && deptId) {
+          const ok = await isDepartmentMember(supabase, {
+            userId: body.assigned_to_id,
+            plantId: asset.plant_id,
+            departmentId: deptId,
+          })
+          if (!ok) {
+            return NextResponse.json(
+              { error: "El responsable no pertenece al departamento de la planta" },
+              { status: 400 },
+            )
+          }
+        }
+      }
+
       updates.assigned_to_id = body.assigned_to_id || null
       updates.assigned_at = body.assigned_to_id ? now : null
     }
@@ -76,7 +102,9 @@ export async function PATCH(
         pipeline_stage,
         routed_at,
         assigned_at,
-        target_response_hours
+        target_response_hours,
+        acknowledged_at,
+        acknowledged_by_id
       `,
       )
       .single()
