@@ -57,6 +57,8 @@ export type MeterEvent = {
   km_reading?: number | null
   previous_km?: number | null
   km_consumed?: number | null
+  work_order_id?: string | null
+  service_order_id?: string | null
 }
 
 export type SortKey =

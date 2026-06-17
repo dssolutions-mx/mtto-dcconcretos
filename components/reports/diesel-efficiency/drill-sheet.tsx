@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   Sheet,
   SheetContent,
@@ -62,6 +63,8 @@ type Props = {
   open: boolean
   onOpenChange: (v: boolean) => void
   onDataChanged?: () => void
+  /** Fleet median L/h for this asset's equipment category (current report slice). */
+  categoryMedianLph?: number | null
 }
 
 /** Half-open meter/API window aligned with compute-asset-diesel-efficiency-monthly (America/Mexico_City). */
@@ -559,11 +562,31 @@ function EventsTab({
                         {new Date(ev.event_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'America/Mexico_City' })}
                       </td>
                       <td className="py-1.5 pr-3">
-                        <div className="flex items-center gap-1">
-                          <SourceIcon kind={ev.source_kind} />
-                          <span className={row.isPrior ? 'text-stone-400' : 'text-stone-700'}>
-                            {SOURCE_LABEL[ev.source_kind ?? ''] ?? ev.source_kind ?? '—'}
-                          </span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <SourceIcon kind={ev.source_kind} />
+                            <span className={row.isPrior ? 'text-stone-400' : 'text-stone-700'}>
+                              {SOURCE_LABEL[ev.source_kind ?? ''] ?? ev.source_kind ?? '—'}
+                            </span>
+                          </div>
+                          {ev.work_order_id && (
+                            <Link
+                              href={`/ordenes/${ev.work_order_id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[10px] text-sky-700 hover:underline font-mono pl-4"
+                            >
+                              OT vinculada
+                            </Link>
+                          )}
+                          {!ev.work_order_id && ev.service_order_id && (
+                            <Link
+                              href={`/servicios/${ev.service_order_id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[10px] text-sky-700 hover:underline font-mono pl-4"
+                            >
+                              Orden de servicio
+                            </Link>
+                          )}
                         </div>
                       </td>
                       <td className="py-1.5 pr-3 text-right font-mono tabular-num text-stone-500">
@@ -633,6 +656,7 @@ function TrendTab({
   trendSummaryLoading,
   trend,
   loading,
+  categoryMedianLph,
   onShowHorasBreakdown,
   onShowKmBreakdown,
 }: {
@@ -641,6 +665,7 @@ function TrendTab({
   trendSummaryLoading: boolean
   trend: TrendPoint[]
   loading: boolean
+  categoryMedianLph?: number | null
   onShowHorasBreakdown: () => void
   onShowKmBreakdown?: () => void
 }) {
@@ -759,11 +784,19 @@ function TrendTab({
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">L/h por mes</p>
-          {avgLph != null && (
-            <span className="text-[10px] text-stone-400 font-mono">
-              Promedio <span className="font-semibold text-stone-600">{avgLph.toFixed(2)}</span> L/h
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {categoryMedianLph != null && (
+              <span className="text-[10px] text-stone-400 font-mono">
+                Mediana cat.{' '}
+                <span className="font-semibold text-sky-700">{categoryMedianLph.toFixed(2)}</span> L/h
+              </span>
+            )}
+            {avgLph != null && (
+              <span className="text-[10px] text-stone-400 font-mono">
+                Promedio activo <span className="font-semibold text-stone-600">{avgLph.toFixed(2)}</span> L/h
+              </span>
+            )}
+          </div>
         </div>
         <ResponsiveContainer width="100%" height={120}>
           <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: -8 }}>
@@ -794,6 +827,18 @@ function TrendTab({
                 stroke="#D6D3D1"
                 strokeWidth={1}
                 strokeDasharray="4 3"
+                dot={false}
+                activeDot={false}
+              />
+            )}
+            {categoryMedianLph != null && (
+              <Line
+                type="monotone"
+                dataKey={() => categoryMedianLph}
+                name="cat"
+                stroke="#0369A1"
+                strokeWidth={1}
+                strokeDasharray="6 4"
                 dot={false}
                 activeDot={false}
               />
@@ -1045,7 +1090,7 @@ type RemisionRow = {
   cancelled_reason: string | null
 }
 
-export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }: Props) {
+export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged, categoryMedianLph }: Props) {
   const [activeYearMonth, setActiveYearMonth] = useState(yearMonth)
   const [events, setEvents] = useState<MeterEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
@@ -1483,6 +1528,7 @@ export function DrillSheet({ row, yearMonth, open, onOpenChange, onDataChanged }
                 trendSummaryLoading={monthEfficiencyLoading}
                 trend={trend}
                 loading={trendLoading}
+                categoryMedianLph={categoryMedianLph}
                 onShowHorasBreakdown={() => setShowHorasBreakdown(true)}
                 onShowKmBreakdown={(() => {
                   const eff = displayEfficiencyRow

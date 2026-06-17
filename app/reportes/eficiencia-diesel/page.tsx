@@ -25,6 +25,13 @@ import { AnomaliesList } from '@/components/reports/diesel-efficiency/anomalies-
 import { DataQualityList } from '@/components/reports/diesel-efficiency/data-quality-list'
 import type { EfficiencyRow, ViewMode } from '@/components/reports/diesel-efficiency/types'
 import {
+  computeCategoryBenchmarks,
+} from '@/lib/reports/diesel-category-benchmark'
+import {
+  followupKey,
+  type DieselAlertFollowup,
+} from '@/components/reports/diesel-efficiency/alert-followups'
+import {
   dieselEfficiencyReportMonths,
   formatYearMonthLabelEs,
   formatYearMonthRangeLabelEs,
@@ -84,6 +91,7 @@ function EficienciaDieselContent() {
 
   const [drillRow, setDrillRow] = useState<EfficiencyRow | null>(null)
   const [drillOpen, setDrillOpen] = useState(false)
+  const [alertFollowups, setAlertFollowups] = useState<Map<string, DieselAlertFollowup>>(new Map())
   const [plantNames, setPlantNames] = useState<Record<string, string>>({})
   const [plants, setPlants] = useState<{ id: string; name: string; business_unit_id: string | null }[]>([])
   const [businessUnits, setBusinessUnits] = useState<{ id: string; name: string }[]>([])
@@ -144,6 +152,27 @@ function EficienciaDieselContent() {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    fetch(`/api/reports/diesel-efficiency-alerts?yearMonth=${encodeURIComponent(yearMonth)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const map = new Map<string, DieselAlertFollowup>()
+        for (const f of (j.followups ?? []) as DieselAlertFollowup[]) {
+          map.set(followupKey(f.asset_id, f.alert_kind), f)
+        }
+        setAlertFollowups(map)
+      })
+      .catch(() => setAlertFollowups(new Map()))
+  }, [yearMonth])
+
+  const handleFollowupUpdated = useCallback((f: DieselAlertFollowup) => {
+    setAlertFollowups((prev) => {
+      const next = new Map(prev)
+      next.set(followupKey(f.asset_id, f.alert_kind), f)
+      return next
+    })
+  }, [])
+
   const onRecompute = async () => {
     setRecomputing(true)
     setMessage(null)
@@ -202,6 +231,11 @@ function EficienciaDieselContent() {
 
   const filteredRows = useMemo(() => applyFilters(rows), [rows, buPlantIds, selectedPlant, selectedCategory, assetSearch])
   const filteredPrevRows = useMemo(() => applyFilters(prevRows), [prevRows, buPlantIds, selectedPlant, selectedCategory, assetSearch])
+
+  const categoryBenchmarks = useMemo(
+    () => computeCategoryBenchmarks(filteredRows),
+    [filteredRows]
+  )
 
   const openDrill = (row: EfficiencyRow) => {
     setDrillRow(row)
@@ -485,9 +519,21 @@ function EficienciaDieselContent() {
                 </Button>
               </div>
             ) : view === 'fleet' ? (
-              <AssetTable rows={filteredRows} prevRows={filteredPrevRows} onOpenDrill={openDrill} yearMonth={yearMonth} />
+              <AssetTable
+                rows={filteredRows}
+                prevRows={filteredPrevRows}
+                categoryBenchmarks={categoryBenchmarks}
+                onOpenDrill={openDrill}
+                yearMonth={yearMonth}
+              />
             ) : view === 'anomalies' ? (
-              <AnomaliesList rows={filteredRows} onOpenDrill={openDrill} />
+              <AnomaliesList
+                rows={filteredRows}
+                yearMonth={yearMonth}
+                followups={alertFollowups}
+                onOpenDrill={openDrill}
+                onFollowupUpdated={handleFollowupUpdated}
+              />
             ) : (
               <DataQualityList rows={filteredRows} onOpenDrill={openDrill} />
             )}
@@ -501,6 +547,11 @@ function EficienciaDieselContent() {
         open={drillOpen}
         onOpenChange={setDrillOpen}
         onDataChanged={load}
+        categoryMedianLph={
+          drillRow?.equipment_category
+            ? categoryBenchmarks.get(drillRow.equipment_category)?.medianLph ?? null
+            : null
+        }
       />
     </div>
   )
