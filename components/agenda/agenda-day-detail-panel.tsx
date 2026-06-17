@@ -67,6 +67,17 @@ function StockBadge({ sufficient }: { sufficient: boolean | null }) {
   )
 }
 
+function pumpBadgeLabel(row: CotizadorOrderItemRow): string {
+  if (!row.has_pumping_service) return ""
+  const vol =
+    row.pump_volume_planned != null
+      ? ` · ${row.pump_volume_planned} m³`
+      : row.is_pump_only && row.volume != null
+        ? ` · ${row.volume} m³`
+        : ""
+  return row.is_pump_only ? `Solo bombeo${vol}` : `Sí${vol}`
+}
+
 export function AgendaDayDetailPanel({
   date,
   technicianId,
@@ -89,7 +100,7 @@ export function AgendaDayDetailPanel({
       const kitJson: DailyKitResponse | null = kitRes.ok ? await kitRes.json() : null
       setKitData(kitJson)
 
-      const ordersParams = new URLSearchParams({ from: date, to: date, include_pump: "true" })
+      const ordersParams = new URLSearchParams({ from: date, to: date })
       if (kitJson?.plant_ids?.length) {
         ordersParams.set("plantIds", kitJson.plant_ids.join(","))
       }
@@ -256,7 +267,7 @@ export function AgendaDayDetailPanel({
                                 row.is_pump_only && "border-amber-300 bg-amber-50 text-amber-900",
                               )}
                             >
-                              {row.is_pump_only ? "Solo bombeo" : "Sí"}
+                              {pumpBadgeLabel(row)}
                             </Badge>
                           ) : (
                             <span className="text-muted-foreground text-sm">—</span>

@@ -1,80 +1,136 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { flattenCotizadorOrders, isPumpProductType } from "./cotizador-orders"
+import {
+  flattenCotizadorOrders,
+  isPumpProductType,
+  orderItemHasPumpService,
+  summarizeOrderPump,
+} from "./cotizador-orders"
 import {
   consolidateKitLines,
   extractPartsFromWorkOrder,
 } from "./aggregate-daily-kit"
 
-test("isPumpProductType detects pump/bombeo lines", () => {
-  assert.equal(isPumpProductType("Bombeo 42m"), true)
-  assert.equal(isPumpProductType("pump service"), true)
+test("orderItemHasPumpService uses has_pump_service on concrete recipes", () => {
+  assert.equal(
+    orderItemHasPumpService({
+      product_type: "6-300-2-C-28-14-B",
+      has_pump_service: true,
+    }),
+    true,
+  )
+  assert.equal(
+    orderItemHasPumpService({
+      product_type: "5-150-2-B-28-10-D",
+      has_pump_service: false,
+    }),
+    false,
+  )
+})
+
+test("isPumpProductType detects standalone bombeo service lines", () => {
+  assert.equal(isPumpProductType("SERVICIO DE BOMBEO"), true)
   assert.equal(isPumpProductType("Concreto FC=250"), false)
   assert.equal(isPumpProductType(null), false)
+})
+
+test("summarizeOrderPump aggregates pump_volume from order items", () => {
+  const summary = summarizeOrderPump([
+    { product_type: "5-250-2-B-28-14-B", volume: 25, has_pump_service: true },
+    {
+      product_type: "SERVICIO DE BOMBEO",
+      volume: 25,
+      pump_volume: 25,
+      has_pump_service: true,
+    },
+  ])
+
+  assert.equal(summary.hasPumpingService, true)
+  assert.equal(summary.pumpVolumePlanned, 25)
+  assert.equal(summary.hasConcreteLine, true)
+  assert.equal(summary.isPumpOnly, false)
+})
+
+test("flattenCotizadorOrders surfaces concrete lines with has_pump_service", () => {
+  const rows = flattenCotizadorOrders([
+    {
+      id: "o2",
+      order_number: "ORD-101",
+      delivery_date: "2026-06-16",
+      plant_id: "p1",
+      order_status: "validated",
+      order_items: [
+        { product_type: "6-300-2-C-28-14-B", volume: 39, has_pump_service: true },
+        {
+          product_type: "SERVICIO DE BOMBEO",
+          volume: 39,
+          pump_volume: 39,
+          has_pump_service: true,
+        },
+      ],
+    },
+    {
+      id: "o3",
+      order_number: "ORD-102",
+      delivery_date: "2026-06-16",
+      plant_id: "p1",
+      order_status: "created",
+      order_items: [{ product_type: "5-150-2-B-28-10-D", volume: 7, has_pump_service: false }],
+    },
+  ])
+
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0]?.order_number, "ORD-101")
+  assert.equal(rows[0]?.product_type, "6-300-2-C-28-14-B")
+  assert.equal(rows[0]?.has_pumping_service, true)
+  assert.equal(rows[0]?.pump_volume_planned, 39)
+  assert.equal(rows[0]?.is_pump_only, false)
+  assert.equal(rows[1]?.has_pumping_service, false)
 })
 
 test("flattenCotizadorOrders includes pump-only orders for machine planning", () => {
   const rows = flattenCotizadorOrders([
     {
       id: "o1",
-      order_number: "100",
+      order_number: "ORD-100",
       delivery_date: "2026-06-16",
       plant_id: "p1",
       order_status: "created",
-      order_items: [{ product_type: "Bombeo", volume: 30 }],
-    },
-    {
-      id: "o2",
-      order_number: "101",
-      delivery_date: "2026-06-16",
-      plant_id: "p1",
-      order_status: "validated",
       order_items: [
-        { product_type: "Concreto FC=250", volume: 12 },
-        { product_type: "Bombeo", volume: 12 },
+        {
+          product_type: "SERVICIO DE BOMBEO",
+          volume: 30,
+          pump_volume: 30,
+          has_pump_service: true,
+        },
       ],
     },
   ])
 
-  assert.equal(rows.length, 2)
-  assert.equal(rows[0]?.order_number, "100")
+  assert.equal(rows.length, 1)
   assert.equal(rows[0]?.is_pump_only, true)
   assert.equal(rows[0]?.has_pumping_service, true)
-  assert.equal(rows[1]?.order_number, "101")
-  assert.equal(rows[1]?.product_type, "Concreto FC=250")
-  assert.equal(rows[1]?.is_pump_only, false)
-  assert.equal(rows[1]?.has_pumping_service, true)
+  assert.equal(rows[0]?.pump_volume_planned, 30)
 })
 
-test("flattenCotizadorOrders marks orders without pump service", () => {
-  const rows = flattenCotizadorOrders([
-    {
-      id: "o3",
-      order_number: "102",
-      delivery_date: "2026-06-16",
-      plant_id: "p1",
-      order_status: "created",
-      order_items: [{ product_type: "Concreto FC=250", volume: 8 }],
-    },
-  ])
-
-  assert.equal(rows.length, 1)
-  assert.equal(rows[0]?.has_pumping_service, false)
-})
-
-test("flattenCotizadorOrders can include pump lines when requested", () => {
+test("flattenCotizadorOrders can include bombeo line items when requested", () => {
   const rows = flattenCotizadorOrders(
     [
       {
         id: "o2",
-        order_number: "101",
+        order_number: "ORD-101",
         delivery_date: "2026-06-16",
         plant_id: "p1",
         order_status: "validated",
         order_items: [
-          { product_type: "Concreto FC=250", volume: 12 },
-          { product_type: "Bombeo", volume: 12 },
+          { product_type: "5-250-2-B-28-14-B", volume: 12, has_pump_service: true },
+          {
+            product_type: "SERVICIO DE BOMBEO",
+            volume: 12,
+            pump_volume: 12,
+            has_pump_service: true,
+          },
         ],
       },
     ],
@@ -84,6 +140,7 @@ test("flattenCotizadorOrders can include pump lines when requested", () => {
   assert.equal(rows.length, 2)
   assert.equal(rows.some((r) => r.is_pump_only), true)
   assert.equal(rows.find((r) => !r.is_pump_only)?.has_pumping_service, true)
+  assert.equal(rows.find((r) => !r.is_pump_only)?.pump_volume_planned, 12)
 })
 
 test("extractPartsFromWorkOrder merges required_parts and task parts", () => {

@@ -73,7 +73,14 @@ export async function GET(req: NextRequest) {
         order_status,
         plant:plants(id, name),
         client:clients(business_name),
-        order_items(product_type, volume, concrete_volume_delivered)
+        order_items(
+          product_type,
+          volume,
+          pump_volume,
+          has_pump_service,
+          has_empty_truck_charge,
+          concrete_volume_delivered
+        )
       `,
       )
       .in("order_status", ["created", "validated"])
