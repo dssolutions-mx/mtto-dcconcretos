@@ -1769,6 +1769,7 @@ export function SidebarWrapper({ children }: { children: React.ReactNode }) {
     "/auth/reset-password",
     "/auth/confirm",
     "/auth/callback",
+    "/portal-proveedores",
   ]
   
   // Exclude print pages from sidebar/header layout
