@@ -33,6 +33,8 @@ export interface CfdiPrefill {
 interface CfdiXmlUploadFieldProps {
   onParsed: (prefill: CfdiPrefill, cfdi: ParsedCfdi) => void
   disabled?: boolean
+  /** Endpoint de parseo (default: staff `/api/ap/cfdi/parse`). */
+  parseUrl?: string
 }
 
 function cfdiToPrefill(cfdi: ParsedCfdi): CfdiPrefill {
@@ -59,7 +61,11 @@ function cfdiToPrefill(cfdi: ParsedCfdi): CfdiPrefill {
   }
 }
 
-export function CfdiXmlUploadField({ onParsed, disabled }: CfdiXmlUploadFieldProps) {
+export function CfdiXmlUploadField({
+  onParsed,
+  disabled,
+  parseUrl = "/api/ap/cfdi/parse",
+}: CfdiXmlUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
 
@@ -68,7 +74,7 @@ export function CfdiXmlUploadField({ onParsed, disabled }: CfdiXmlUploadFieldPro
     try {
       const form = new FormData()
       form.append("xml_file", file)
-      const res = await fetch("/api/ap/cfdi/parse", { method: "POST", body: form })
+      const res = await fetch(parseUrl, { method: "POST", body: form })
       const json = await res.json()
       if (!res.ok || !json.success) {
         toast.error(json.error ?? "No se pudo leer el CFDI")

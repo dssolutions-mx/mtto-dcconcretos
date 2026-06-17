@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase-server"
 import { resolvePortalContext } from "@/lib/portal-proveedores/resolvePortalContext"
 import { PortalProveedoresShell } from "@/components/portal-proveedores/portal-proveedores-shell"
@@ -35,12 +35,12 @@ export default async function PortalProveedoresDashboardPage() {
   const { ctx } = resolved
 
   return (
-    <PortalProveedoresShell>
+    <PortalProveedoresShell showNav>
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Panel del proveedor</h2>
           <p className="text-muted-foreground">
-            Bienvenido. Aquí verá sus órdenes de compra, facturas y pagos (próximas fases).
+            Consulte sus órdenes de compra, envíe facturas CFDI y dé seguimiento al estatus.
           </p>
         </div>
 
@@ -73,23 +73,35 @@ export default async function PortalProveedoresDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Próximamente</CardTitle>
-            <CardDescription>Fase 2 — facturas contra OC</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Button variant="outline" disabled>
-              Subir factura (CFDI)
-            </Button>
-            <Button variant="outline" disabled>
-              Ver órdenes de compra
-            </Button>
-            <Button variant="outline" disabled>
-              Consultar pagos
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Órdenes de compra</CardTitle>
+              <CardDescription>
+                Revise OC aprobadas y suba facturas contra cada una.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link href="/portal-proveedores/ordenes">Ver órdenes</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Facturas enviadas</CardTitle>
+              <CardDescription>
+                Historial de CFDI registrados desde el portal.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline">
+                <Link href="/portal-proveedores/facturas">Ver facturas</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
         <p className="text-sm text-muted-foreground">
           <Link href="/portal-proveedores" className="hover:underline">
