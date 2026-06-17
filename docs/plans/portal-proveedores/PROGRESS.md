@@ -134,7 +134,7 @@
 - Cotizador: balance incluye notas de crédito aplicadas (`credit_note_invoice_allocations`).
 - OC cotizador sin vínculo directo a facturas en portal (sin subida cross-repo aún).
 
-**PR:** (se añade al abrir borrador)
+**PR:** https://github.com/dssolutions-mx/mtto-dcconcretos/pull/35
 
 ---
 
