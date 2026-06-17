@@ -85,6 +85,9 @@ export async function proxy(request: NextRequest) {
     "/auth/reset-password",
     "/auth/confirm",
     "/compras/accion-po",
+    "/portal-proveedores",
+    "/portal-proveedores/login",
+    "/portal-proveedores/invitacion",
   ]
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
 
