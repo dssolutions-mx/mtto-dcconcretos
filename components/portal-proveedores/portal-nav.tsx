@@ -9,13 +9,17 @@ const links = [
   { href: "/portal-proveedores/ordenes", label: "Órdenes de compra" },
   { href: "/portal-proveedores/facturas", label: "Facturas" },
   { href: "/portal-proveedores/pagos", label: "Pagos" },
+  { href: "/portal-proveedores/perfil", label: "Perfil" },
 ]
 
 export function PortalNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="flex flex-wrap gap-2 border-t pt-3">
+    <nav
+      className="flex flex-wrap gap-2 border-t pt-3"
+      aria-label="Navegación del portal de proveedores"
+    >
       {links.map((link) => {
         const active =
           pathname === link.href || pathname.startsWith(`${link.href}/`)

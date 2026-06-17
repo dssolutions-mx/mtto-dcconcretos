@@ -115,6 +115,20 @@ export default async function PortalProveedoresDashboardPage() {
               </Button>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Mi perfil</CardTitle>
+              <CardDescription>
+                Datos fiscales y contacto para notificaciones.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline">
+                <Link href="/portal-proveedores/perfil">Ver perfil</Link>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         <p className="text-sm text-muted-foreground">

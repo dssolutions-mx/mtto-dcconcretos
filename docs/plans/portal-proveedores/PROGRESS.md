@@ -27,7 +27,7 @@
 | 2 | Alta/seguimiento facturas contra OC | mtto | ☑ |
 | 3 | Visibilidad de OC (ambos sistemas) | mtto (+ read cotizador) | ☑ |
 | 4 | Estatus de pago & saldos | mtto (+ read cotizador) | ☑ |
-| 5 | Notificaciones + pulido | mtto | ☐ |
+| 5 | Notificaciones + pulido | mtto | ☑ |
 
 ## Inventario de rutas (portal)
 
@@ -42,7 +42,7 @@
 | `/portal-proveedores/ordenes/cotizador/[id]` | Detalle OC cotizador (solo lectura) | ☑ |
 | `/portal-proveedores/facturas` | Facturas enviadas y estatus | ☑ |
 | `/portal-proveedores/pagos` | Saldos y pagos recibidos | ☑ |
-| `/portal-proveedores/perfil` | Datos fiscales y contacto | ☐ |
+| `/portal-proveedores/perfil` | Datos fiscales y contacto | ☑ |
 
 ## APIs (estado)
 
@@ -57,12 +57,15 @@
 | `POST /api/portal-proveedores/cfdi/parse` | 2 | ☑ RFC emisor = portal |
 | `GET/POST /api/portal-proveedores/facturas` | 2 | ☑ list + create + validate RPC |
 | `GET /api/portal-proveedores/pagos` | 4 | ☑ |
+| `GET/PATCH /api/portal-proveedores/notifications` | 5 | ☑ in-app |
+| `GET/PATCH /api/portal-proveedores/perfil` | 5 | ☑ |
 
 ## Migraciones (archivos only — no aplicar)
 
 | Archivo | Fase | Estado |
 |---------|------|--------|
 | `20260617140000_supplier_portal_users.sql` | 1 | ☑ `supplier_portal_users` + `supplier_portal_invitations` + RLS |
+| `20260617150000_supplier_portal_notifications_profile.sql` | 5 | ☑ contacto + triggers notificación |
 
 ## Sprints completados
 
@@ -136,17 +139,32 @@
 
 **PR:** https://github.com/dssolutions-mx/mtto-dcconcretos/pull/35
 
+### Sprint 5 — Fase 5: Notificaciones + pulido (2026-06-17)
+
+**Entregables:**
+- Migración `20260617150000_supplier_portal_notifications_profile.sql` (contacto editable + triggers in-app para pagos/estatus).
+- `lib/portal-proveedores/notifications.ts` + API `GET/PATCH /notifications` + campana en el shell.
+- Notificaciones al enviar factura (recibida + validada sin warnings) vía API.
+- Página `/portal-proveedores/perfil` + API `GET/PATCH /perfil` (datos fiscales lectura + contacto editable).
+- Nav con Perfil, aria-labels, tarjeta de perfil en dashboard.
+
+**Notas:**
+- Email outbound no integrado (sin SendGrid en mtto); in-app es el canal entregado.
+- Triggers DB notifican pagos y cambios de estatus cuando la migración sea aplicada en prod.
+- **Todas las fases del ledger están completas.** Pendiente revisión humana, merge de PRs por fase, y aplicar migraciones.
+
+**PR:** (esta corrida)
+
 ---
 
-## Próximo sprint (Fase 5 — Notificaciones + pulido)
+## Estado final del programa
 
-**Repo:** `mtto-dcconcretos`.
+Todas las fases (0–5) tienen entregable en PR borrador. El humano puede marcar la tarea Notion como **Done** tras merge y smoke test en staging.
 
-**Alcance acotado:**
-1. Notificaciones básicas al proveedor (factura recibida/aprobada/pagada) — email o in-app según infra disponible en mtto.
-2. Página `/portal-proveedores/perfil` con datos fiscales de contacto (lectura/edición limitada).
-3. Alineación visual final del portal (accesibilidad, estados vacíos, español consistente).
+**PRs por fase:** #30 (0), #32 (1), #33 (2), #34 (3), #35 (4), Fase 5 en esta corrida.
 
-**Fuera de alcance en Fase 5:** subida de facturas contra OC del cotizador.
+---
 
-**Criterios de aceptación:** notificaciones o perfil entregado en alcance acotado; ledger actualizado; PR borrador.
+## Próximo sprint
+
+_Ninguno — programa portal de proveedores completo en alcance del brief. Seguimiento: merge ordenado de PRs #30→#35 + Fase 5, aplicar migraciones `20260617140000` y `20260617150000`, smoke test con proveedor de prueba._

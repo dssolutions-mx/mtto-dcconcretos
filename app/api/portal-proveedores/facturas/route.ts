@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { createPoSupplierInvoice } from "@/lib/ap/createPoSupplierInvoice"
+import { createPortalNotification } from "@/lib/portal-proveedores/notifications"
 import { assertPurchaseOrderAccess } from "@/lib/portal-proveedores/purchase-order-scope"
 import { normalizeSupplierRfc } from "@/lib/portal-proveedores/rfc"
 import { requirePortalSession } from "@/lib/portal-proveedores/requirePortalSession"
@@ -142,10 +143,31 @@ export async function POST(request: NextRequest) {
       p_invoice_id: result.invoice.id,
     })
 
+    const warnings = (validationWarnings ?? []) as unknown[]
+    await createPortalNotification(admin, {
+      userId: session.userId,
+      type: "portal_invoice_received",
+      title: "Factura recibida",
+      message: `Registramos su factura ${result.invoice.invoice_number}. Le avisaremos cuando haya novedades de pago.`,
+      relatedEntity: "po_supplier_invoice",
+      entityId: result.invoice.id,
+    })
+
+    if (warnings.length === 0) {
+      await createPortalNotification(admin, {
+        userId: session.userId,
+        type: "portal_invoice_approved",
+        title: "Factura validada",
+        message: `Su factura ${result.invoice.invoice_number} fue validada contra la orden de compra.`,
+        relatedEntity: "po_supplier_invoice",
+        entityId: result.invoice.id,
+      })
+    }
+
     return NextResponse.json({
       success: true,
       invoice: result.invoice,
-      validation_warnings: validationWarnings ?? [],
+      validation_warnings: warnings,
     })
   } catch (error) {
     console.error("POST /api/portal-proveedores/facturas", error)
