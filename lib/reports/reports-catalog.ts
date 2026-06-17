@@ -71,6 +71,14 @@ export const REPORT_CATALOG: ReportCatalogEntry[] = [
     group: 'operativo',
   },
   {
+    id: 'incidentes-sla',
+    href: '/reportes/incidentes-sla',
+    label: 'SLA de incidencias',
+    description: 'Cumplimiento MTTA/MTTR por departamento, tendencias e incumplimientos.',
+    group: 'operativo',
+    matchPrefix: '/reportes/incidentes-sla',
+  },
+  {
     id: 'legacy-analytics',
     href: '/reportes',
     label: 'Dashboard analítico',
