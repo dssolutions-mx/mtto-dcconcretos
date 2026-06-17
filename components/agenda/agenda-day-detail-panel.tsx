@@ -33,6 +33,7 @@ type DailyKitResponse = {
 type OrdersResponse = {
   orders: CotizadorOrderItemRow[]
   configured: boolean
+  error?: string
 }
 
 interface AgendaDayDetailPanelProps {
@@ -94,7 +95,16 @@ export function AgendaDayDetailPanel({
       }
 
       const ordersRes = await fetch(`/api/integrations/cotizador/orders?${ordersParams}`)
-      setOrdersData(ordersRes.ok ? await ordersRes.json() : { orders: [], configured: false })
+      if (ordersRes.ok) {
+        setOrdersData(await ordersRes.json())
+      } else {
+        const body = (await ordersRes.json().catch(() => null)) as { error?: string } | null
+        setOrdersData({
+          orders: [],
+          configured: true,
+          error: body?.error ?? `Error al cargar pedidos (${ordersRes.status})`,
+        })
+      }
     } catch {
       setKitData(null)
       setOrdersData(null)
@@ -195,7 +205,11 @@ export function AgendaDayDetailPanel({
                 </span>
               </div>
 
-              {ordersData?.configured === false ? (
+              {ordersData?.error ? (
+                <p className="text-sm text-destructive">
+                  No se pudo cargar producción Cotizador: {ordersData.error}
+                </p>
+              ) : ordersData?.configured === false ? (
                 <p className="text-sm text-muted-foreground">
                   Integración Cotizador no configurada en este entorno.
                 </p>

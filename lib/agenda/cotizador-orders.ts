@@ -31,7 +31,7 @@ type RawOrder = {
   plant_id: string
   order_status: string
   plant?: { id?: string; name?: string | null } | null
-  client?: { name?: string | null } | null
+  client?: { business_name?: string | null } | null
   order_items?: RawOrderItem[] | null
 }
 
@@ -75,7 +75,7 @@ export function flattenCotizadorOrders(
         delivery_date: order.delivery_date,
         delivery_time: order.delivery_time ?? null,
         construction_site: order.construction_site ?? null,
-        client_name: order.client?.name ?? null,
+        client_name: order.client?.business_name ?? null,
         plant_id: order.plant_id,
         plant_name: order.plant?.name ?? null,
         product_type: item.product_type ?? null,

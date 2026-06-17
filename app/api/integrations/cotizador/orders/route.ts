@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
         plant_id,
         order_status,
         plant:plants(id, name),
-        client:clients(name),
+        client:clients(business_name),
         order_items(product_type, volume, concrete_volume_delivered)
       `,
       )
