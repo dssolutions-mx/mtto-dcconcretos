@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { listSupplierPurchaseOrders } from "@/lib/portal-proveedores/purchase-order-scope"
+import { listConsolidatedPurchaseOrders } from "@/lib/portal-proveedores/consolidated-purchase-orders"
 import { requirePortalSession } from "@/lib/portal-proveedores/requirePortalSession"
 
 export const dynamic = "force-dynamic"
@@ -13,12 +13,9 @@ export async function GET() {
     }
 
     const admin = createAdminClient()
-    const orders = await listSupplierPurchaseOrders(admin, session.ctx)
+    const result = await listConsolidatedPurchaseOrders(admin, session.ctx)
 
-    return NextResponse.json({
-      orders,
-      supplier_linked: Boolean(session.ctx.mttoSupplierId),
-    })
+    return NextResponse.json(result)
   } catch (error) {
     console.error("GET /api/portal-proveedores/ordenes", error)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })

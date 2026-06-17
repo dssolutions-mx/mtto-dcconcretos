@@ -25,7 +25,7 @@
 | 0 | Discovery & arquitectura | mtto | ☑ |
 | 1 | Identidad & auth de proveedor | mtto | ☑ |
 | 2 | Alta/seguimiento facturas contra OC | mtto | ☑ |
-| 3 | Visibilidad de OC (ambos sistemas) | mtto (+ read cotizador) | ☐ |
+| 3 | Visibilidad de OC (ambos sistemas) | mtto (+ read cotizador) | ☑ |
 | 4 | Estatus de pago & saldos | mtto (+ read cotizador) | ☐ |
 | 5 | Notificaciones + pulido | mtto | ☐ |
 
@@ -37,8 +37,9 @@
 | `/portal-proveedores/login` | Acceso proveedor | ☑ |
 | `/portal-proveedores/invitacion` | Aceptar invitación (token) | ☑ |
 | `/portal-proveedores/dashboard` | Resumen OC/facturas/pagos | ☑ |
-| `/portal-proveedores/ordenes` | Lista de OC del proveedor | ☑ |
-| `/portal-proveedores/ordenes/[id]` | Detalle OC + subir factura | ☑ |
+| `/portal-proveedores/ordenes` | Lista de OC del proveedor | ☑ consolidada |
+| `/portal-proveedores/ordenes/[id]` | Detalle OC mtto + subir factura | ☑ |
+| `/portal-proveedores/ordenes/cotizador/[id]` | Detalle OC cotizador (solo lectura) | ☑ |
 | `/portal-proveedores/facturas` | Facturas enviadas y estatus | ☑ |
 | `/portal-proveedores/pagos` | Saldos y pagos recibidos | ☐ |
 | `/portal-proveedores/perfil` | Datos fiscales y contacto | ☐ |
@@ -50,8 +51,9 @@
 | `POST /api/portal-proveedores/invitations` | 1 | ☑ staff-only |
 | `GET/POST /api/portal-proveedores/invitations/accept` | 1 | ☑ token público + aceptación |
 | `GET /api/portal-proveedores/me` | 1 | ☑ contexto RFC + vínculos |
-| `GET /api/portal-proveedores/ordenes` | 2 | ☑ lista scoped |
-| `GET /api/portal-proveedores/ordenes/[id]` | 2 | ☑ detalle + facturas |
+| `GET /api/portal-proveedores/ordenes` | 2–3 | ☑ lista consolidada mtto + cotizador |
+| `GET /api/portal-proveedores/ordenes/[id]` | 2 | ☑ detalle mtto + facturas |
+| `GET /api/portal-proveedores/ordenes/cotizador/[id]` | 3 | ☑ detalle read-only cotizador |
 | `POST /api/portal-proveedores/cfdi/parse` | 2 | ☑ RFC emisor = portal |
 | `GET/POST /api/portal-proveedores/facturas` | 2 | ☑ list + create + validate RPC |
 | `GET /api/portal-proveedores/pagos` | 4 | ☐ |
@@ -99,20 +101,36 @@
 - Facturas portal se marcan con prefijo `[Portal proveedor]` en notas.
 - Proveedor sin `mtto_supplier_id` solo ve OC vinculadas por facturas previas con su RFC.
 
+**PR:** https://github.com/dssolutions-mx/mtto-dcconcretos/pull/33
+
+### Sprint 3 — Fase 3: Visibilidad OC cross-repo (2026-06-17)
+
+**Entregables:**
+- `lib/portal-proveedores/cotizador-client.ts` — cliente read-only vía `COTIZADOR_SUPABASE_*`.
+- `lib/portal-proveedores/cotizador-purchase-orders.ts` — listado y acceso a OC del cotizador por `cotizador_group_id` / RFC (`supplier_groups` → `suppliers`).
+- `lib/portal-proveedores/consolidated-purchase-orders.ts` — merge mtto + cotizador con badge de origen.
+- API `GET /ordenes` extendida; nueva `GET /ordenes/cotizador/[id]`.
+- UI `/ordenes` consolidada; `/ordenes/cotizador/[id]` detalle read-only con líneas.
+- Tests unitarios en `cotizador-purchase-orders.test.ts` y `consolidated-purchase-orders.test.ts`.
+
+**Notas:**
+- Sin migraciones (solo lectura federada al cotizador).
+- Subida de facturas contra OC del cotizador queda para fase posterior.
+- `invoice_count` en OC cotizador se deja en 0 (vínculo AP↔OC es indirecto vía entradas).
+
 **PR:** (se añade al abrir borrador)
 
 ---
 
-## Próximo sprint (Fase 3 — Visibilidad de OC cross-repo)
+## Próximo sprint (Fase 4 — Estatus de pago & saldos)
 
-**Repo:** `mtto-dcconcretos` (API federada; lectura cotizador).
+**Repo:** `mtto-dcconcretos` (lectura cotizador + mtto).
 
 **Alcance acotado:**
-1. Cliente read-only a cotizador vía `COTIZADOR_SUPABASE_URL` / service role en `lib/portal-proveedores/cotizador-client.ts`.
-2. Extender `GET /api/portal-proveedores/ordenes` para incluir OC del ERP filtradas por `cotizador_group_id` o RFC (`supplier_groups.rfc`).
-3. Vista consolidada en `/portal-proveedores/ordenes` con badge de origen (Mantenimiento / Cotizador).
-4. Detalle read-only de OC cotizador (sin subida de factura cross-repo en este sprint — solo visibilidad).
+1. `GET /api/portal-proveedores/pagos` — saldos y pagos por proveedor (mtto `po_supplier_invoices` + cotizador `supplier_invoices` / complementos).
+2. Página `/portal-proveedores/pagos` con resumen de facturas abiertas, pagadas y saldo pendiente por sistema.
+3. En detalle de OC mtto, mostrar estatus de pago de facturas ya enviadas (si aplica).
 
-**Fuera de alcance en Fase 3:** subida de facturas al cotizador, pagos, notificaciones.
+**Fuera de alcance en Fase 4:** notificaciones, subida cross-repo al cotizador.
 
-**Criterios de aceptación:** proveedor con `cotizador_group_id` ve OC de ambos sistemas en una lista; ledger actualizado; PR borrador.
+**Criterios de aceptación:** proveedor ve saldo consolidado o por sistema; ledger actualizado; PR borrador.

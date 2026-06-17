@@ -3,10 +3,14 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase-server"
 import { createAdminClient } from "@/lib/supabase-admin"
 import { resolvePortalContext } from "@/lib/portal-proveedores/resolvePortalContext"
-import { listSupplierPurchaseOrders } from "@/lib/portal-proveedores/purchase-order-scope"
+import {
+  detailHref,
+  listConsolidatedPurchaseOrders,
+} from "@/lib/portal-proveedores/consolidated-purchase-orders"
 import {
   formatCurrency,
   formatDate,
+  formatPoSource,
   formatPoStatus,
 } from "@/lib/portal-proveedores/format"
 import { PortalProveedoresShell } from "@/components/portal-proveedores/portal-proveedores-shell"
@@ -41,7 +45,8 @@ export default async function PortalOrdenesPage() {
   }
 
   const admin = createAdminClient()
-  const orders = await listSupplierPurchaseOrders(admin, resolved.ctx)
+  const { orders, mtto_linked, cotizador_linked, cotizador_configured } =
+    await listConsolidatedPurchaseOrders(admin, resolved.ctx)
 
   return (
     <PortalProveedoresShell showNav>
@@ -51,19 +56,31 @@ export default async function PortalOrdenesPage() {
             Órdenes de compra
           </h2>
           <p className="text-muted-foreground">
-            Órdenes de mantenimiento disponibles para facturación con su RFC{" "}
+            Órdenes de mantenimiento y del cotizador ERP disponibles para su RFC{" "}
             {resolved.ctx.rfc}.
           </p>
         </div>
 
-        {!resolved.ctx.mttoSupplierId ? (
+        {!mtto_linked ? (
           <Card>
             <CardHeader>
-              <CardTitle>Vinculación pendiente</CardTitle>
+              <CardTitle>Vinculación pendiente (mantenimiento)</CardTitle>
               <CardDescription>
                 Su cuenta aún no está ligada a un proveedor en el padrón de
                 mantenimiento. Compras debe completar la vinculación para ver
-                todas sus OC.
+                todas sus OC de ese sistema.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : null}
+
+        {cotizador_configured && !cotizador_linked ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sin OC del cotizador</CardTitle>
+              <CardDescription>
+                No hay un grupo de proveedor del cotizador vinculado a su RFC.
+                Compras puede asignar el `cotizador_group_id` en su invitación.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -72,19 +89,20 @@ export default async function PortalOrdenesPage() {
         {orders.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground">
-              No hay órdenes de compra disponibles para facturar en este momento.
+              No hay órdenes de compra disponibles en este momento.
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
             {orders.map((order) => (
-              <Card key={order.id}>
+              <Card key={`${order.source}-${order.id}`}>
                 <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium">{order.order_id}</p>
+                      <Badge variant="outline">{formatPoSource(order.source)}</Badge>
                       <Badge variant="secondary">{formatPoStatus(order.status)}</Badge>
-                      {order.invoice_count > 0 ? (
+                      {order.source === "mtto" && order.invoice_count > 0 ? (
                         <Badge variant="outline">
                           {order.invoice_count} factura
                           {order.invoice_count === 1 ? "" : "s"}
@@ -92,14 +110,22 @@ export default async function PortalOrdenesPage() {
                       ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {order.supplier ?? "Proveedor"} ·{" "}
+                      {order.supplier ?? "Proveedor"}
+                      {order.plant_label ? ` · ${order.plant_label}` : ""} ·{" "}
                       {formatCurrency(order.total_amount)} ·{" "}
                       {formatDate(order.created_at)}
                     </p>
+                    {order.source === "cotizador" &&
+                    order.qty_ordered != null &&
+                    order.qty_received != null ? (
+                      <p className="text-xs text-muted-foreground">
+                        Recibido {order.qty_received} de {order.qty_ordered} unidades
+                      </p>
+                    ) : null}
                   </div>
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/portal-proveedores/ordenes/${order.id}`}>
-                      Ver detalle
+                    <Link href={detailHref(order)}>
+                      {order.can_upload_invoice ? "Ver y facturar" : "Ver detalle"}
                     </Link>
                   </Button>
                 </CardContent>
