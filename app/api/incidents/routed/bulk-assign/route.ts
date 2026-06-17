@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server"
 import { NextRequest, NextResponse } from "next/server"
+import { isDepartmentMember } from "@/lib/departments/department-membership"
 import type { IncidentPipelineStage } from "@/lib/incidents/incident-routing"
 import {
   resolveCanonicalRoutingDepartments,
@@ -14,6 +15,7 @@ type BulkAssignBody = {
   incident_ids?: string[]
   canonical?: CanonicalRoutingDepartmentSlug
   routing_department_id?: string
+  assigned_to_id?: string | null
   pipeline_stage?: IncidentPipelineStage
   reason?: string
 }
@@ -39,9 +41,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "incident_ids requerido" }, { status: 400 })
     }
 
-    if (!body.canonical && !body.routing_department_id) {
+    if (!body.canonical && !body.routing_department_id && body.assigned_to_id === undefined) {
       return NextResponse.json(
-        { error: "canonical o routing_department_id requerido" },
+        { error: "canonical, routing_department_id o assigned_to_id requerido" },
         { status: 400 },
       )
     }
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
     const { data: incidents, error: incError } = await supabase
       .from("incident_history")
       .select(
-        "id, routing_department_id, assigned_to_id, pipeline_stage, routing_rule_id, asset_id",
+        "id, routing_department_id, assigned_to_id, pipeline_stage, routing_rule_id, asset_id, target_response_hours",
       )
       .in("id", incidentIds)
 
@@ -112,24 +114,56 @@ export async function POST(req: NextRequest) {
         fixedDepartmentId ??
         (targetBucket
           ? resolveDepartmentForPlant(targetBucket, departments ?? [], plantId)
-          : null)
+          : null) ??
+        incident.routing_department_id
 
-      if (!departmentId) {
+      if (!departmentId && body.assigned_to_id === undefined) {
         results.push({ id: incident.id, ok: false, error: "Sin departamento destino" })
         continue
       }
 
+      const resolvedDeptId = departmentId ?? incident.routing_department_id
+
+      if (body.assigned_to_id && resolvedDeptId && plantId) {
+        const ok = await isDepartmentMember(supabase, {
+          userId: body.assigned_to_id,
+          plantId,
+          departmentId: resolvedDeptId,
+        })
+        if (!ok) {
+          results.push({
+            id: incident.id,
+            ok: false,
+            error: "El responsable no pertenece al departamento",
+          })
+          continue
+        }
+      }
+
       const updates: Record<string, unknown> = {
-        routing_department_id: departmentId,
         updated_at: now,
-        pipeline_stage: body.pipeline_stage ?? "bandeja",
       }
 
-      if (!incident.routing_department_id) {
-        updates.routed_at = now
+      if (resolvedDeptId && (body.canonical || body.routing_department_id)) {
+        updates.routing_department_id = resolvedDeptId
+        updates.pipeline_stage = body.pipeline_stage ?? "bandeja"
+        if (!incident.routing_department_id) {
+          updates.routed_at = now
+        }
+      } else if (body.pipeline_stage) {
+        updates.pipeline_stage = body.pipeline_stage
       }
 
-      if (incident.target_response_hours == null) {
+      if (body.assigned_to_id !== undefined) {
+        updates.assigned_to_id = body.assigned_to_id || null
+        updates.assigned_at = body.assigned_to_id ? now : null
+        if (body.assigned_to_id && !body.pipeline_stage) {
+          const stage = incident.pipeline_stage as IncidentPipelineStage
+          if (stage === "bandeja") updates.pipeline_stage = "asignado"
+        }
+      }
+
+      if (resolvedDeptId && incident.target_response_hours == null) {
         updates.target_response_hours = 48
       }
 
@@ -146,20 +180,30 @@ export async function POST(req: NextRequest) {
       await supabase.from("incident_assignment_log").insert({
         incident_id: incident.id,
         from_department_id: incident.routing_department_id,
-        to_department_id: departmentId,
+        to_department_id: resolvedDeptId ?? incident.routing_department_id,
         from_assignee_id: incident.assigned_to_id,
-        to_assignee_id: incident.assigned_to_id,
+        to_assignee_id:
+          body.assigned_to_id !== undefined
+            ? body.assigned_to_id
+            : incident.assigned_to_id,
         from_pipeline_stage: incident.pipeline_stage,
-        to_pipeline_stage: (body.pipeline_stage ?? "bandeja") as string,
+        to_pipeline_stage:
+          (updates.pipeline_stage as string | undefined) ?? incident.pipeline_stage,
         reason: body.reason?.trim() || "Clasificación masiva",
         changed_by: user?.id ?? null,
       })
 
-      if (departmentId !== incident.routing_department_id) {
+      if (
+        resolvedDeptId &&
+        resolvedDeptId !== incident.routing_department_id
+      ) {
         const { error: learnError } = await supabase.rpc("record_incident_routing_signal", {
           p_incident_id: incident.id,
-          p_chosen_department_id: departmentId,
-          p_chosen_assignee_id: incident.assigned_to_id,
+          p_chosen_department_id: resolvedDeptId,
+          p_chosen_assignee_id:
+            body.assigned_to_id !== undefined
+              ? body.assigned_to_id
+              : incident.assigned_to_id,
           p_previous_department_id: incident.routing_department_id,
           p_previous_rule_id: incident.routing_rule_id,
           p_created_by: user?.id ?? null,
@@ -167,7 +211,11 @@ export async function POST(req: NextRequest) {
         if (!learnError) learningRecorded += 1
       }
 
-      results.push({ id: incident.id, ok: true, department_id: departmentId })
+      results.push({
+        id: incident.id,
+        ok: true,
+        department_id: resolvedDeptId ?? undefined,
+      })
     }
 
     const processedIds = new Set(results.map((r) => r.id))

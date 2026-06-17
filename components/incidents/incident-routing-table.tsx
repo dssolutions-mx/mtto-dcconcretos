@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -40,12 +40,20 @@ export function IncidentRoutingTable({
   selectable = false,
   selectedIds,
   onSelectionChange,
+  showRowActions = false,
+  rowActionLoadingId,
+  onClaim,
+  onAcknowledge,
 }: {
   incidents: RoutingIncidentRow[]
   compact?: boolean
   selectable?: boolean
   selectedIds?: Set<string>
   onSelectionChange?: (ids: Set<string>) => void
+  showRowActions?: boolean
+  rowActionLoadingId?: string | null
+  onClaim?: (incidentId: string) => void | Promise<void>
+  onAcknowledge?: (incidentId: string) => void | Promise<void>
 }) {
   if (incidents.length === 0) {
     return (
@@ -107,6 +115,7 @@ export function IncidentRoutingTable({
             <TableHead>Descripción</TableHead>
             <TableHead className="w-[96px]">Estado</TableHead>
             <TableHead className="w-[72px] text-right">Días</TableHead>
+            {showRowActions && <TableHead className="w-[140px]">Acciones</TableHead>}
             <TableHead className="w-[64px]" />
           </TableRow>
         </TableHeader>
@@ -120,6 +129,15 @@ export function IncidentRoutingTable({
                 )
               : null
             const isSelected = selectable && selectedIds?.has(incident.id)
+            const isLoading = rowActionLoadingId === incident.id
+            const canClaim =
+              !!incident.routing_department_id &&
+              !incident.assigned_to_id &&
+              !!onClaim
+            const canAck =
+              !!incident.routing_department_id &&
+              !incident.acknowledged_at &&
+              !!onAcknowledge
 
             return (
               <TableRow
@@ -160,6 +178,7 @@ export function IncidentRoutingTable({
                   <p className="text-sm line-clamp-1">{incident.description}</p>
                   <p className="text-[11px] text-muted-foreground line-clamp-1">
                     {incident.assignee_name ?? "Sin responsable"}
+                    {incident.acknowledged_at ? " · Acusado" : ""}
                     {incident.date
                       ? ` · ${format(new Date(incident.date), "dd MMM yy", { locale: es })}`
                       : ""}
@@ -178,6 +197,38 @@ export function IncidentRoutingTable({
                 <TableCell className="text-right text-xs tabular-nums py-2">
                   {days ?? "—"}
                 </TableCell>
+                {showRowActions && (
+                  <TableCell className="py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {canClaim && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 px-2 text-[10px]"
+                          disabled={isLoading}
+                          onClick={() => void onClaim(incident.id)}
+                        >
+                          {isLoading ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            "Tomar"
+                          )}
+                        </Button>
+                      )}
+                      {canAck && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[10px]"
+                          disabled={isLoading}
+                          onClick={() => void onAcknowledge(incident.id)}
+                        >
+                          Acusar
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
                 <TableCell className="py-2 text-right">
                   <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
                     <Link href={`/incidentes/${incident.id}`}>Ver</Link>

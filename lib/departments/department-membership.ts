@@ -171,6 +171,37 @@ export async function isDepartmentMember(
   return members.some((member) => member.id === params.userId)
 }
 
+/** Department IDs where the user has an explicit or legacy membership. */
+export async function getUserDepartmentIds(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string[]> {
+  const { data: junctionRows, error: junctionError } = await supabase
+    .from('department_memberships')
+    .select('department_id')
+    .eq('profile_id', userId)
+
+  if (!junctionError && junctionRows && junctionRows.length > 0) {
+    return [...new Set(junctionRows.map((row) => row.department_id))]
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, departamento, plant_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (!profile?.departamento) return []
+
+  const { data: departments } = await supabase
+    .from('departments')
+    .select('id, name, code, plant_id')
+
+  return (departments ?? [])
+    .filter((dept) => profileMatchesDepartmentText(profile.departamento, dept))
+    .map((dept) => dept.id)
+}
+
 export function displayProfileName(
   profile: Pick<DepartmentMember, 'nombre' | 'apellido'>,
 ): string {

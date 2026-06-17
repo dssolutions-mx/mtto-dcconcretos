@@ -6,47 +6,52 @@ Programa continuo para convertir el tablero SLA en una capacidad operativa real 
 
 | Fase | Estado | Repo |
 |------|--------|------|
-| 0 — Base organizacional | ▶ En progreso (esta corrida) | `mtto-dcconcretos` |
-| 1 — Workflow (claim/ack/assign) | ▶ Parcial (API + panel detalle) | `mtto-dcconcretos` |
-| 2 — Bandeja operativa (mi bandeja, bulk assignee) | ☐ Pendiente | `mtto-dcconcretos` |
-| 3 — Notificaciones (acuse, breach, escalación) | ☐ Pendiente | `mtto-dcconcretos` |
-| 4 — Dashboard SLA con datos confiables | ☑ Scaffold (PR #29) | `mtto-dcconcretos` |
+| 0 — Base organizacional | ☑ Completo | `mtto-dcconcretos` |
+| 1 — Workflow (claim/ack/assign + bandeja) | ☑ Completo | `mtto-dcconcretos` |
+| 2 — Auto-transiciones + bulk routing | ☑ Completo | `mtto-dcconcretos` |
+| 3 — Notificaciones in-app | ☑ Completo | `mtto-dcconcretos` |
+| 4 — Dashboard SLA con readiness | ☑ Completo | `mtto-dcconcretos` |
 
-## Diagnóstico en vivo (2026-06-17)
+## Migraciones (aplicar en staging/prod — humano)
 
-Datos reales en producción al iniciar Phase 0:
+1. `20260617130000_incident_sla_compliance.sql`
+2. `20260617140000_incident_sla_org_foundation.sql`
+3. `20260617150000_incident_workflow_auto_transitions.sql`
+4. `20260617160000_incident_notifications.sql`
 
-- **519** incidencias abiertas; **2** ruteadas; **0** asignadas; **0** con acuse explícito
-- **0/31** departamentos con `supervisor_id`
-- `profiles.departamento` es texto libre (PRODUCCIÓN, CALIDAD, …) sin FK a `departments`
-- Seed canónico omitía **MANT** en plantas nuevas (DIACE, Pitahaya)
+## Fase 0 — Base organizacional
 
-## Fase 0 — Entregables (esta corrida)
+- `department_memberships` + RLS + backfill desde `profiles.departamento`
+- `acknowledged_at` / `acknowledged_by_id`
+- APIs: membresías, org-foundation, claim, acknowledge
+- UI: `/gestion/departamentos`, tab **Base SLA**
 
-- [x] Migración `20260617140000_incident_sla_org_foundation.sql`
-  - `department_memberships` + RLS
-  - `acknowledged_at` / `acknowledged_by_id`
-  - Seed MANT faltante
-  - Backfill idempotente desde `profiles.departamento`
-  - Vista `incident_sla_compliance` prioriza `acknowledged_at` para MTTA
-- [x] APIs: membresías, miembros por dept, org-foundation diagnostics, claim, acknowledge
-- [x] UI: `/gestion/departamentos`, tab **Base SLA** en pipeline, panel con acuse/tomar
-- [x] Assignee picker filtrado por membresía (fallback texto legado pre-migración)
+## Fase 1 — Workflow operativo
 
-## Próximo sprint (Phase 1 — cold start)
+- Filtro **Mi bandeja** (`inbox=mine`) por defecto en Bandeja
+- Botones **Tomar** / **Acusar** en fila de tabla
+- Bulk **Asignarme** y clasificación por departamento
+- `assignee_id=me` y `unassigned=true` en API routed
 
-1. Aplicar migraciones `20260617130000` + `20260617140000` en staging/prod (humano)
-2. RH: asignar supervisores por planta/depto en `/gestion/departamentos`
-3. Bandeja: botones **Tomar** / **Acusar** en fila (no solo detalle)
-4. Filtro **Mi bandeja** (`assigned_to_id=me`) por defecto para técnicos
-5. Bulk backfill routing: clasificar backlog de 519 abiertas (script o acción masiva supervisada)
+## Fase 2 — Auto-transiciones
 
-## Decisiones
+- WO creada → acuse implícito si ya hay departamento
+- `planned_date` → etapa `en_atencion`
+- WO `Completada` → etapa `cerrado` + status Resuelto
+- **Auto-clasificar** seleccionados vía reglas (`POST /api/incidents/routed`)
 
-- **Membresía explícita** (`department_memberships`) reemplaza la dependencia de texto libre; el texto legado solo alimenta backfill.
-- **Acuse ≠ asignación**: el departamento puede acusar recibo sin tomar ownership; claim asigna y acusa.
-- **Dashboard SLA** permanece en preview hasta que >50% de abiertas tengan dept + (acuse o assignee).
+## Fase 3 — Notificaciones
 
-## PRs
+- Tabla `incident_notifications` + API GET/PATCH
+- Campana en pipeline de incidencias
+- Eventos: asignación, claim, acknowledge (supervisor)
+
+## Fase 4 — Dashboard SLA
+
+- Banner de readiness (&lt;50% = preview) en `/reportes/incidentes-sla`
+- Widgets operativos en tab Tablero (sin clasificar, sin responsable, sin acuse, SLA)
+- Drill-down **Siguiente acción** en tabla de incumplimientos
+
+## PR
 
 - Draft: https://github.com/dssolutions-mx/mtto-dcconcretos/pull/29 (rama `agent/dc-mantenimiento-sla-tablero`)

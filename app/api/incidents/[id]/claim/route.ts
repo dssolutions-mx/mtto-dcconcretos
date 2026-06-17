@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 import { isDepartmentMember } from '@/lib/departments/department-membership'
+import {
+  notifyDepartmentSupervisor,
+} from '@/lib/incidents/incident-notifications'
 import { isOpenIncidentStatus } from '@/lib/incidents/incident-routing'
 
 export async function POST(
@@ -102,6 +105,15 @@ export async function POST(
       to_pipeline_stage: 'asignado',
       reason: 'Reclamado por responsable',
       changed_by: user.id,
+    })
+
+    await notifyDepartmentSupervisor(supabase, {
+      departmentId: current.routing_department_id,
+      incidentId: id,
+      type: 'incident_claimed',
+      title: 'Incidente reclamado',
+      message: 'Un miembro del departamento tomó ownership del incidente.',
+      excludeUserId: user.id,
     })
 
     return NextResponse.json(data)

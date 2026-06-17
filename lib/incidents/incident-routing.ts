@@ -62,6 +62,7 @@ export type RoutedIncident = {
   target_response_hours: number | null
   routed_at: string | null
   assigned_at: string | null
+  acknowledged_at?: string | null
   asset_display_name?: string
   asset_code?: string
   department_name?: string

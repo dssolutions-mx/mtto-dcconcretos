@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase-server"
 import { NextRequest, NextResponse } from "next/server"
 import { isDepartmentMember } from "@/lib/departments/department-membership"
+import { createIncidentNotification } from "@/lib/incidents/incident-notifications"
 import {
   INCIDENT_PIPELINE_STAGES,
   type IncidentAssignmentInput,
@@ -165,6 +166,20 @@ export async function PATCH(
         if (learnError) {
           console.warn("Learning signal not recorded:", learnError.message)
         }
+      }
+
+      if (
+        body.assigned_to_id &&
+        body.assigned_to_id !== current.assigned_to_id
+      ) {
+        await createIncidentNotification(supabase, {
+          userId: body.assigned_to_id,
+          incidentId: id,
+          type: 'incident_assigned',
+          title: 'Incidente asignado',
+          message: 'Te asignaron un incidente en tu bandeja.',
+          priority: 'high',
+        })
       }
     }
 

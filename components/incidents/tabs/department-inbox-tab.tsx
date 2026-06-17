@@ -1,13 +1,14 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Loader2, RefreshCw, Search, X } from "lucide-react"
+import { Loader2, RefreshCw, Search, User, Wand2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { IncidentRoutingTable } from "@/components/incidents/incident-routing-table"
 import { useToast } from "@/hooks/use-toast"
+import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import {
   CANONICAL_ROUTING_DEPARTMENTS,
   type CanonicalRoutingDepartmentSlug,
@@ -31,14 +32,15 @@ type ListResponse = {
   offset: number
 }
 
+type InboxView = "mine" | CanonicalRoutingDepartmentSlug | "unrouted" | "all"
+
 const PAGE_SIZE = 50
 
 export function DepartmentInboxTab() {
   const { toast } = useToast()
+  const { user } = useAuthZustand()
   const [summary, setSummary] = useState<SummaryResponse | null>(null)
-  const [activeSlug, setActiveSlug] = useState<CanonicalRoutingDepartmentSlug | "unrouted" | "all">(
-    "unrouted",
-  )
+  const [activeView, setActiveView] = useState<InboxView>("mine")
   const [items, setItems] = useState<RoutedIncident[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -48,6 +50,8 @@ export function DepartmentInboxTab() {
   const [loadingList, setLoadingList] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkAssigning, setBulkAssigning] = useState(false)
+  const [autoRouting, setAutoRouting] = useState(false)
+  const [rowActionLoadingId, setRowActionLoadingId] = useState<string | null>(null)
 
   const loadSummary = useCallback(async () => {
     const res = await fetch("/api/incidents/routed?summary=true")
@@ -61,11 +65,15 @@ export function DepartmentInboxTab() {
         limit: String(PAGE_SIZE),
         offset: String(offset),
       })
-      if (activeSlug === "unrouted") {
+
+      if (activeView === "mine") {
+        params.set("inbox", "mine")
+      } else if (activeView === "unrouted") {
         params.set("unrouted", "true")
-      } else if (activeSlug !== "all") {
-        params.set("canonical", activeSlug)
+      } else if (activeView !== "all") {
+        params.set("canonical", activeView)
       }
+
       if (search.trim()) params.set("search", search.trim())
 
       const res = await fetch(`/api/incidents/routed?${params}`)
@@ -77,7 +85,7 @@ export function DepartmentInboxTab() {
     } finally {
       setLoadingList(false)
     }
-  }, [activeSlug, offset, search])
+  }, [activeView, offset, search])
 
   useEffect(() => {
     const init = async () => {
@@ -95,13 +103,14 @@ export function DepartmentInboxTab() {
   useEffect(() => {
     setOffset(0)
     setSelectedIds(new Set())
-  }, [activeSlug, search])
+  }, [activeView, search])
 
   const activeLabel = useMemo(() => {
-    if (activeSlug === "all") return "Todos los enrutados"
-    if (activeSlug === "unrouted") return "Sin clasificar"
-    return CANONICAL_ROUTING_DEPARTMENTS.find((d) => d.slug === activeSlug)?.label ?? activeSlug
-  }, [activeSlug])
+    if (activeView === "mine") return "Mi bandeja"
+    if (activeView === "all") return "Todos los enrutados"
+    if (activeView === "unrouted") return "Sin clasificar"
+    return CANONICAL_ROUTING_DEPARTMENTS.find((d) => d.slug === activeView)?.label ?? activeView
+  }, [activeView])
 
   const configuredCount = useMemo(() => {
     if (!summary) return 0
@@ -153,6 +162,117 @@ export function DepartmentInboxTab() {
     }
   }
 
+  const bulkAssignToMe = async () => {
+    if (!user?.id || selectedIds.size === 0) return
+    setBulkAssigning(true)
+    try {
+      const res = await fetch("/api/incidents/routed/bulk-assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          incident_ids: Array.from(selectedIds),
+          assigned_to_id: user.id,
+          reason: "Asignación masiva a mi bandeja",
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Error al asignar")
+
+      toast({
+        title: "Asignación aplicada",
+        description: `${data.succeeded ?? 0} incidente(s) en tu bandeja.`,
+      })
+      setSelectedIds(new Set())
+      await loadSummary()
+      await loadList()
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo asignar",
+        variant: "destructive",
+      })
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
+
+  const autoRouteSelected = async () => {
+    if (selectedIds.size === 0) return
+    setAutoRouting(true)
+    try {
+      const res = await fetch("/api/incidents/routed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ incident_ids: Array.from(selectedIds) }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Error en auto-clasificación")
+
+      const succeeded = (data.results ?? []).filter((r: { ok: boolean }) => r.ok).length
+      const failed = (data.results ?? []).length - succeeded
+
+      toast({
+        title: "Auto-clasificación",
+        description: `${succeeded} clasificados por reglas${failed ? ` · ${failed} sin regla` : ""}.`,
+      })
+      setSelectedIds(new Set())
+      await loadSummary()
+      await loadList()
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo auto-clasificar",
+        variant: "destructive",
+      })
+    } finally {
+      setAutoRouting(false)
+    }
+  }
+
+  const claimIncident = async (incidentId: string) => {
+    setRowActionLoadingId(incidentId)
+    try {
+      const res = await fetch(`/api/incidents/${incidentId}/claim`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "No se pudo tomar el incidente")
+      toast({ title: "Incidente tomado", description: "Quedó asignado en tu bandeja." })
+      await loadSummary()
+      await loadList()
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo tomar",
+        variant: "destructive",
+      })
+    } finally {
+      setRowActionLoadingId(null)
+    }
+  }
+
+  const acknowledgeIncident = async (incidentId: string) => {
+    setRowActionLoadingId(incidentId)
+    try {
+      const res = await fetch(`/api/incidents/${incidentId}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "No se pudo acusar recibo")
+      toast({ title: "Acuse registrado", description: "El departamento tomó conocimiento." })
+      await loadSummary()
+      await loadList()
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "No se pudo acusar",
+        variant: "destructive",
+      })
+    } finally {
+      setRowActionLoadingId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -162,6 +282,7 @@ export function DepartmentInboxTab() {
   }
 
   const showBulkBar = selectedIds.size > 0
+  const showDeptBulk = activeView === "unrouted" || activeView === "all"
 
   return (
     <div className="space-y-4">
@@ -169,7 +290,7 @@ export function DepartmentInboxTab() {
         <div>
           <h3 className="text-base font-semibold">Bandejas por departamento</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Cuatro destinos de ruteo: Mantenimiento, Operaciones, Recursos Humanos y Calidad.
+            Mi bandeja muestra incidentes asignados a ti y sin responsable en tus departamentos.
             {summary && (
               <>
                 {" "}
@@ -182,7 +303,6 @@ export function DepartmentInboxTab() {
           {configuredCount < 4 && (
             <p className="text-xs text-amber-700 mt-2">
               Solo {configuredCount}/4 departamentos canónicos están mapeados en la base de datos.
-              Revisa códigos/nombres en `departments` (MANT, OPER, RH, CAL).
             </p>
           )}
         </div>
@@ -199,7 +319,18 @@ export function DepartmentInboxTab() {
         </Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveView("mine")}
+          className={cn(
+            "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+            activeView === "mine" && "ring-2 ring-primary ring-offset-1 bg-primary/5",
+          )}
+        >
+          <User className="inline h-3.5 w-3.5 mr-1" />
+          Mi bandeja
+        </button>
         {CANONICAL_ROUTING_DEPARTMENTS.map((dept) => {
           const resolved = summary?.canonical_departments.find((d) => d.slug === dept.slug)
           const count = summary?.by_canonical_department[dept.slug] ?? 0
@@ -208,36 +339,29 @@ export function DepartmentInboxTab() {
             <button
               key={dept.slug}
               type="button"
-              onClick={() => setActiveSlug(dept.slug)}
+              onClick={() => setActiveView(dept.slug)}
               className={cn(
-                "rounded-lg border px-3 py-3 text-left transition-colors",
+                "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
                 dept.colorClass,
-                activeSlug === dept.slug && "ring-2 ring-primary ring-offset-1",
+                activeView === dept.slug && "ring-2 ring-primary ring-offset-1",
                 missing && "opacity-60",
               )}
             >
-              <div className="text-xs font-medium uppercase tracking-wide opacity-80">
-                {dept.shortLabel}
-              </div>
-              <div className="text-2xl font-semibold tabular-nums">{count}</div>
-              <div className="text-xs mt-1 truncate">{dept.label}</div>
-              {missing && <div className="text-[10px] mt-1">Sin mapear en BD</div>}
+              <span className="font-medium">{dept.shortLabel}</span>
+              <span className="ml-2 tabular-nums text-muted-foreground">{count}</span>
             </button>
           )
         })}
         <button
           type="button"
-          onClick={() => setActiveSlug("unrouted")}
+          onClick={() => setActiveView("unrouted")}
           className={cn(
-            "rounded-lg border border-dashed px-3 py-3 text-left bg-muted/30",
-            activeSlug === "unrouted" && "ring-2 ring-primary ring-offset-1",
+            "rounded-lg border border-dashed px-3 py-2 text-sm",
+            activeView === "unrouted" && "ring-2 ring-primary ring-offset-1",
           )}
         >
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Pendiente
-          </div>
-          <div className="text-2xl font-semibold tabular-nums">{summary?.unrouted ?? 0}</div>
-          <div className="text-xs mt-1 text-muted-foreground">Sin clasificar</div>
+          Sin clasificar
+          <span className="ml-2 tabular-nums font-medium">{summary?.unrouted ?? 0}</span>
         </button>
       </div>
 
@@ -256,18 +380,40 @@ export function DepartmentInboxTab() {
             </Button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {CANONICAL_ROUTING_DEPARTMENTS.map((dept) => (
+            {activeView === "unrouted" && (
               <Button
-                key={dept.slug}
+                size="sm"
+                variant="default"
+                disabled={autoRouting}
+                onClick={() => void autoRouteSelected()}
+              >
+                <Wand2 className="mr-1 h-3.5 w-3.5" />
+                Auto-clasificar
+              </Button>
+            )}
+            {user?.id && activeView !== "unrouted" && (
+              <Button
                 size="sm"
                 variant="secondary"
                 disabled={bulkAssigning}
-                className={cn("text-xs", dept.colorClass)}
-                onClick={() => void bulkAssign(dept.slug)}
+                onClick={() => void bulkAssignToMe()}
               >
-                → {dept.shortLabel}
+                Asignarme
               </Button>
-            ))}
+            )}
+            {showDeptBulk &&
+              CANONICAL_ROUTING_DEPARTMENTS.map((dept) => (
+                <Button
+                  key={dept.slug}
+                  size="sm"
+                  variant="secondary"
+                  disabled={bulkAssigning}
+                  className={cn("text-xs", dept.colorClass)}
+                  onClick={() => void bulkAssign(dept.slug)}
+                >
+                  → {dept.shortLabel}
+                </Button>
+              ))}
           </div>
         </div>
       )}
@@ -278,9 +424,11 @@ export function DepartmentInboxTab() {
             <div>
               <CardTitle className="text-base">{activeLabel}</CardTitle>
               <CardDescription>
-                Vista compacta para alto volumen ({total.toLocaleString("es-MX")} coincidencias).
-                Mostrando {items.length} por página.
-                {activeSlug === "unrouted" && " Selecciona filas y asigna departamento en bloque."}
+                {total.toLocaleString("es-MX")} coincidencias · página de {PAGE_SIZE}.
+                {activeView === "mine" &&
+                  " Usa Tomar / Acusar en fila o abre el detalle para más opciones."}
+                {activeView === "unrouted" &&
+                  " Selecciona filas y auto-clasifica por reglas o asigna departamento manualmente."}
               </CardDescription>
             </div>
             <form
@@ -312,8 +460,8 @@ export function DepartmentInboxTab() {
             )}
             <button
               type="button"
-              className={cn("underline-offset-2 hover:underline", activeSlug === "all" && "font-medium")}
-              onClick={() => setActiveSlug("all")}
+              className={cn("underline-offset-2 hover:underline", activeView === "all" && "font-medium")}
+              onClick={() => setActiveView("all")}
             >
               Ver todos los enrutados
             </button>
@@ -326,10 +474,14 @@ export function DepartmentInboxTab() {
           ) : (
             <IncidentRoutingTable
               incidents={items}
-              compact={activeSlug !== "all"}
+              compact={activeView !== "all" && activeView !== "unrouted"}
               selectable
               selectedIds={selectedIds}
               onSelectionChange={setSelectedIds}
+              showRowActions={activeView === "mine" || activeView !== "unrouted"}
+              rowActionLoadingId={rowActionLoadingId}
+              onClaim={claimIncident}
+              onAcknowledge={acknowledgeIncident}
             />
           )}
 

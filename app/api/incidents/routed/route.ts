@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server"
 import { NextRequest, NextResponse } from "next/server"
+import { getUserDepartmentIds } from "@/lib/departments/department-membership"
 import {
   hoursSince,
   isSlaBreached,
@@ -28,6 +29,7 @@ const INCIDENT_SELECT = `
   target_response_hours,
   routed_at,
   assigned_at,
+  acknowledged_at,
   assets ( id, name, asset_id ),
   departments:routing_department_id ( id, name, code )
 `
@@ -89,7 +91,9 @@ export async function GET(req: NextRequest) {
     const summaryOnly = searchParams.get("summary") === "true"
     const departmentId = searchParams.get("department_id")
     const canonicalSlug = searchParams.get("canonical") as CanonicalRoutingDepartmentSlug | null
-    const assigneeId = searchParams.get("assignee_id")
+    const assigneeIdParam = searchParams.get("assignee_id")
+    const inboxMine = searchParams.get("inbox") === "mine"
+    const unassignedOnly = searchParams.get("unassigned") === "true"
     const stage = searchParams.get("stage")
     const unroutedOnly = searchParams.get("unrouted") === "true"
     const search = searchParams.get("search")?.trim()
@@ -195,7 +199,24 @@ export async function GET(req: NextRequest) {
       query = query.in("routing_department_id", departmentFilterIds)
     }
 
-    if (assigneeId) query = query.eq("assigned_to_id", assigneeId)
+    const assigneeId =
+      assigneeIdParam === "me" ? user.id : assigneeIdParam
+
+    if (inboxMine) {
+      const myDeptIds = await getUserDepartmentIds(supabase, user.id)
+      if (myDeptIds.length > 0) {
+        const deptList = myDeptIds.join(",")
+        query = query.or(
+          `assigned_to_id.eq.${user.id},and(assigned_to_id.is.null,routing_department_id.in.(${deptList}))`,
+        )
+      } else {
+        query = query.eq("assigned_to_id", user.id)
+      }
+    } else if (assigneeId) {
+      query = query.eq("assigned_to_id", assigneeId)
+    }
+
+    if (unassignedOnly) query = query.is("assigned_to_id", null)
     if (stage) query = query.eq("pipeline_stage", stage)
     if (search) {
       query = query.or(`description.ilike.%${search}%,type.ilike.%${search}%`)

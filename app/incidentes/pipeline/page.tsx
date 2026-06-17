@@ -12,6 +12,7 @@ import { DepartmentInboxTab } from "@/components/incidents/tabs/department-inbox
 import { PipelineBoardTab } from "@/components/incidents/tabs/pipeline-board-tab"
 import { RoutingLearningTab } from "@/components/incidents/tabs/routing-learning-tab"
 import { RoutingCoverageTab } from "@/components/incidents/tabs/routing-coverage-tab"
+import { IncidentNotificationBell } from "@/components/incidents/incident-notification-bell"
 
 function PipelinePageContent() {
   return (
@@ -21,12 +22,15 @@ function PipelinePageContent() {
           heading="Pipeline de incidencias"
           text="Ruteo por departamento, bandejas, aprendizaje y tablero de estado"
         />
-        <Button asChild variant="outline" className="shrink-0">
-          <Link href="/incidentes">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver a incidentes
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button asChild variant="outline" className="shrink-0">
+            <Link href="/incidentes">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Volver a incidentes
+            </Link>
+          </Button>
+          <IncidentNotificationBell />
+        </div>
       </div>
 
       <Tabs defaultValue="inbox" className="mt-2">

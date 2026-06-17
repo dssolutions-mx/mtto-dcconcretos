@@ -10,7 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Download, RefreshCw } from 'lucide-react'
+import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import Link from 'next/link'
 import { IncidentSlaKpiStrip } from '@/components/reports/incident-sla/kpi-strip'
 import { IncidentSlaDepartmentRanking } from '@/components/reports/incident-sla/department-ranking'
 import { IncidentSlaTrendChart } from '@/components/reports/incident-sla/trend-chart'
@@ -69,15 +71,34 @@ function IncidentSlaDashboardContent() {
 
   const [plants, setPlants] = useState<{ id: string; name: string }[]>([])
   const [deptOptions, setDeptOptions] = useState<{ id: string; name: string }[]>([])
+  const [readinessPct, setReadinessPct] = useState<number | null>(null)
+  const [orgOpen, setOrgOpen] = useState<{ total: number; routed: number; assigned: number; acknowledged: number } | null>(null)
 
   useEffect(() => {
     Promise.all([
       fetch('/api/plants').then((r) => r.json()),
       fetch('/api/departments').then((r) => r.json()),
+      fetch('/api/incidents/org-foundation').then((r) => r.json()),
     ])
-      .then(([plantJson, deptJson]) => {
+      .then(([plantJson, deptJson, orgJson]) => {
         setPlants(plantJson.plants ?? [])
         setDeptOptions(deptJson.departments ?? [])
+        const s = orgJson.summary
+        if (!s) return
+        setOrgOpen({
+          total: s.open_incidents_total,
+          routed: s.open_incidents_routed,
+          assigned: s.open_incidents_assigned,
+          acknowledged: s.open_incidents_acknowledged,
+        })
+        if (s.open_incidents_total > 0) {
+          const pct = Math.round(
+            ((s.open_incidents_routed + s.open_incidents_assigned + s.open_incidents_acknowledged) /
+              (s.open_incidents_total * 3)) *
+              100,
+          )
+          setReadinessPct(pct)
+        }
       })
       .catch(() => {})
   }, [])
@@ -173,6 +194,25 @@ function IncidentSlaDashboardContent() {
           </Button>
         </div>
       </div>
+
+      {readinessPct !== null && readinessPct < 50 && orgOpen && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Datos SLA en modo preview ({readinessPct}% preparación)</AlertTitle>
+          <AlertDescription>
+            {orgOpen.routed}/{orgOpen.total} ruteados · {orgOpen.assigned} asignados ·{' '}
+            {orgOpen.acknowledged} con acuse. Las métricas serán confiables cuando la operación
+            complete el workflow.{' '}
+            <Link href="/incidentes/pipeline" className="underline font-medium">
+              Ir al pipeline
+            </Link>{' '}
+            ·{' '}
+            <Link href="/gestion/departamentos" className="underline font-medium">
+              Configurar departamentos
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="flex flex-wrap gap-3 items-end">
         <label className="text-sm space-y-1">

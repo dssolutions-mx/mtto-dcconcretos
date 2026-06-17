@@ -19,6 +19,21 @@ type Props = {
   metric: SlaMetricKind | 'any'
 }
 
+function nextAction(row: IncidentSlaRow): { label: string; href: string } {
+  if (!row.department_name || row.department_name === 'Sin departamento') {
+    return { label: 'Clasificar', href: `/incidentes/${row.incident_id}` }
+  }
+  if (!row.assignee_name) {
+    return { label: 'Asignar', href: `/incidentes/${row.incident_id}` }
+  }
+  if (row.met_ack_target === false) {
+    return { label: 'Acusar', href: `/incidentes/${row.incident_id}` }
+  }
+  if (row.met_schedule_target === false) {
+    return { label: 'Programar OT', href: `/incidentes/${row.incident_id}` }
+  }
+  return { label: 'Ver detalle', href: `/incidentes/${row.incident_id}` }
+}
 function breachLabel(row: IncidentSlaRow): string {
   const labels: string[] = []
   if (row.met_ack_target === false) labels.push('Atención')
@@ -46,7 +61,7 @@ export function IncidentSlaBreachesTable({ rows, metric }: Props) {
               <TableHead>Departamento</TableHead>
               <TableHead>Responsable</TableHead>
               <TableHead>Incumplimiento</TableHead>
-              <TableHead />
+              <TableHead>Siguiente acción</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -57,7 +72,9 @@ export function IncidentSlaBreachesTable({ rows, metric }: Props) {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.slice(0, 50).map((row) => (
+              filtered.slice(0, 50).map((row) => {
+                const action = nextAction(row)
+                return (
                 <TableRow key={row.incident_id}>
                   <TableCell>
                     {new Date(row.reported_at).toLocaleDateString('es-MX')}
@@ -70,14 +87,14 @@ export function IncidentSlaBreachesTable({ rows, metric }: Props) {
                   </TableCell>
                   <TableCell className="text-right">
                     <Link
-                      href={`/incidentes/${row.incident_id}`}
-                      className="text-sm text-primary hover:underline"
+                      href={action.href}
+                      className="text-sm text-primary hover:underline font-medium"
                     >
-                      Ver detalle
+                      {action.label}
                     </Link>
                   </TableCell>
                 </TableRow>
-              ))
+              )})
             )}
           </TableBody>
         </Table>
