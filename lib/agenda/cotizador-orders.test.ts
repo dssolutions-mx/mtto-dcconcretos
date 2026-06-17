@@ -14,7 +14,7 @@ test("isPumpProductType detects pump/bombeo lines", () => {
   assert.equal(isPumpProductType(null), false)
 })
 
-test("flattenCotizadorOrders excludes pump-only orders and pump lines by default", () => {
+test("flattenCotizadorOrders includes pump-only orders for machine planning", () => {
   const rows = flattenCotizadorOrders([
     {
       id: "o1",
@@ -37,10 +37,30 @@ test("flattenCotizadorOrders excludes pump-only orders and pump lines by default
     },
   ])
 
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0]?.order_number, "100")
+  assert.equal(rows[0]?.is_pump_only, true)
+  assert.equal(rows[0]?.has_pumping_service, true)
+  assert.equal(rows[1]?.order_number, "101")
+  assert.equal(rows[1]?.product_type, "Concreto FC=250")
+  assert.equal(rows[1]?.is_pump_only, false)
+  assert.equal(rows[1]?.has_pumping_service, true)
+})
+
+test("flattenCotizadorOrders marks orders without pump service", () => {
+  const rows = flattenCotizadorOrders([
+    {
+      id: "o3",
+      order_number: "102",
+      delivery_date: "2026-06-16",
+      plant_id: "p1",
+      order_status: "created",
+      order_items: [{ product_type: "Concreto FC=250", volume: 8 }],
+    },
+  ])
+
   assert.equal(rows.length, 1)
-  assert.equal(rows[0]?.order_number, "101")
-  assert.equal(rows[0]?.product_type, "Concreto FC=250")
-  assert.equal(rows[0]?.is_pump_only, false)
+  assert.equal(rows[0]?.has_pumping_service, false)
 })
 
 test("flattenCotizadorOrders can include pump lines when requested", () => {
@@ -63,6 +83,7 @@ test("flattenCotizadorOrders can include pump lines when requested", () => {
 
   assert.equal(rows.length, 2)
   assert.equal(rows.some((r) => r.is_pump_only), true)
+  assert.equal(rows.find((r) => !r.is_pump_only)?.has_pumping_service, true)
 })
 
 test("extractPartsFromWorkOrder merges required_parts and task parts", () => {

@@ -77,7 +77,11 @@ export function MechanicWorkSheet() {
               kitByWo.set(row.work_order_id, row)
             }
 
-            const ordersParams = new URLSearchParams({ from: dayKey, to: dayKey })
+            const ordersParams = new URLSearchParams({
+              from: dayKey,
+              to: dayKey,
+              include_pump: "true",
+            })
             if (kitJson?.plant_ids?.length) {
               ordersParams.set("plantIds", kitJson.plant_ids.join(","))
             }
@@ -215,7 +219,8 @@ export function MechanicWorkSheet() {
                       {ctx.orders.slice(0, 8).map((o, idx) => (
                         <li key={`${o.order_id}-${idx}`}>
                           #{o.order_number} · {o.delivery_time?.slice(0, 5) ?? "—"} ·{" "}
-                          {o.client_name} · {o.volume ?? "—"} m³
+                          {o.client_name} · {o.is_pump_only ? "Bombeo" : `${o.volume ?? "—"} m³`}
+                          {o.has_pumping_service && !o.is_pump_only ? " · + Bombeo" : ""}
                         </li>
                       ))}
                     </ul>

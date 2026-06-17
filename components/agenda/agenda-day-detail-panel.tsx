@@ -89,7 +89,7 @@ export function AgendaDayDetailPanel({
       const kitJson: DailyKitResponse | null = kitRes.ok ? await kitRes.json() : null
       setKitData(kitJson)
 
-      const ordersParams = new URLSearchParams({ from: date, to: date })
+      const ordersParams = new URLSearchParams({ from: date, to: date, include_pump: "true" })
       if (kitJson?.plant_ids?.length) {
         ordersParams.set("plantIds", kitJson.plant_ids.join(","))
       }
@@ -215,7 +215,7 @@ export function AgendaDayDetailPanel({
                 </p>
               ) : !ordersData?.orders?.length ? (
                 <p className="text-sm text-muted-foreground">
-                  Sin pedidos de concreto programados para las plantas de la agenda.
+                  Sin pedidos de producción ni bombeo programados para las plantas de la agenda.
                 </p>
               ) : (
                 <Table>
@@ -226,6 +226,7 @@ export function AgendaDayDetailPanel({
                       <TableHead>Cliente / Obra</TableHead>
                       <TableHead>Planta</TableHead>
                       <TableHead>Producto</TableHead>
+                      <TableHead className="w-20">Bombeo</TableHead>
                       <TableHead className="text-right">Vol.</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -239,7 +240,28 @@ export function AgendaDayDetailPanel({
                           <p className="text-xs text-muted-foreground">{row.construction_site}</p>
                         </TableCell>
                         <TableCell className="text-sm">{row.plant_name ?? row.plant_id}</TableCell>
-                        <TableCell className="text-sm">{row.product_type}</TableCell>
+                        <TableCell className="text-sm">
+                          {row.is_pump_only ? (
+                            <span className="font-medium">{row.product_type}</span>
+                          ) : (
+                            row.product_type
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {row.has_pumping_service ? (
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-xs",
+                                row.is_pump_only && "border-amber-300 bg-amber-50 text-amber-900",
+                              )}
+                            >
+                              {row.is_pump_only ? "Solo bombeo" : "Sí"}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{row.volume ?? "—"}</TableCell>
                       </TableRow>
                     ))}

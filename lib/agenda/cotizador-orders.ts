@@ -14,6 +14,8 @@ export type CotizadorOrderItemRow = {
   concrete_volume_delivered: number | null
   order_status: string
   is_pump_only: boolean
+  /** True when the order includes bombeo/pump lines (even if this row is concrete). */
+  has_pumping_service: boolean
 }
 
 type RawOrderItem = {
@@ -47,8 +49,10 @@ function toNumber(value: unknown): number | null {
 }
 
 /**
- * Flattens Cotizador orders into line rows. Pump-only lines are flagged;
- * orders whose items are exclusively pump service are excluded.
+ * Flattens Cotizador orders into planning rows.
+ * - Concrete lines are always included.
+ * - Pump/bombeo lines are included for pump-only orders (machine deployment) and when
+ *   `includePumpLines` is true (mixed orders also show their bombeo line).
  */
 export function flattenCotizadorOrders(
   orders: RawOrder[],
@@ -62,12 +66,12 @@ export function flattenCotizadorOrders(
     if (items.length === 0) continue
 
     const pumpFlags = items.map((item) => isPumpProductType(item.product_type))
+    const hasPumpingService = pumpFlags.some(Boolean)
     const isOrderPumpOnly = pumpFlags.every(Boolean)
-    if (isOrderPumpOnly) continue
 
     for (const [idx, item] of items.entries()) {
       const isPump = pumpFlags[idx] ?? false
-      if (isPump && !includePumpLines) continue
+      if (isPump && !includePumpLines && !isOrderPumpOnly) continue
 
       rows.push({
         order_id: order.id,
@@ -83,6 +87,7 @@ export function flattenCotizadorOrders(
         concrete_volume_delivered: toNumber(item.concrete_volume_delivered),
         order_status: order.order_status,
         is_pump_only: isPump,
+        has_pumping_service: hasPumpingService,
       })
     }
   }
