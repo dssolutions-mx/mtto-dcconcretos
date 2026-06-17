@@ -90,6 +90,8 @@ export async function proxy(request: NextRequest) {
     "/portal-proveedores/invitacion",
   ]
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route))
+  const isPortalProtectedRoute =
+    pathname.startsWith("/portal-proveedores") && !isPublicRoute
 
   const offlineWorkRoutes = [
     "/checklists",
@@ -114,6 +116,15 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/") {
     const url = request.nextUrl.clone()
     url.pathname = user ? "/dashboard" : "/login"
+    const res = NextResponse.redirect(url)
+    res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+    return res
+  }
+
+  if (!user && isPortalProtectedRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = "/portal-proveedores/login"
+    url.searchParams.set("redirectedFrom", pathname)
     const res = NextResponse.redirect(url)
     res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
     return res

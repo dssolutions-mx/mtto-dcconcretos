@@ -21,11 +21,11 @@ export default function PortalProveedoresLandingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">
-          <Button asChild disabled>
+          <Button asChild>
             <Link href="/portal-proveedores/login">Iniciar sesión</Link>
           </Button>
           <p className="text-sm text-muted-foreground self-center">
-            Fase 1 (auth) — próximo sprint
+            Acceso para proveedores invitados por compras.
           </p>
         </CardContent>
       </Card>
