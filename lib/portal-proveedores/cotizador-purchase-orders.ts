@@ -111,7 +111,7 @@ function sumLineTotals(items: CotizadorPoItemRow[]): {
   return { total, qtyOrdered, qtyReceived }
 }
 
-async function resolveCotizadorGroupIds(
+export async function resolveCotizadorGroupIds(
   cotizador: SupabaseClient,
   ctx: SupplierPortalContext
 ): Promise<string[]> {
@@ -133,7 +133,7 @@ async function resolveCotizadorGroupIds(
   return [...ids]
 }
 
-async function resolveCotizadorSupplierIds(
+export async function resolveCotizadorSupplierIds(
   cotizador: SupabaseClient,
   groupIds: string[]
 ): Promise<string[]> {

@@ -8,6 +8,7 @@ const links = [
   { href: "/portal-proveedores/dashboard", label: "Panel" },
   { href: "/portal-proveedores/ordenes", label: "Órdenes de compra" },
   { href: "/portal-proveedores/facturas", label: "Facturas" },
+  { href: "/portal-proveedores/pagos", label: "Pagos" },
 ]
 
 export function PortalNav() {

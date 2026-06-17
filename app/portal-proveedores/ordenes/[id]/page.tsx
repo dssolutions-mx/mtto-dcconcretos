@@ -55,10 +55,12 @@ export default async function PortalOrdenDetallePage({
   }
 
   const { data: invoices } = await admin
-    .from("po_supplier_invoices")
-    .select("id, invoice_number, invoice_date, total, status, cfdi_uuid")
+    .from("po_invoice_balances")
+    .select(
+      "invoice_id, invoice_number, invoice_date, total, invoice_status, paid_to_date, balance, cfdi_uuid"
+    )
     .eq("purchase_order_id", id)
-    .order("created_at", { ascending: false })
+    .order("invoice_date", { ascending: false })
 
   const order = access.po
 
@@ -125,7 +127,7 @@ export default async function PortalOrdenDetallePage({
               <ul className="space-y-2">
                 {(invoices ?? []).map((inv) => (
                   <li
-                    key={inv.id}
+                    key={inv.invoice_id}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
                   >
                     <div>
@@ -134,11 +136,17 @@ export default async function PortalOrdenDetallePage({
                         {formatDate(inv.invoice_date)} · {formatCurrency(Number(inv.total))}
                         {inv.cfdi_uuid ? " · CFDI" : ""}
                       </p>
+                      <p className="text-muted-foreground">
+                        Pagado {formatCurrency(Number(inv.paid_to_date))} · Saldo{" "}
+                        <span className="font-medium text-foreground">
+                          {formatCurrency(Number(inv.balance))}
+                        </span>
+                      </p>
                     </div>
                     <Badge variant="outline">
                       {PO_INVOICE_STATUS_LABELS[
-                        inv.status as keyof typeof PO_INVOICE_STATUS_LABELS
-                      ] ?? inv.status}
+                        inv.invoice_status as keyof typeof PO_INVOICE_STATUS_LABELS
+                      ] ?? inv.invoice_status}
                     </Badge>
                   </li>
                 ))}

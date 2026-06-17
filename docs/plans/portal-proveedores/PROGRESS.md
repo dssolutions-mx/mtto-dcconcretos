@@ -26,7 +26,7 @@
 | 1 | Identidad & auth de proveedor | mtto | ☑ |
 | 2 | Alta/seguimiento facturas contra OC | mtto | ☑ |
 | 3 | Visibilidad de OC (ambos sistemas) | mtto (+ read cotizador) | ☑ |
-| 4 | Estatus de pago & saldos | mtto (+ read cotizador) | ☐ |
+| 4 | Estatus de pago & saldos | mtto (+ read cotizador) | ☑ |
 | 5 | Notificaciones + pulido | mtto | ☐ |
 
 ## Inventario de rutas (portal)
@@ -41,7 +41,7 @@
 | `/portal-proveedores/ordenes/[id]` | Detalle OC mtto + subir factura | ☑ |
 | `/portal-proveedores/ordenes/cotizador/[id]` | Detalle OC cotizador (solo lectura) | ☑ |
 | `/portal-proveedores/facturas` | Facturas enviadas y estatus | ☑ |
-| `/portal-proveedores/pagos` | Saldos y pagos recibidos | ☐ |
+| `/portal-proveedores/pagos` | Saldos y pagos recibidos | ☑ |
 | `/portal-proveedores/perfil` | Datos fiscales y contacto | ☐ |
 
 ## APIs (estado)
@@ -56,7 +56,7 @@
 | `GET /api/portal-proveedores/ordenes/cotizador/[id]` | 3 | ☑ detalle read-only cotizador |
 | `POST /api/portal-proveedores/cfdi/parse` | 2 | ☑ RFC emisor = portal |
 | `GET/POST /api/portal-proveedores/facturas` | 2 | ☑ list + create + validate RPC |
-| `GET /api/portal-proveedores/pagos` | 4 | ☐ |
+| `GET /api/portal-proveedores/pagos` | 4 | ☑ |
 
 ## Migraciones (archivos only — no aplicar)
 
@@ -118,19 +118,35 @@
 - Subida de facturas contra OC del cotizador queda para fase posterior.
 - `invoice_count` en OC cotizador se deja en 0 (vínculo AP↔OC es indirecto vía entradas).
 
+**PR:** https://github.com/dssolutions-mx/mtto-dcconcretos/pull/34
+
+### Sprint 4 — Fase 4: Estatus de pago & saldos (2026-06-17)
+
+**Entregables:**
+- `lib/portal-proveedores/payment-summary.ts` — saldos mtto (`po_invoice_balances` + `po_invoice_payments`) y cotizador (`supplier_invoices` + `payables`/`payments`).
+- API `GET /api/portal-proveedores/pagos` con resumen consolidado y por sistema.
+- Página `/portal-proveedores/pagos` con tarjetas de saldo, facturas con saldo y pagos recientes.
+- Detalle OC mtto muestra pagado/saldo por factura; nav y dashboard enlazan a pagos.
+- Tests unitarios en `payment-summary.test.ts`.
+
+**Notas:**
+- Sin migraciones (solo lectura de vistas/tablas existentes).
+- Cotizador: balance incluye notas de crédito aplicadas (`credit_note_invoice_allocations`).
+- OC cotizador sin vínculo directo a facturas en portal (sin subida cross-repo aún).
+
 **PR:** (se añade al abrir borrador)
 
 ---
 
-## Próximo sprint (Fase 4 — Estatus de pago & saldos)
+## Próximo sprint (Fase 5 — Notificaciones + pulido)
 
-**Repo:** `mtto-dcconcretos` (lectura cotizador + mtto).
+**Repo:** `mtto-dcconcretos`.
 
 **Alcance acotado:**
-1. `GET /api/portal-proveedores/pagos` — saldos y pagos por proveedor (mtto `po_supplier_invoices` + cotizador `supplier_invoices` / complementos).
-2. Página `/portal-proveedores/pagos` con resumen de facturas abiertas, pagadas y saldo pendiente por sistema.
-3. En detalle de OC mtto, mostrar estatus de pago de facturas ya enviadas (si aplica).
+1. Notificaciones básicas al proveedor (factura recibida/aprobada/pagada) — email o in-app según infra disponible en mtto.
+2. Página `/portal-proveedores/perfil` con datos fiscales de contacto (lectura/edición limitada).
+3. Alineación visual final del portal (accesibilidad, estados vacíos, español consistente).
 
-**Fuera de alcance en Fase 4:** notificaciones, subida cross-repo al cotizador.
+**Fuera de alcance en Fase 5:** subida de facturas contra OC del cotizador.
 
-**Criterios de aceptación:** proveedor ve saldo consolidado o por sistema; ledger actualizado; PR borrador.
+**Criterios de aceptación:** notificaciones o perfil entregado en alcance acotado; ledger actualizado; PR borrador.

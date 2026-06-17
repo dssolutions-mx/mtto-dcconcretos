@@ -73,7 +73,7 @@ export default async function PortalProveedoresDashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle>Órdenes de compra</CardTitle>
@@ -98,6 +98,20 @@ export default async function PortalProveedoresDashboardPage() {
             <CardContent>
               <Button asChild variant="outline">
                 <Link href="/portal-proveedores/facturas">Ver facturas</Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pagos y saldos</CardTitle>
+              <CardDescription>
+                Consulte saldo pendiente y pagos recibidos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline">
+                <Link href="/portal-proveedores/pagos">Ver pagos</Link>
               </Button>
             </CardContent>
           </Card>
