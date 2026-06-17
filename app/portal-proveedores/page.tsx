@@ -17,7 +17,7 @@ export default function PortalProveedoresLandingPage() {
           <CardTitle>Bienvenido al portal de proveedores</CardTitle>
           <CardDescription>
             Consulte sus órdenes de compra, envíe facturas (CFDI) y dé seguimiento
-            a sus pagos. El acceso estará disponible próximamente.
+            a sus pagos. Requiere invitación de compras.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">

@@ -73,8 +73,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "La invitación expiró." }, { status: 410 })
     }
 
-    let userId: string | null = null
     const email = invitation.email.toLowerCase()
+
+    const { data: staffProfile } = await admin
+      .from("profiles")
+      .select("id")
+      .ilike("email", email)
+      .maybeSingle()
+
+    if (staffProfile?.id) {
+      return NextResponse.json(
+        {
+          error:
+            "Este correo pertenece a un usuario interno. Solicite a compras una invitación con otro correo.",
+        },
+        { status: 409 }
+      )
+    }
 
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email,
@@ -91,43 +106,24 @@ export async function POST(request: NextRequest) {
       const alreadyExists =
         createError.message?.toLowerCase().includes("already") ||
         createError.message?.toLowerCase().includes("registered")
+
       if (alreadyExists) {
-        const { data: profile } = await admin
-          .from("profiles")
-          .select("id")
-          .ilike("email", email)
-          .maybeSingle()
-        if (!profile?.id) {
-          return NextResponse.json(
-            {
-              error:
-                "El correo ya está registrado. Use iniciar sesión o contacte a compras.",
-            },
-            { status: 409 }
-          )
-        }
-        userId = profile.id
-        const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
-          password,
-          email_confirm: true,
-          user_metadata: {
-            supplier_portal: true,
-            rfc: invitation.rfc,
-          },
-        })
-        if (updateError) {
-          return NextResponse.json({ error: updateError.message }, { status: 500 })
-        }
-      } else {
         return NextResponse.json(
-          { error: createError.message ?? "No se pudo crear el usuario" },
-          { status: 500 }
+          {
+            error:
+              "El correo ya está registrado. Si ya aceptó una invitación, use iniciar sesión. Si necesita ayuda, contacte a compras.",
+          },
+          { status: 409 }
         )
       }
-    } else if (created.user) {
-      userId = created.user.id
+
+      return NextResponse.json(
+        { error: createError.message ?? "No se pudo crear el usuario" },
+        { status: 500 }
+      )
     }
 
+    const userId = created.user?.id
     if (!userId) {
       return NextResponse.json({ error: "No se pudo obtener el usuario" }, { status: 500 })
     }

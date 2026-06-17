@@ -144,14 +144,6 @@ export async function POST(request: NextRequest) {
     })
 
     const warnings = (validationWarnings ?? []) as unknown[]
-    await createPortalNotification(admin, {
-      userId: session.userId,
-      type: "portal_invoice_received",
-      title: "Factura recibida",
-      message: `Registramos su factura ${result.invoice.invoice_number}. Le avisaremos cuando haya novedades de pago.`,
-      relatedEntity: "po_supplier_invoice",
-      entityId: result.invoice.id,
-    })
 
     if (warnings.length === 0) {
       await createPortalNotification(admin, {

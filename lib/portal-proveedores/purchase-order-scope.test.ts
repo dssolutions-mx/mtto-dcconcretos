@@ -2,9 +2,50 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   assertPurchaseOrderAccess,
+  filterInvoicesForPortal,
   SUPPLIER_VISIBLE_PO_STATUSES,
 } from "./purchase-order-scope"
 import type { SupplierPortalContext } from "./types"
+
+const filterCtx: SupplierPortalContext = {
+  membershipId: "mem-1",
+  rfc: "ABC850101XY9",
+  status: "active",
+  mttoSupplierId: "sup-1",
+  cotizadorGroupId: null,
+  supplierName: "Demo",
+}
+
+test("filterInvoicesForPortal keeps invoices for supplier_id or matching RFC", () => {
+  const invoices = [
+    {
+      id: "inv-1",
+      invoice_number: "A-1",
+      invoice_date: null,
+      total: 100,
+      status: "open",
+      cfdi_uuid: null,
+      cfdi_emisor_rfc: "ABC850101XY9",
+      created_at: null,
+      supplier_id: "sup-1",
+    },
+    {
+      id: "inv-2",
+      invoice_number: "A-2",
+      invoice_date: null,
+      total: 200,
+      status: "open",
+      cfdi_uuid: null,
+      cfdi_emisor_rfc: "ZZZ850101ZZ9",
+      created_at: null,
+      supplier_id: "sup-2",
+    },
+  ]
+
+  const filtered = filterInvoicesForPortal(invoices, filterCtx)
+  assert.equal(filtered.length, 1)
+  assert.equal(filtered[0]?.id, "inv-1")
+})
 
 const ctx: SupplierPortalContext = {
   membershipId: "mem-1",
@@ -58,6 +99,16 @@ function buildAdminMock(po: typeof basePo) {
       if (table === "po_supplier_invoices") {
         return {
           select: () => invoiceSelectChain(),
+        }
+      }
+      if (table === "plants") {
+        return {
+          select: () => ({
+            in: async () => ({
+              data: [{ id: "plant-1", name: "Planta Norte", code: "PN" }],
+              error: null,
+            }),
+          }),
         }
       }
       throw new Error(`unexpected table ${table}`)

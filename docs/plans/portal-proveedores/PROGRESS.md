@@ -159,12 +159,26 @@
 
 ## Estado final del programa
 
-Todas las fases (0–5) tienen entregable en PR borrador. El humano puede marcar la tarea Notion como **Done** tras merge y smoke test en staging.
+Todas las fases (0–5) están en **un solo PR de revisión**: [#36](https://github.com/dssolutions-mx/mtto-dcconcretos/pull/36).
 
-**PRs por fase:** #30 (0), #32 (1), #33 (2), #34 (3), #35 (4), Fase 5 en esta corrida.
+Los PRs #30, #32–#35 quedaron **supersedidos** (stack histórico por corrida del agente).
+
+**Estado:** revisión humana + hardening completado en rama `cursor/overnight-agent-routine-4a47`. **No listo para merge ni lanzamiento** hasta smoke test en staging con migraciones aplicadas.
+
+### Hardening aplicado (post-revisión)
+
+- Aislamiento staff ↔ portal en `proxy.ts` (`classifyPortalSession`).
+- Invitación: rechaza correos de usuarios internos; no resetea contraseñas existentes.
+- Solo membresía `active` accede al portal; `pending` bloqueado.
+- Facturas en detalle OC filtradas por RFC/`supplier_id`.
+- Notificación “recibida” solo vía trigger DB (sin duplicar en API).
+- Notificaciones y perfil vía `createAdminClient` (evita RLS amplio en `notifications`).
+- UI staff: panel de invitación en `/suppliers/[id]`.
+- Migración: sin política UPDATE abierta; trigger guarda columnas de membresía.
+- Tests del portal incluidos en `npm run test:unit`.
 
 ---
 
 ## Próximo sprint
 
-_Ninguno — programa portal de proveedores completo en alcance del brief. Seguimiento: merge ordenado de PRs #30→#35 + Fase 5, aplicar migraciones `20260617140000` y `20260617150000`, smoke test con proveedor de prueba._
+_Staging smoke test con proveedor de prueba → aplicar migraciones `20260617140000` y `20260617150000` → validar flujo invitación → login → OC → factura → pagos → notificaciones._

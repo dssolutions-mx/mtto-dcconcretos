@@ -21,6 +21,7 @@ export type SupplierPurchaseOrderSummary = {
   supplier_id: string | null
   created_at: string
   plant_id: string | null
+  plant_label: string | null
   po_type: string | null
   invoice_count: number
 }
@@ -56,9 +57,29 @@ async function loadInvoiceCounts(
   return counts
 }
 
+async function loadPlantLabels(
+  admin: SupabaseClient,
+  plantIds: string[]
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>()
+  const uniqueIds = [...new Set(plantIds.filter(Boolean))]
+  if (uniqueIds.length === 0) return labels
+
+  const { data } = await admin
+    .from("plants")
+    .select("id, name, code")
+    .in("id", uniqueIds)
+
+  for (const plant of data ?? []) {
+    labels.set(plant.id, plant.name || plant.code || plant.id)
+  }
+  return labels
+}
+
 function toSummary(
   po: Record<string, unknown>,
-  invoiceCount: number
+  invoiceCount: number,
+  plantLabel: string | null
 ): SupplierPurchaseOrderSummary {
   return {
     id: po.id as string,
@@ -69,9 +90,41 @@ function toSummary(
     supplier_id: (po.supplier_id as string | null) ?? null,
     created_at: po.created_at as string,
     plant_id: (po.plant_id as string | null) ?? null,
+    plant_label: plantLabel,
     po_type: (po.po_type as string | null) ?? null,
     invoice_count: invoiceCount,
   }
+}
+
+export type PortalScopedInvoice = {
+  id: string
+  invoice_number: string
+  invoice_date: string | null
+  total: number | null
+  status: string | null
+  cfdi_uuid: string | null
+  cfdi_emisor_rfc: string | null
+  created_at: string | null
+  supplier_id?: string | null
+}
+
+export function filterInvoicesForPortal<T extends PortalScopedInvoice>(
+  invoices: T[],
+  ctx: SupplierPortalContext
+): T[] {
+  const portalRfc = normalizeSupplierRfc(ctx.rfc)
+  return invoices.filter((invoice) => {
+    if (ctx.mttoSupplierId && invoice.supplier_id === ctx.mttoSupplierId) {
+      return true
+    }
+    if (
+      invoice.cfdi_emisor_rfc &&
+      normalizeSupplierRfc(invoice.cfdi_emisor_rfc) === portalRfc
+    ) {
+      return true
+    }
+    return false
+  })
 }
 
 export async function listSupplierPurchaseOrders(
@@ -117,9 +170,20 @@ export async function listSupplierPurchaseOrders(
 
   const ids = [...byId.keys()]
   const invoiceCounts = await loadInvoiceCounts(admin, ids)
+  const plantLabels = await loadPlantLabels(
+    admin,
+    [...byId.values()].map((po) => po.plant_id as string | null)
+  )
 
   return [...byId.values()]
-    .map((po) => toSummary(po, invoiceCounts.get(po.id as string) ?? 0))
+    .map((po) => {
+      const plantId = po.plant_id as string | null
+      return toSummary(
+        po,
+        invoiceCounts.get(po.id as string) ?? 0,
+        plantId ? plantLabels.get(plantId) ?? plantId : null
+      )
+    })
     .sort(
       (a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -184,7 +248,16 @@ export async function assertPurchaseOrderAccess(
   }
 
   const invoiceCounts = await loadInvoiceCounts(admin, [purchaseOrderId])
-  const summary = toSummary(po as Record<string, unknown>, invoiceCounts.get(purchaseOrderId) ?? 0)
+  const plantLabels = await loadPlantLabels(
+    admin,
+    po.plant_id ? [po.plant_id] : []
+  )
+  const plantLabel = po.plant_id ? plantLabels.get(po.plant_id) ?? po.plant_id : null
+  const summary = toSummary(
+    po as Record<string, unknown>,
+    invoiceCounts.get(purchaseOrderId) ?? 0,
+    plantLabel
+  )
 
   return {
     ok: true,

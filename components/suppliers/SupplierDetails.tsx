@@ -52,6 +52,7 @@ import { Supplier, SupplierContact, SupplierService, SupplierWorkHistory, Suppli
 import { SupplierPerformanceChart } from "./SupplierPerformanceChart"
 import { ReportIssueDialog } from "./ReportIssueDialog"
 import { SupplierVerificationPanel } from "./supplier-verification-panel"
+import { SupplierPortalInvitePanel } from "./SupplierPortalInvitePanel"
 import { SupplierUsagePanel } from "./SupplierUsagePanel"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from "@/lib/supabase"
@@ -82,6 +83,7 @@ interface SupplierDetailsProps {
   /** Full-page detail: show expediente verification + audit (default false for legacy dialog embeds) */
   showVerificationPanel?: boolean
   canVerifyPurchases?: boolean
+  canInvitePortal?: boolean
 }
 
 interface SupplierPurchaseOrder {
@@ -123,6 +125,7 @@ export function SupplierDetails({
   showPerformanceHistory = true,
   showVerificationPanel = false,
   canVerifyPurchases = false,
+  canInvitePortal = false,
 }: SupplierDetailsProps) {
   const { toast } = useToast()
   const [supplierData, setSupplierData] = useState<Supplier | null>(null)
@@ -827,6 +830,11 @@ export function SupplierDetails({
           }}
         />
       )}
+
+      <SupplierPortalInvitePanel
+        supplier={displaySupplier}
+        canInvite={canInvitePortal}
+      />
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>

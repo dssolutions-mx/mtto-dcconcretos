@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { SupplierForm } from "@/components/suppliers/SupplierForm"
 import { createClient } from "@/lib/supabase"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
+import { canInviteSupplierPortal } from "@/lib/portal-proveedores/staff-permissions"
 import type { Supplier } from "@/types/suppliers"
 
 const SupplierDetails = dynamic(
@@ -31,8 +32,9 @@ export default function SupplierDetailPage() {
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [loading, setLoading] = useState(true)
   const [editOpen, setEditOpen] = useState(false)
-  const { hasWriteAccess } = useAuthZustand()
+  const { hasWriteAccess, profile } = useAuthZustand()
   const canVerify = hasWriteAccess("purchases")
+  const canInvitePortal = canInviteSupplierPortal(profile?.role)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -82,6 +84,7 @@ export default function SupplierDetailPage() {
           supplier={supplier}
           showVerificationPanel
           canVerifyPurchases={canVerify}
+          canInvitePortal={canInvitePortal}
           onEdit={canVerify ? () => setEditOpen(true) : undefined}
         />
       )}

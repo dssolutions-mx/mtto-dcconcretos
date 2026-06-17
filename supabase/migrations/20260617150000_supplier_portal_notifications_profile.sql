@@ -1,5 +1,5 @@
 -- Portal de proveedores — perfil de contacto y notificaciones in-app (Fase 5)
--- NO aplicar en producción sin revisión humana.
+-- Pre-lanzamiento: aplicar solo tras revisión de PR #36 y smoke test en staging.
 
 ALTER TABLE public.supplier_portal_users
   ADD COLUMN IF NOT EXISTS contact_name text,
@@ -13,12 +13,35 @@ COMMENT ON COLUMN public.supplier_portal_users.contact_phone IS
 COMMENT ON COLUMN public.supplier_portal_users.notification_email IS
   'Correo alterno para notificaciones; si es NULL se usa el correo de auth.';
 
--- Proveedor: actualiza solo su membresía (campos de contacto vía API)
-CREATE POLICY supplier_portal_users_self_update ON public.supplier_portal_users
-  FOR UPDATE
-  TO authenticated
-  USING (auth_user_id = auth.uid())
-  WITH CHECK (auth_user_id = auth.uid());
+-- Actualizaciones de membresía solo vía service role (API del portal). Sin política UPDATE para authenticated.
+
+CREATE OR REPLACE FUNCTION public.guard_supplier_portal_users_self_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF auth.uid() IS NOT NULL AND auth.uid() = OLD.auth_user_id THEN
+    IF NEW.rfc IS DISTINCT FROM OLD.rfc
+      OR NEW.mtto_supplier_id IS DISTINCT FROM OLD.mtto_supplier_id
+      OR NEW.cotizador_group_id IS DISTINCT FROM OLD.cotizador_group_id
+      OR NEW.status IS DISTINCT FROM OLD.status
+      OR NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
+      OR NEW.invited_by IS DISTINCT FROM OLD.invited_by
+      OR NEW.invited_at IS DISTINCT FROM OLD.invited_at
+      OR NEW.accepted_at IS DISTINCT FROM OLD.accepted_at
+    THEN
+      RAISE EXCEPTION 'No puede modificar datos de membresía del portal.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_guard_supplier_portal_users_self_update ON public.supplier_portal_users;
+CREATE TRIGGER trg_guard_supplier_portal_users_self_update
+  BEFORE UPDATE ON public.supplier_portal_users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.guard_supplier_portal_users_self_update();
 
 -- Notifica a todos los usuarios activos del portal que coincidan con la factura
 CREATE OR REPLACE FUNCTION public.notify_supplier_portal_invoice_event()

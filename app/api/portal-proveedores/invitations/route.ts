@@ -63,6 +63,23 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = createAdminClient()
+
+    const { data: staffProfile } = await admin
+      .from("profiles")
+      .select("id")
+      .ilike("email", email)
+      .maybeSingle()
+
+    if (staffProfile?.id) {
+      return NextResponse.json(
+        {
+          error:
+            "Este correo pertenece a un usuario interno. Use un correo distinto para el portal de proveedores.",
+        },
+        { status: 409 }
+      )
+    }
+
     let mttoSupplierId: string | null = parsed.data.mtto_supplier_id ?? null
 
     if (mttoSupplierId) {
@@ -81,15 +98,14 @@ export async function POST(request: NextRequest) {
         )
       }
     } else {
-      const { data: suppliers } = await admin
+      const { data: supplier } = await admin
         .from("suppliers")
         .select("id, tax_id")
         .not("tax_id", "is", null)
-        .limit(200)
-      const match = (suppliers ?? []).find(
-        (s) => s.tax_id && normalizeSupplierRfc(s.tax_id) === rfc
-      )
-      mttoSupplierId = match?.id ?? null
+        .ilike("tax_id", rfc)
+        .limit(1)
+        .maybeSingle()
+      mttoSupplierId = supplier?.id ?? null
     }
 
     const token = randomBytes(32).toString("hex")

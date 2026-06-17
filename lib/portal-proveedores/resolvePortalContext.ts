@@ -51,6 +51,17 @@ export async function resolvePortalContext(
     }
   }
 
+  if (row.status !== "active") {
+    return {
+      ok: false,
+      status: 403,
+      message:
+        row.status === "pending"
+          ? "Su cuenta del portal está pendiente de activación. Contacte a compras."
+          : "Su cuenta del portal no está activa.",
+    }
+  }
+
   const supplierName = await loadSupplierName(supabase, row.mtto_supplier_id)
 
   return {

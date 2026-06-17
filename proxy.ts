@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { classifyPortalSession } from "@/lib/portal-proveedores/classifyPortalSession"
 
 /**
  * Proxy (Next.js 16) — Supabase SSR session validation + token refresh.
@@ -113,9 +114,59 @@ export async function proxy(request: NextRequest) {
     supabaseResponse.headers.set("X-Auth-Required", "true")
   }
 
-  if (pathname === "/") {
+  if (user) {
+    const sessionKind = await classifyPortalSession(supabase, user.id)
+    const portalOnly =
+      sessionKind.hasPortalMembership && !sessionKind.hasStaffProfile
+    const staffOnly =
+      sessionKind.hasStaffProfile && !sessionKind.hasPortalMembership
+
+    if (pathname === "/") {
+      const url = request.nextUrl.clone()
+      url.pathname = portalOnly ? "/portal-proveedores/dashboard" : "/dashboard"
+      const res = NextResponse.redirect(url)
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+      return res
+    }
+
+    if (portalOnly && !pathname.startsWith("/portal-proveedores") && !isPublicRoute) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/portal-proveedores/dashboard"
+      const res = NextResponse.redirect(url)
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+      return res
+    }
+
+    if (staffOnly && isPortalProtectedRoute) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/dashboard"
+      const res = NextResponse.redirect(url)
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+      return res
+    }
+
+    if (
+      isPortalProtectedRoute &&
+      (!sessionKind.hasPortalMembership || sessionKind.portalStatus !== "active")
+    ) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/portal-proveedores/login"
+      url.searchParams.set("redirectedFrom", pathname)
+      const res = NextResponse.redirect(url)
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+      return res
+    }
+
+    if (portalOnly && pathname === "/login") {
+      const url = request.nextUrl.clone()
+      url.pathname = "/portal-proveedores/login"
+      const res = NextResponse.redirect(url)
+      res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+      return res
+    }
+  } else if (pathname === "/") {
     const url = request.nextUrl.clone()
-    url.pathname = user ? "/dashboard" : "/login"
+    url.pathname = "/login"
     const res = NextResponse.redirect(url)
     res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
     return res

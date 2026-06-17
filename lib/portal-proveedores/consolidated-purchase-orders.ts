@@ -38,7 +38,7 @@ function mapMttoOrder(
     total_amount: order.total_amount,
     supplier: order.supplier,
     created_at: order.created_at,
-    plant_label: order.plant_id,
+    plant_label: order.plant_label ?? order.plant_id,
     invoice_count: order.invoice_count,
     can_upload_invoice: true,
   }

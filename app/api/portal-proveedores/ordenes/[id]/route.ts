@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { assertPurchaseOrderAccess } from "@/lib/portal-proveedores/purchase-order-scope"
+import { assertPurchaseOrderAccess, filterInvoicesForPortal } from "@/lib/portal-proveedores/purchase-order-scope"
 import { requirePortalSession } from "@/lib/portal-proveedores/requirePortalSession"
 
 export const dynamic = "force-dynamic"
@@ -25,14 +25,14 @@ export async function GET(
     const { data: invoices } = await admin
       .from("po_supplier_invoices")
       .select(
-        "id, invoice_number, invoice_date, total, status, cfdi_uuid, cfdi_emisor_rfc, created_at"
+        "id, invoice_number, invoice_date, total, status, cfdi_uuid, cfdi_emisor_rfc, supplier_id, created_at"
       )
       .eq("purchase_order_id", id)
       .order("created_at", { ascending: false })
 
     return NextResponse.json({
       order: access.po,
-      invoices: invoices ?? [],
+      invoices: filterInvoicesForPortal(invoices ?? [], session.ctx),
     })
   } catch (error) {
     console.error("GET /api/portal-proveedores/ordenes/[id]", error)

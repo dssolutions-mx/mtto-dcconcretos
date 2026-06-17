@@ -1,5 +1,5 @@
 -- Portal de proveedores — membresía e invitaciones (Fase 1)
--- NO aplicar en producción sin revisión humana.
+-- Pre-lanzamiento: aplicar solo tras revisión de PR #36 y smoke test en staging.
 
 CREATE TABLE IF NOT EXISTS public.supplier_portal_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -98,7 +98,8 @@ CREATE POLICY supplier_portal_users_staff_select ON public.supplier_portal_users
           'AREA_ADMINISTRATIVA',
           'COORDINADOR_MANTENIMIENTO',
           'ENCARGADO_MANTENIMIENTO',
-          'AUXILIAR_COMPRAS'
+          'AUXILIAR_COMPRAS',
+          'JEFE_UNIDAD_NEGOCIO'
         )
     )
   );
@@ -118,7 +119,8 @@ CREATE POLICY supplier_portal_invitations_staff_select ON public.supplier_portal
           'AREA_ADMINISTRATIVA',
           'COORDINADOR_MANTENIMIENTO',
           'ENCARGADO_MANTENIMIENTO',
-          'AUXILIAR_COMPRAS'
+          'AUXILIAR_COMPRAS',
+          'JEFE_UNIDAD_NEGOCIO'
         )
     )
   );
