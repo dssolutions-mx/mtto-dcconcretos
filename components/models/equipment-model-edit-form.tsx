@@ -294,7 +294,7 @@ export function EquipmentModelEditForm({ modelId }: EquipmentModelEditFormProps)
     
     try {
       // Eliminar de la base de datos
-      await modelsApi.deleteMaintenanceInterval(interval.id);
+      await modelsApi.deleteMaintenanceInterval(interval.id, { modelId });
       
       // Eliminar del estado local
       setMaintenanceIntervals(maintenanceIntervals.filter((_, i) => i !== index));

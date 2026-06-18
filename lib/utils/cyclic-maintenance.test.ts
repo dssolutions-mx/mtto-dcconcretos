@@ -6,6 +6,7 @@ import {
   isActionableCyclicScheduleRow,
   selectCyclicSummaryInterval,
 } from "./cyclic-maintenance";
+import { enrichDeadIntervalCatalogFromHistory } from "@/lib/maintenance/dead-interval-catalog";
 
 const kmIntervals = [
   {
@@ -380,6 +381,32 @@ test("dead foreign plan id remaps by interval_value when catalog provided", () =
     options: { deadIntervalCatalog: deadCatalog },
   });
   assert.equal(statusOf(results, 6300), "completed");
+});
+
+test("deleted tier remaps via interval_value_snapshot when live interval row is gone", () => {
+  const intervals = [
+    { id: "int-500", interval_value: 500, type: "hours", is_recurring: true, is_first_cycle_only: false },
+    { id: "int-1000", interval_value: 1000, type: "hours", is_recurring: true, is_first_cycle_only: false },
+  ];
+  const history = [
+    {
+      type: "preventive",
+      maintenance_plan_id: "deleted-300",
+      interval_value_snapshot: 300,
+      hours: 310,
+      date: "2025-01-01",
+    },
+  ];
+  const deadCatalog = enrichDeadIntervalCatalogFromHistory(new Map(), history, ["deleted-300"]);
+  const results = computeCyclicIntervalResults({
+    intervals,
+    history,
+    currentValue: 600,
+    unit: "hours",
+    options: { deadIntervalCatalog: deadCatalog },
+  });
+  // 300h tier no longer exists; checkpoint still advances lastServiceMeter
+  assert.equal(statusOf(results, 500), "overdue");
 });
 
 test("corrective meter reading absorbs unpaid preventive dues after last preventive", () => {

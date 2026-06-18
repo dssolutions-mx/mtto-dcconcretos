@@ -5,14 +5,15 @@
 
 UPDATE maintenance_history mh
 SET maintenance_plan_id = target_mi.id
-FROM assets a
-JOIN maintenance_intervals wrong_mi ON wrong_mi.id = mh.maintenance_plan_id
-JOIN maintenance_intervals target_mi
-  ON target_mi.model_id = a.model_id
- AND target_mi.interval_value = wrong_mi.interval_value
- AND COALESCE(target_mi.type, '') = COALESCE(wrong_mi.type, '')
+FROM assets a,
+     maintenance_intervals wrong_mi,
+     maintenance_intervals target_mi
 WHERE mh.asset_id = a.id
   AND mh.maintenance_plan_id IS NOT NULL
+  AND wrong_mi.id = mh.maintenance_plan_id
+  AND target_mi.model_id = a.model_id
+  AND target_mi.interval_value = wrong_mi.interval_value
+  AND COALESCE(target_mi.type, '') = COALESCE(wrong_mi.type, '')
   AND wrong_mi.model_id IS DISTINCT FROM a.model_id
   AND NOT EXISTS (
     SELECT 1

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { buildDueLedger } from "@/lib/maintenance/due-engine";
+import { resolveDeadIntervalCatalog } from "@/lib/maintenance/dead-interval-catalog";
 import { parseMaintenanceUnitString } from "@/lib/utils/cyclic-maintenance";
 
 /**
@@ -65,8 +66,17 @@ export async function POST(
     const assetIds = (assets ?? []).map((a) => a.id);
     const { data: allHistory } = await supabase
       .from("maintenance_history")
-      .select("asset_id, maintenance_plan_id, hours, kilometers, date, type")
+      .select(
+        "asset_id, maintenance_plan_id, hours, kilometers, date, type, interval_value_snapshot"
+      )
       .in("asset_id", assetIds);
+
+    const knownIntervalIds = new Set(intervals.map((i) => i.id));
+    const deadIntervalCatalog = await resolveDeadIntervalCatalog(
+      supabase,
+      allHistory ?? [],
+      knownIntervalIds
+    );
 
     const historyByAsset = new Map<string, NonNullable<typeof allHistory>>();
     for (const row of allHistory ?? []) {
@@ -85,12 +95,20 @@ export async function POST(
           : Number(asset.current_kilometers) || 0;
       const history = historyByAsset.get(asset.id) ?? [];
 
-      const before = buildDueLedger({ intervals, history, currentValue, unit });
+      const ledgerOptions = { deadIntervalCatalog };
+      const before = buildDueLedger({
+        intervals,
+        history,
+        currentValue,
+        unit,
+        options: ledgerOptions,
+      });
       const after = buildDueLedger({
         intervals: proposedIntervals,
         history,
         currentValue,
         unit,
+        options: ledgerOptions,
       });
 
       const beforeOverdue = before.byInterval

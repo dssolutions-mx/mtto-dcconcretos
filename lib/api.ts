@@ -360,13 +360,36 @@ export const modelsApi = {
   },
   
   // Eliminar un intervalo de mantenimiento
-  deleteMaintenanceInterval: async (id: string): Promise<void> => {
-    const { error } = await supabase
-      .from('maintenance_intervals')
-      .delete()
-      .eq('id', id);
-    
+  deleteMaintenanceInterval: async (
+    id: string,
+    audit?: { modelId: string }
+  ): Promise<void> => {
+    const { data: interval } = await supabase
+      .from("maintenance_intervals")
+      .select("interval_value, type")
+      .eq("id", id)
+      .maybeSingle();
+
+    const { error } = await supabase.from("maintenance_intervals").delete().eq("id", id);
+
     if (error) throw error;
+
+    if (audit?.modelId && interval?.interval_value != null) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const { error: auditError } = await supabase.from("maintenance_interval_changes").insert({
+        interval_id: id,
+        model_id: audit.modelId,
+        changed_by: user?.id ?? null,
+        field_name: "deleted",
+        old_value: String(interval.interval_value),
+        new_value: null,
+      });
+      if (auditError) {
+        console.warn("maintenance_interval_changes audit on delete:", auditError.message);
+      }
+    }
   },
   
   // Actualizar una tarea de mantenimiento
