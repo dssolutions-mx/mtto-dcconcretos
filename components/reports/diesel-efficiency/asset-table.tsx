@@ -5,10 +5,13 @@ import { ChevronUp, ChevronDown, ExternalLink, Gauge, ChevronsUpDown } from 'luc
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import type { EfficiencyRow, SortKey } from './types'
+import type { CategoryBenchmark } from '@/lib/reports/diesel-category-benchmark'
+import { deltaVsCategoryMedian } from '@/lib/reports/diesel-category-benchmark'
 
 type Props = {
   rows: EfficiencyRow[]
   prevRows?: EfficiencyRow[]
+  categoryBenchmarks?: Map<string, CategoryBenchmark>
   onOpenDrill: (row: EfficiencyRow) => void
   yearMonth: string
 }
@@ -91,7 +94,39 @@ function MoMDelta({ lph, prevLph }: { lph: number | null; prevLph?: number | nul
   )
 }
 
-export function AssetTable({ rows, prevRows = [], onOpenDrill, yearMonth: _yearMonth }: Props) {
+function VsCategoryDelta({
+  lph,
+  category,
+  benchmarks,
+}: {
+  lph: number | null
+  category: string | null
+  benchmarks?: Map<string, CategoryBenchmark>
+}) {
+  if (!category || !benchmarks) return <span className="text-stone-300">—</span>
+  const bench = benchmarks.get(category)
+  const delta = deltaVsCategoryMedian(lph, bench?.medianLph)
+  if (delta == null) return <span className="text-stone-300">—</span>
+  const worse = delta > 0
+  const big = Math.abs(delta) >= 15
+  return (
+    <span
+      className={[
+        'tabular-num text-xs font-medium',
+        worse && big ? 'text-red-600 font-semibold' : worse ? 'text-amber-600' : 'text-green-700',
+      ].join(' ')}
+      title={
+        bench?.medianLph != null
+          ? `Mediana categoría: ${bench.medianLph.toFixed(2)} L/h (${bench.assetCount} activos)`
+          : undefined
+      }
+    >
+      {worse ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}%
+    </span>
+  )
+}
+
+export function AssetTable({ rows, prevRows = [], categoryBenchmarks, onOpenDrill, yearMonth: _yearMonth }: Props) {
   const prevByAsset = useMemo(() => {
     const m = new Map<string, EfficiencyRow>()
     for (const r of prevRows) {
@@ -208,6 +243,11 @@ export function AssetTable({ rows, prevRows = [], onOpenDrill, yearMonth: _yearM
               </span>
             </th>
             <th className="py-2.5 pr-4 text-right">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">
+                vs cat.
+              </span>
+            </th>
+            <th className="py-2.5 pr-4 text-right">
               <div className="flex items-center justify-end gap-1">
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">
                   L/km
@@ -299,6 +339,13 @@ export function AssetTable({ rows, prevRows = [], onOpenDrill, yearMonth: _yearM
                 </td>
                 <td className="py-2.5 pr-4 text-right">
                   <MoMDelta lph={r.liters_per_hour_trusted} prevLph={prev?.liters_per_hour_trusted} />
+                </td>
+                <td className="py-2.5 pr-4 text-right">
+                  <VsCategoryDelta
+                    lph={r.liters_per_hour_trusted}
+                    category={r.equipment_category}
+                    benchmarks={categoryBenchmarks}
+                  />
                 </td>
                 <td className="py-2.5 pr-4 text-right tabular-num text-stone-600">
                   {fmt(r.liters_per_km, 3)}
