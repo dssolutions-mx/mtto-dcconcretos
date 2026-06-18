@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { AlertTriangle, TrendingUp, Gauge, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { EfficiencyRow } from './types'
@@ -133,8 +134,8 @@ function AnomalyCard({
         if (!r.ok) throw new Error(j.error || 'Error al guardar seguimiento')
         if (j.followup) onFollowupUpdated(j.followup as DieselAlertFollowup)
       }
-    } catch {
-      // silent — user can retry
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al guardar seguimiento')
     } finally {
       setSaving(false)
     }

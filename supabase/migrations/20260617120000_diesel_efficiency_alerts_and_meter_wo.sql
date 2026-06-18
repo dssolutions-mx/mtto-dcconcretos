@@ -152,7 +152,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.diesel_efficiency_alert_followups
 -- ---------------------------------------------------------------------------
 -- 2) Extend meter timeline with OT / service-order links from diesel rows
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.asset_meter_reading_events
+DROP VIEW IF EXISTS public.asset_meter_reading_events;
+
+CREATE VIEW public.asset_meter_reading_events
 WITH (security_invoker = true) AS
 SELECT
   'diesel_consumption'::text AS source_kind,
