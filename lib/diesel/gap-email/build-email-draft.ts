@@ -2,6 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CuentaLitrosGap } from '@/lib/diesel-cuenta-litros-gaps'
 import { buildDieselGapEmailHtml } from '@/lib/diesel/gap-email/email-copy'
 import {
+  collectUniqueEvidencePhotos,
+  loadGapEvidenceByGapId,
+  type GapEvidencePhoto,
+} from '@/lib/diesel/gap-email/load-gap-evidence'
+import {
   fetchPlantRoleEmails,
   parseDieselGapCcOverrides,
   resolveDieselGapRecipients,
@@ -27,6 +32,7 @@ export type DieselGapEmailDraft = {
   warehouseCode: string
   plantName: string
   plantCode: string | null
+  evidencePhotos: GapEvidencePhoto[]
 }
 
 export async function buildDieselGapEmailDraft(
@@ -38,6 +44,8 @@ export async function buildDieselGapEmailDraft(
   const extraCc = parseDieselGapCcOverrides(process.env.DIESEL_GAP_CC_OVERRIDES)
   const { to, cc } = resolveDieselGapRecipients(context.plantCode, roleEmails, extraCc)
 
+  const evidenceByGapId = await loadGapEvidenceByGapId(admin, selectedGaps)
+  const evidencePhotos = collectUniqueEvidencePhotos(evidenceByGapId)
   const appUrl = resolveAppUrl()
 
   const { subject, html } = buildDieselGapEmailHtml({
@@ -46,6 +54,7 @@ export async function buildDieselGapEmailDraft(
     plantName: context.plantName,
     plantCode: context.plantCode,
     gaps: selectedGaps,
+    evidenceByGapId,
     appUrl,
     warehouseId: context.warehouseId,
   })
@@ -64,5 +73,6 @@ export async function buildDieselGapEmailDraft(
     warehouseCode: context.warehouseCode,
     plantName: context.plantName,
     plantCode: context.plantCode,
+    evidencePhotos,
   }
 }

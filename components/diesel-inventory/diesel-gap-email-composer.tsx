@@ -92,14 +92,6 @@ function ChipInput({
   )
 }
 
-function buildPreviewParams(warehouseId: string, gapIds: string[]): string {
-  const params = new URLSearchParams({ warehouseId })
-  for (const id of gapIds) {
-    params.append("gapId", id)
-  }
-  return params.toString()
-}
-
 export function DieselGapEmailComposer({
   open,
   onClose,
@@ -134,8 +126,11 @@ export function DieselGapEmailComposer({
 
   const fetchPreview = useCallback(
     async (gapIds: string[]) => {
-      const qs = buildPreviewParams(warehouseId, gapIds)
-      const res = await fetch(`/api/diesel/gap-notifications/preview?${qs}`)
+      const res = await fetch("/api/diesel/gap-notifications/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouseId, gapIds }),
+      })
       const json = (await res.json()) as Record<string, unknown>
       if (!res.ok || json.error) {
         throw new Error((json.error as string) || "preview_failed")
@@ -152,21 +147,32 @@ export function DieselGapEmailComposer({
 
     void (async () => {
       try {
-        const json = await fetchPreview(initialGapIds)
+        // Load all findings first so selection state stays in sync with the server.
+        const json = await fetchPreview([])
         if (cancelled) return
         const findings = (json.availableFindings as PreviewFinding[] | undefined) ?? []
         setAvailableFindings(findings)
-        const initialSelection =
+
+        const validInitialIds =
           initialGapIds.length > 0
-            ? Object.fromEntries(
-                findings.map((f) => [f.findingKey, initialGapIds.includes(f.findingKey)]),
-              )
-            : Object.fromEntries(findings.map((f) => [f.findingKey, true]))
+            ? initialGapIds.filter((id) => findings.some((f) => f.findingKey === id))
+            : findings.map((f) => f.findingKey)
+
+        const initialSelection = Object.fromEntries(
+          findings.map((f) => [f.findingKey, validInitialIds.includes(f.findingKey)]),
+        )
         setSelectedByKey(initialSelection)
-        setSubject((json.subject as string) ?? "")
-        setPreviewHtml((json.html as string) ?? "")
-        setTo((json.to as string[]) ?? [])
-        setCc((json.cc as string[]) ?? [])
+
+        const previewJson =
+          validInitialIds.length > 0 && validInitialIds.length < findings.length
+            ? await fetchPreview(validInitialIds)
+            : json
+        if (cancelled) return
+
+        setSubject((previewJson.subject as string) ?? "")
+        setPreviewHtml((previewJson.html as string) ?? "")
+        setTo((previewJson.to as string[]) ?? [])
+        setCc((previewJson.cc as string[]) ?? [])
       } catch {
         if (!cancelled) {
           toast.error("Error al cargar vista previa del correo")

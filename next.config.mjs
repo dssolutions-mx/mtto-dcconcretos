@@ -39,6 +39,7 @@ const nextConfig = {
     return [
       { source: '/personal', destination: '/gestion/personal', permanent: false },
       { source: '/organizacion/personal', destination: '/gestion/personal', permanent: false },
+      { source: '/diesel/almacen', destination: '/diesel', permanent: false },
     ]
   },
   async headers() {

@@ -43,8 +43,7 @@ export async function POST(req: NextRequest) {
     ? body.gapIds.map((id) => String(id).trim()).filter(Boolean)
     : []
 
-  const admin = createAdminClient()
-  const context = await loadWarehouseGapContext(admin, warehouseId)
+  const context = await loadWarehouseGapContext(auth.supabase, warehouseId)
   if ('error' in context) {
     return NextResponse.json({ error: context.error }, { status: context.status })
   }
@@ -57,6 +56,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: selectedGaps.error }, { status: selectedGaps.status })
   }
 
+  const admin = createAdminClient()
   const draft = await buildDieselGapEmailDraft(admin, context, selectedGaps)
   const { to, cc } = finalizeRecipients(body.to, body.cc, draft)
 
@@ -68,7 +68,13 @@ export async function POST(req: NextRequest) {
   const finalHtml = prependExecutiveNote(draft.html, body.note)
 
   try {
-    await sendDieselGapMail({ to, cc, subject: finalSubject, html: finalHtml })
+    await sendDieselGapMail({
+      to,
+      cc,
+      subject: finalSubject,
+      html: finalHtml,
+      evidencePhotos: draft.evidencePhotos,
+    })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Error al enviar correo'
     return NextResponse.json({ error: message }, { status: 500 })

@@ -3,32 +3,23 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import {
   assertDieselGapEmailSender,
   assertWarehouseInScope,
+  type DieselGapEmailAuthResult,
 } from '@/lib/diesel/gap-email/auth'
 import { buildDieselGapEmailDraft } from '@/lib/diesel/gap-email/build-email-draft'
 import {
   filterGapsByIds,
   loadWarehouseGapContext,
+  parseGapIdFilters,
 } from '@/lib/diesel/gap-email/load-warehouse-gaps'
 
 export const runtime = 'nodejs'
 
-export async function GET(req: NextRequest) {
-  const auth = await assertDieselGapEmailSender()
-  if (!auth.ok) return auth.response
-
-  const { searchParams } = req.nextUrl
-  const warehouseId = searchParams.get('warehouseId')?.trim()
-  if (!warehouseId) {
-    return NextResponse.json({ error: 'warehouseId required' }, { status: 400 })
-  }
-
-  const gapIdFilters = searchParams
-    .getAll('gapId')
-    .map((s) => s.trim())
-    .filter(Boolean)
-
-  const admin = createAdminClient()
-  const context = await loadWarehouseGapContext(admin, warehouseId)
+async function buildPreviewResponse(
+  auth: Extract<DieselGapEmailAuthResult, { ok: true }>,
+  warehouseId: string,
+  gapIdFilters: string[],
+) {
+  const context = await loadWarehouseGapContext(auth.supabase, warehouseId)
   if ('error' in context) {
     return NextResponse.json({ error: context.error }, { status: context.status })
   }
@@ -52,6 +43,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  const admin = createAdminClient()
   const draft = await buildDieselGapEmailDraft(admin, context, selectedGaps)
 
   return NextResponse.json({
@@ -66,4 +58,45 @@ export async function GET(req: NextRequest) {
     plantName: draft.plantName,
     plantCode: draft.plantCode,
   })
+}
+
+function parseGapIdList(values: string[]): string[] {
+  return [...new Set(values.flatMap((value) => value.split(',')).map((s) => s.trim()).filter(Boolean))]
+}
+
+export async function GET(req: NextRequest) {
+  const auth = await assertDieselGapEmailSender()
+  if (!auth.ok) return auth.response
+
+  const { searchParams } = req.nextUrl
+  const warehouseId = searchParams.get('warehouseId')?.trim()
+  if (!warehouseId) {
+    return NextResponse.json({ error: 'warehouseId required' }, { status: 400 })
+  }
+
+  const gapIdFilters = parseGapIdFilters(searchParams)
+  return buildPreviewResponse(auth, warehouseId, gapIdFilters)
+}
+
+export async function POST(req: NextRequest) {
+  const auth = await assertDieselGapEmailSender()
+  if (!auth.ok) return auth.response
+
+  let body: { warehouseId?: string; gapIds?: string[] }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'JSON inválido' }, { status: 400 })
+  }
+
+  const warehouseId = body.warehouseId?.trim()
+  if (!warehouseId) {
+    return NextResponse.json({ error: 'warehouseId required' }, { status: 400 })
+  }
+
+  const gapIdFilters = Array.isArray(body.gapIds)
+    ? parseGapIdList(body.gapIds.map(String))
+    : []
+
+  return buildPreviewResponse(auth, warehouseId, gapIdFilters)
 }

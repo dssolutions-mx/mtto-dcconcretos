@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker"
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist"
-import { CacheFirst, ExpirationPlugin, NetworkFirst, Serwist } from "serwist"
+import { CacheFirst, ExpirationPlugin, NetworkFirst, NetworkOnly, Serwist } from "serwist"
 
 /** Must match PRECACHE handler below — defaultCache uses its own page caches. */
 const CHECKLIST_EXECUTION_CACHE = "checklist-execution-pages"
@@ -25,6 +25,10 @@ const serwist = new Serwist({
     cleanupOutdatedCaches: true,
   },
   runtimeCaching: [
+    {
+      matcher: ({ url }) => url.pathname === "/manifest.webmanifest",
+      handler: new NetworkOnly(),
+    },
     {
       matcher: /\/_next\/static\/css\/.+\.css$/i,
       handler: new CacheFirst({
