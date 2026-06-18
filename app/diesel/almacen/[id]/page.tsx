@@ -27,8 +27,11 @@ import {
   DollarSign,
   CheckCircle2,
   ArrowRightLeft,
-  RefreshCw
+  RefreshCw,
+  Mail,
 } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { DieselGapEmailComposer } from "@/components/diesel-inventory/diesel-gap-email-composer"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
@@ -137,6 +140,8 @@ export default function WarehouseDetailPage() {
   // Cuenta litros gap modal state
   const [selectedGap, setSelectedGap] = useState<CuentaLitrosGap | null>(null)
   const [isGapModalOpen, setIsGapModalOpen] = useState(false)
+  const [deselectedGapIdsForEmail, setDeselectedGapIdsForEmail] = useState<Set<string>>(new Set())
+  const [isGapEmailComposerOpen, setIsGapEmailComposerOpen] = useState(false)
   
   // Mark transfer modal state
   const [transferTransaction, setTransferTransaction] = useState<Transaction | null>(null)
@@ -173,6 +178,14 @@ export default function WarehouseDetailPage() {
   const significantCuentaLitrosGaps = useMemo(
     () => getSignificantGaps(cuentaLitrosGaps),
     [cuentaLitrosGaps],
+  )
+
+  const orderedSelectedGapIdsForEmail = useMemo(
+    () =>
+      significantCuentaLitrosGaps
+        .filter((g) => !deselectedGapIdsForEmail.has(g.id))
+        .map((g) => g.id),
+    [significantCuentaLitrosGaps, deselectedGapIdsForEmail],
   )
 
   const gapsByTransactionId = useMemo(
@@ -399,6 +412,7 @@ export default function WarehouseDetailPage() {
   const loadWarehouseData = async () => {
     try {
       setLoading(true)
+      setDeselectedGapIdsForEmail(new Set())
 
       // Load warehouse details - verify it's a diesel warehouse
       const { data: warehouseData, error: warehouseError } = await supabase
@@ -701,6 +715,27 @@ export default function WarehouseDetailPage() {
     setIsGapModalOpen(true)
     setIsEvidenceModalOpen(false)
     setEvidenceTransaction(null)
+  }
+
+  const toggleGapForEmail = (gapId: string, checked: boolean) => {
+    setDeselectedGapIdsForEmail((prev) => {
+      const next = new Set(prev)
+      if (checked) next.delete(gapId)
+      else next.add(gapId)
+      return next
+    })
+  }
+
+  const handleOpenGapEmailComposer = () => {
+    if (orderedSelectedGapIdsForEmail.length === 0) {
+      toast({
+        title: "Selecciona huecos",
+        description: "Marca al menos un hueco para incluir en el correo.",
+        variant: "destructive",
+      })
+      return
+    }
+    setIsGapEmailComposerOpen(true)
   }
 
   const handleOpenEvidence = (transaction: Transaction) => {
@@ -1224,42 +1259,58 @@ export default function WarehouseDetailPage() {
               </p>
             ) : (
               <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="destructive">
-                    {significantCuentaLitrosGaps.length} hueco
-                    {significantCuentaLitrosGaps.length !== 1 ? "s" : ""}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    ~{sumUnregisteredLiters(significantCuentaLitrosGaps).toFixed(0)} L sin registrar en total
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="destructive">
+                      {significantCuentaLitrosGaps.length} hueco
+                      {significantCuentaLitrosGaps.length !== 1 ? "s" : ""}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      ~{sumUnregisteredLiters(significantCuentaLitrosGaps).toFixed(0)} L sin registrar en total
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenGapEmailComposer}
+                    disabled={orderedSelectedGapIdsForEmail.length === 0}
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Enviar correo ({orderedSelectedGapIdsForEmail.length})
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  {significantCuentaLitrosGaps.slice(0, 5).map((gap) => (
-                    <button
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {significantCuentaLitrosGaps.map((gap) => (
+                    <div
                       key={gap.id}
-                      type="button"
-                      onClick={() => handleOpenGap(gap)}
-                      className="w-full text-left p-3 rounded-lg border hover:bg-orange-50/50 transition-colors"
+                      className="flex items-start gap-2 p-3 rounded-lg border hover:bg-orange-50/50 transition-colors"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge
-                          variant={
-                            gap.gap_type === "unregistered_dispense" ? "destructive" : "secondary"
-                          }
-                        >
-                          {gap.short_label}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{gap.time_window_label}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{gap.narrative}</p>
-                    </button>
+                      <Checkbox
+                        id={`gap-email-${gap.id}`}
+                        checked={!deselectedGapIdsForEmail.has(gap.id)}
+                        onCheckedChange={(v) => toggleGapForEmail(gap.id, v === true)}
+                        className="mt-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleOpenGap(gap)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge
+                            variant={
+                              gap.gap_type === "unregistered_dispense" ? "destructive" : "secondary"
+                            }
+                          >
+                            {gap.short_label}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{gap.time_window_label}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{gap.narrative}</p>
+                      </button>
+                    </div>
                   ))}
                 </div>
-                {significantCuentaLitrosGaps.length > 5 && (
-                  <p className="text-xs text-muted-foreground">
-                    Y {significantCuentaLitrosGaps.length - 5} huecos más en el historial…
-                  </p>
-                )}
               </>
             )}
           </CardContent>
@@ -1835,6 +1886,17 @@ export default function WarehouseDetailPage() {
         onClose={() => { setIsGapModalOpen(false); setSelectedGap(null) }}
         onViewEvidence={handleViewEvidenceFromGap}
       />
+
+      {warehouse && isGapEmailComposerOpen && (
+        <DieselGapEmailComposer
+          key={`${warehouseId}:${orderedSelectedGapIdsForEmail.join(",")}`}
+          open={isGapEmailComposerOpen}
+          onClose={() => setIsGapEmailComposerOpen(false)}
+          warehouseId={warehouseId}
+          warehouseLabel={`${warehouse.name} (${warehouse.warehouse_code})`}
+          initialGapIds={orderedSelectedGapIdsForEmail}
+        />
+      )}
 
       {/* Mark Transfer Modal */}
       <MarkTransferModal
