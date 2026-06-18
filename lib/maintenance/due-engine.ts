@@ -4,6 +4,7 @@ import {
   type PreprocessedHistoryRow,
 } from "./history-preprocess";
 import type { MaintenanceHistoryMeterRow, MaintenanceUnit } from "@/lib/utils/maintenance-units";
+import { getMaintenanceValue } from "@/lib/utils/maintenance-units";
 
 export type DueEngineInterval = {
   id: string;
@@ -169,6 +170,38 @@ function toCheckpointRef(
   };
 }
 
+function isCorrectiveMaintenanceHistoryType(type: string | null | undefined): boolean {
+  const t = type?.toLowerCase();
+  return t === "corrective" || t === "correctivo";
+}
+
+function assignCorrectiveMeterAbsorption(
+  milestones: DueMilestone[],
+  history: DueEngineHistoryRow[],
+  unit: MaintenanceUnit
+): void {
+  const correctiveRows = (history ?? [])
+    .filter((row) => isCorrectiveMaintenanceHistoryType(row.type))
+    .map((row) => ({ row, meterValue: getMaintenanceValue(row, unit) }))
+    .filter((entry) => entry.meterValue > 0)
+    .sort((a, b) => a.meterValue - b.meterValue);
+
+  for (const { row, meterValue } of correctiveRows) {
+    const ref: CheckpointRef = {
+      maintenancePlanId: row.maintenance_plan_id ?? "corrective",
+      meterValue,
+      date: row.date ?? null,
+      intervalValue: 0,
+    };
+    for (const m of milestones) {
+      if (m.status === "unpaid" && m.due <= meterValue) {
+        m.status = "absorbed";
+        m.absorbedBy = ref;
+      }
+    }
+  }
+}
+
 function assignCheckpoints(
   milestones: DueMilestone[],
   checkpoints: PreprocessedHistoryRow[],
@@ -179,14 +212,16 @@ function assignCheckpoints(
     const intervalValue = Number(interval?.interval_value) || 0;
     const ref = toCheckpointRef(cp, intervalValue);
 
-    const nearest = findNearestUnassignedDue(
-      milestones,
-      cp.maintenance_plan_id,
-      cp.meterValue
-    );
-    if (nearest) {
-      nearest.status = "paid";
-      nearest.paidBy = ref;
+    if (interval) {
+      const nearest = findNearestUnassignedDue(
+        milestones,
+        cp.maintenance_plan_id,
+        cp.meterValue
+      );
+      if (nearest) {
+        nearest.status = "paid";
+        nearest.paidBy = ref;
+      }
     }
 
     for (const m of milestones) {
@@ -254,11 +289,13 @@ export function buildDueLedger(params: {
   const { usable, excluded } = preprocessPreventiveHistory(history, unit, {
     planIdToIntervalId: options?.planIdToIntervalId,
     knownIntervalIds,
+    knownIntervals: intervals,
     deadIntervalCatalog: options?.deadIntervalCatalog,
   });
 
   const milestones = generateMilestones(intervals, cycleLength, currentValue, horizon);
   assignCheckpoints(milestones, usable, intervalById);
+  assignCorrectiveMeterAbsorption(milestones, history, unit);
 
   const lastServiceMeter = usable.length
     ? Math.max(...usable.map((r) => r.meterValue))
@@ -375,7 +412,46 @@ export function buildDueLedger(params: {
           cycleForService = latestSettled.cycle;
           reasons.paidBy = latestSettled.paidBy;
           lastMaintenanceDate = latestSettled.paidBy?.date ?? null;
+        } else if (
+          overdueInWindow.length === 0 &&
+          !hasUnpaidAtOrBeforeCurrent &&
+          latestSettled &&
+          (latestSettled.status === "paid" || latestSettled.status === "absorbed") &&
+          latestSettled.due <= currentValue &&
+          (status === "scheduled" || status === "upcoming") &&
+          nextDueValue != null &&
+          nextDueValue - currentValue > nextCycleMaxDistance
+        ) {
+          status = latestSettled.status === "paid" ? "completed" : "covered";
+          wasPerformed = true;
+          nextDueValue = latestSettled.due;
+          cycleForService = latestSettled.cycle;
+          if (latestSettled.status === "paid") {
+            reasons.paidBy = latestSettled.paidBy;
+            lastMaintenanceDate = latestSettled.paidBy?.date ?? null;
+          } else {
+            reasons.absorbedBy = latestSettled.absorbedBy;
+            lastMaintenanceDate = latestSettled.absorbedBy?.date ?? null;
+          }
         }
+      }
+    }
+
+    const settledForInterval = milestones.filter(
+      (m) =>
+        m.intervalId === interval.id &&
+        (m.status === "paid" || m.status === "absorbed")
+    );
+    if (settledForInterval.length > 0) {
+      const latestSettledForInterval = [...settledForInterval].sort(
+        (a, b) => b.due - a.due
+      )[0];
+      wasPerformed = true;
+      if (!lastMaintenanceDate) {
+        lastMaintenanceDate =
+          latestSettledForInterval.paidBy?.date ??
+          latestSettledForInterval.absorbedBy?.date ??
+          null;
       }
     }
 

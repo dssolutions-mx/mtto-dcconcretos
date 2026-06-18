@@ -339,6 +339,77 @@ test("null-meter preventive row excluded without crash", () => {
   assert.ok(results.length > 0);
 });
 
+test("orphan plan id still counts as meter checkpoint for absorption and KPI", () => {
+  const intervals = [
+    { id: "int-5950", interval_value: 5950, type: "hours", is_recurring: true, is_first_cycle_only: false },
+    { id: "int-6300", interval_value: 6300, type: "hours", is_recurring: true, is_first_cycle_only: false },
+    { id: "int-6650", interval_value: 6650, type: "hours", is_recurring: true, is_first_cycle_only: false },
+  ];
+  const history = [
+    { type: "preventive", maintenance_plan_id: "dead-plan-6300", hours: 6486, date: "2026-05-05" },
+    { type: "preventive", maintenance_plan_id: "int-5950", hours: 5673, date: "2025-12-21" },
+  ];
+  const results = computeCyclicIntervalResults({
+    intervals,
+    history,
+    currentValue: 6669,
+    unit: "hours",
+  });
+  assert.ok(["covered", "completed"].includes(statusOf(results, 5950)!));
+  assert.notEqual(statusOf(results, 5950), "overdue");
+  assert.notEqual(statusOf(results, 6300), "overdue");
+  assert.equal(statusOf(results, 6650), "overdue");
+  const row5950 = results.find((r) => r.interval.interval_value === 5950);
+  assert.equal(row5950?.wasPerformed, true);
+});
+
+test("dead foreign plan id remaps by interval_value when catalog provided", () => {
+  const intervals = [
+    { id: "int-6300", interval_value: 6300, type: "hours", is_recurring: true, is_first_cycle_only: false },
+    { id: "int-7000", interval_value: 7000, type: "hours", is_recurring: true, is_first_cycle_only: false },
+  ];
+  const history = [
+    { type: "preventive", maintenance_plan_id: "foreign-6300", hours: 6486, date: "2026-05-05" },
+  ];
+  const deadCatalog = new Map([["foreign-6300", { interval_value: 6300, type: "hours" }]]);
+  const results = computeCyclicIntervalResults({
+    intervals,
+    history,
+    currentValue: 6669,
+    unit: "hours",
+    options: { deadIntervalCatalog: deadCatalog },
+  });
+  assert.equal(statusOf(results, 6300), "completed");
+});
+
+test("corrective meter reading absorbs unpaid preventive dues after last preventive", () => {
+  const history = [
+    ...bp01History,
+    { type: "corrective", maintenance_plan_id: null, hours: 5103, date: "2026-06-09" },
+  ];
+  const results = computeCyclicIntervalResults({
+    intervals: sitrakBp01Intervals,
+    history,
+    currentValue: 5176,
+    unit: "hours",
+  });
+  assert.equal(statusOf(results, 1500), "covered");
+});
+
+test("overdue interval shows prior cycle service date instead of never performed", () => {
+  const intervals = sitrakBp01Intervals;
+  const results = computeCyclicIntervalResults({
+    intervals,
+    history: bp01History,
+    currentValue: 5176,
+    unit: "hours",
+  });
+  const row1500 = results.find((r) => r.interval.interval_value === 1500);
+  assert.equal(row1500?.status, "overdue");
+  assert.equal(row1500?.wasPerformed, true);
+  assert.ok(row1500?.lastMaintenanceDate);
+});
+
 test("schedule view hides covered; debug mode can include current-cycle covered", () => {
   assert.equal(isActionableCyclicScheduleRow("covered", 1, 2), false);
   assert.equal(isActionableCyclicScheduleRow("covered", 2, 2), false);

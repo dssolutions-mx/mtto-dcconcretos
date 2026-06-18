@@ -1,5 +1,19 @@
 import { createClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import {
+  computeCyclicIntervalResults,
+  computeCyclicIntervalResultsForAsset,
+  cyclicResultsToListFlags,
+} from '@/lib/utils/cyclic-maintenance'
+import {
+  getCurrentValue,
+  getMaintenanceUnit,
+  getRawModelMaintenanceUnit,
+} from '@/lib/utils/maintenance-units'
+import {
+  collectForeignPlanIds,
+  fetchDeadIntervalCatalogForPlanIds,
+} from '@/lib/maintenance/dead-interval-catalog'
 
 export async function GET() {
   try {
@@ -93,7 +107,7 @@ export async function GET() {
       // Fetch maintenance history for all assets
       const { data: history, error: historyError } = await supabase
         .from('maintenance_history')
-        .select('asset_id, maintenance_plan_id, hours, kilometers, date')
+        .select('id, asset_id, maintenance_plan_id, hours, kilometers, date, type')
         .in('asset_id', assetIds)
         .order('date', { ascending: false })
         
@@ -103,6 +117,13 @@ export async function GET() {
         maintenanceHistory = history || []
       }
     }
+
+    const knownIntervalIds = new Set(maintenanceIntervals.map((interval) => interval.id))
+    const foreignPlanIds = collectForeignPlanIds(maintenanceHistory, knownIntervalIds)
+    const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+      supabase,
+      foreignPlanIds
+    )
 
     // Calculate stats
     const stats = {
@@ -131,49 +152,35 @@ export async function GET() {
       // Get maintenance history for this asset
       const assetHistory = maintenanceHistory.filter(h => h.asset_id === asset.id)
       
-      // Calculate proper maintenance status using same logic as individual asset page
       let hasMaintenanceOverdue = false
       let hasMaintenanceUpcoming = false
-      
+
       if (assetIntervals.length > 0) {
-        // Find the last maintenance hours for this asset
-        const allMaintenanceHours = assetHistory
-          .map(m => Number(m.hours) || 0)
-          .filter(h => h > 0)
-          .sort((a, b) => b - a) // Sort from highest to lowest
-        
-        const lastMaintenanceHours = allMaintenanceHours.length > 0 ? allMaintenanceHours[0] : 0
-        const currentHours = asset.current_hours || 0
-        
-        for (const interval of assetIntervals) {
-          const intervalHours = interval.interval_value || 0
-          
-          // Find if this specific maintenance was already performed
-          const lastMaintenanceOfType = assetHistory.find(m => 
-            m.maintenance_plan_id === interval.id
-          )
-          
-          if (lastMaintenanceOfType) {
-            // This maintenance was already performed, skip it
-            continue
-          }
-          
-          // Check if it was "covered" by later maintenances
-          if (intervalHours <= lastMaintenanceHours) {
-            // Was covered by later maintenances, skip it
-            continue
-          } else if (currentHours >= intervalHours) {
-            // Current hours already passed this interval - OVERDUE
-            hasMaintenanceOverdue = true
-            break // No need to check further if we found an overdue maintenance
-          } else {
-            // Current hours haven't reached this interval yet - check proximity
-            const hoursRemaining = intervalHours - currentHours
-            if (hoursRemaining <= 100) {
-              hasMaintenanceUpcoming = true
-            }
-          }
-        }
+        const maintenanceUnit = getMaintenanceUnit(asset)
+        const rawUnit = getRawModelMaintenanceUnit(asset)
+        const currentValue = getCurrentValue(asset, maintenanceUnit)
+
+        const intervalResults =
+          rawUnit === 'both'
+            ? computeCyclicIntervalResultsForAsset({
+                intervals: assetIntervals,
+                history: assetHistory,
+                currentHours: Number(asset.current_hours) || 0,
+                currentKilometers: Number(asset.current_kilometers) || 0,
+                rawMaintenanceUnit: rawUnit,
+                options: { deadIntervalCatalog },
+              })
+            : computeCyclicIntervalResults({
+                intervals: assetIntervals,
+                history: assetHistory,
+                currentValue,
+                unit: maintenanceUnit,
+                options: { deadIntervalCatalog },
+              })
+
+        const flags = cyclicResultsToListFlags(intervalResults, assetHistory, maintenanceUnit)
+        hasMaintenanceOverdue = flags.hasOverdue
+        hasMaintenanceUpcoming = flags.hasUpcoming
       }
 
       // Determine priority status for sorting

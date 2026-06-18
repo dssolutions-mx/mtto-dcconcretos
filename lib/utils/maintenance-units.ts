@@ -89,14 +89,24 @@ export function filterPreventiveHistoryForIntervals(
   });
 }
 
-/** Highest meter reading among plan-linked preventive history (hours or km per `unit`). */
+/** All preventive rows with a positive meter reading (checkpoint semantics). */
+export function getAllPreventiveMeterReadings(
+  history: MaintenanceHistoryMeterRow[],
+  unit: MaintenanceUnit
+): number[] {
+  return (history ?? [])
+    .filter((m) => isPreventiveMaintenanceHistoryType(m?.type))
+    .map((m) => getMaintenanceValue(m, unit))
+    .filter((v) => v > 0);
+}
+
+/** Highest meter reading among preventive history (hours or km per `unit`). */
 export function getMaxPreventiveMeterReading(
   history: MaintenanceHistoryMeterRow[],
-  maintenanceIntervals: MaintenanceIntervalMeterRow[],
+  _maintenanceIntervals: MaintenanceIntervalMeterRow[],
   unit: MaintenanceUnit
 ): number {
-  const preventive = filterPreventiveHistoryForIntervals(history, maintenanceIntervals);
-  const values = preventive.map((m) => getMaintenanceValue(m, unit)).filter((v) => v > 0);
+  const values = getAllPreventiveMeterReadings(history, unit);
   if (!values.length) return 0;
   return Math.max(...values);
 }
@@ -104,10 +114,12 @@ export function getMaxPreventiveMeterReading(
 /** Newest preventive row among those tied for the max meter reading (by `date` desc). */
 export function getLastPreventiveHistoryAtMaxMeter(
   history: MaintenanceHistoryMeterRow[],
-  maintenanceIntervals: MaintenanceIntervalMeterRow[],
+  _maintenanceIntervals: MaintenanceIntervalMeterRow[],
   unit: MaintenanceUnit
 ): MaintenanceHistoryMeterRow | null {
-  const preventive = filterPreventiveHistoryForIntervals(history, maintenanceIntervals);
+  const preventive = (history ?? []).filter((m) =>
+    isPreventiveMaintenanceHistoryType(m?.type)
+  );
   const readings = preventive
     .map((m) => getMaintenanceValue(m, unit))
     .filter((v) => v > 0);

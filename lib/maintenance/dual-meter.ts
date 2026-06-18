@@ -42,9 +42,15 @@ export function buildLedgersForAsset(params: {
   currentHours: number;
   currentKilometers: number;
   rawMaintenanceUnit?: string | null;
+  deadIntervalCatalog?: Map<string, { interval_value: number; type?: string | null }>;
+  planIdToIntervalId?: Record<string, string>;
 }): DualMeterLedgerResult {
   const raw = (params.rawMaintenanceUnit ?? "hours").toLowerCase();
   const primaryUnit = parseMaintenanceUnitString(raw);
+  const ledgerOptions = {
+    deadIntervalCatalog: params.deadIntervalCatalog,
+    planIdToIntervalId: params.planIdToIntervalId,
+  };
 
   if (raw === "both") {
     const { hours: hourIntervals, kilometers: kmIntervals } = splitIntervalsByMeter(
@@ -57,6 +63,7 @@ export function buildLedgersForAsset(params: {
         history: params.history,
         currentValue: params.currentHours,
         unit: "hours",
+        options: ledgerOptions,
       });
     }
     if (kmIntervals.length > 0) {
@@ -65,6 +72,7 @@ export function buildLedgersForAsset(params: {
         history: params.history,
         currentValue: params.currentKilometers,
         unit: "kilometers",
+        options: ledgerOptions,
       });
     }
     return result;
@@ -77,6 +85,7 @@ export function buildLedgersForAsset(params: {
     history: params.history,
     currentValue,
     unit: primaryUnit,
+    options: ledgerOptions,
   });
 
   return primaryUnit === "kilometers"

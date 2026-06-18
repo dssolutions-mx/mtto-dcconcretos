@@ -45,7 +45,10 @@ import {
   isActionableCyclicScheduleRow,
   type CyclicMaintenanceStatus,
 } from "@/lib/utils/cyclic-maintenance";
-import { expandAssetIdsForOperatorChecklists } from "@/lib/composite-operator-scope";
+import {
+  collectForeignPlanIds,
+  fetchDeadIntervalCatalogForPlanIds,
+} from "@/lib/maintenance/dead-interval-catalog";
 
 function sortUpcomingMaintenances(list: Array<{
   status: string;
@@ -321,50 +324,70 @@ export default function AssetDetailsPage({ params }: { params: Promise<{ id: str
       return;
     }
 
-    try {
-      setUpcomingLoading(true);
+    let cancelled = false;
 
-      const currentValue = getCurrentValue(asset, maintenanceUnit);
-      const rawUnit = getRawModelMaintenanceUnit(asset);
+    const loadUpcoming = async () => {
+      try {
+        setUpcomingLoading(true);
 
-      const intervalResults =
-        rawUnit === "both"
-          ? computeCyclicIntervalResultsForAsset({
-              intervals: maintenanceIntervals,
-              history: maintenanceHistory,
-              currentHours: Number(asset.current_hours) || 0,
-              currentKilometers: Number(asset.current_kilometers) || 0,
-              rawMaintenanceUnit: rawUnit,
-            })
-          : computeCyclicIntervalResults({
-              intervals: maintenanceIntervals,
-              history: maintenanceHistory,
-              currentValue,
-              unit: maintenanceUnit,
-            });
+        const currentValue = getCurrentValue(asset, maintenanceUnit);
+        const rawUnit = getRawModelMaintenanceUnit(asset);
+        const knownIntervalIds = new Set(maintenanceIntervals.map((i) => i.id));
+        const supabase = createClient();
+        const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+          supabase,
+          collectForeignPlanIds(maintenanceHistory, knownIntervalIds)
+        );
 
-      const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
-      const cycleLength = Math.max(
-        ...maintenanceIntervals.map((i) => Number(i.interval_value) || 0),
-        1
-      );
-      const currentCycleNum = Math.floor(currentValue / cycleLength) + 1;
+        if (cancelled) return;
 
-      const filteredUpcoming = upcomingList.filter((maintenance) =>
-        isActionableCyclicScheduleRow(
-          maintenance.status as CyclicMaintenanceStatus,
-          maintenance.cycleForService ?? 1,
-          currentCycleNum
-        )
-      );
+        const intervalResults =
+          rawUnit === "both"
+            ? computeCyclicIntervalResultsForAsset({
+                intervals: maintenanceIntervals,
+                history: maintenanceHistory,
+                currentHours: Number(asset.current_hours) || 0,
+                currentKilometers: Number(asset.current_kilometers) || 0,
+                rawMaintenanceUnit: rawUnit,
+                options: { deadIntervalCatalog },
+              })
+            : computeCyclicIntervalResults({
+                intervals: maintenanceIntervals,
+                history: maintenanceHistory,
+                currentValue,
+                unit: maintenanceUnit,
+                options: { deadIntervalCatalog },
+              });
 
-      setUpcomingMaintenances(sortUpcomingMaintenances(filteredUpcoming));
-    } catch (error) {
-      console.error("Error calculating upcoming maintenances:", error);
-      setUpcomingMaintenances([]);
-    } finally {
-      setUpcomingLoading(false);
-    }
+        const upcomingList = cyclicResultsToUpcomingUi(intervalResults, maintenanceUnit);
+        const cycleLength = Math.max(
+          ...maintenanceIntervals.map((i) => Number(i.interval_value) || 0),
+          1
+        );
+        const currentCycleNum = Math.floor(currentValue / cycleLength) + 1;
+
+        const filteredUpcoming = upcomingList.filter((maintenance) =>
+          isActionableCyclicScheduleRow(
+            maintenance.status as CyclicMaintenanceStatus,
+            maintenance.cycleForService ?? 1,
+            currentCycleNum
+          )
+        );
+
+        setUpcomingMaintenances(sortUpcomingMaintenances(filteredUpcoming));
+      } catch (error) {
+        console.error("Error calculating upcoming maintenances:", error);
+        if (!cancelled) setUpcomingMaintenances([]);
+      } finally {
+        if (!cancelled) setUpcomingLoading(false);
+      }
+    };
+
+    void loadUpcoming();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     maintenanceIntervals,
     asset,

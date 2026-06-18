@@ -66,6 +66,8 @@ export type CyclicComputeOptions = {
   applyEarliestUnpaid?: boolean;
   /** Legacy plan-id → interval-id remap for history preprocessing. */
   planIdToIntervalId?: Record<string, string>;
+  /** Foreign/dead plan ids → interval_value for value-based remap to current model. */
+  deadIntervalCatalog?: Map<string, { interval_value: number; type?: string | null }>;
   /** Statuses to include in returned list (default: actionable + covered). */
   includeStatuses?: CyclicMaintenanceStatus[];
 };
@@ -148,6 +150,8 @@ export function computeCyclicIntervalResultsForAsset(params: {
     currentHours: params.currentHours,
     currentKilometers: params.currentKilometers,
     rawMaintenanceUnit: params.rawMaintenanceUnit,
+    deadIntervalCatalog: params.options?.deadIntervalCatalog,
+    planIdToIntervalId: params.options?.planIdToIntervalId,
   });
 
   const results: CyclicIntervalResult[] = [];
@@ -178,6 +182,7 @@ export function computeCyclicIntervalResults(params: {
       upcomingThreshold: options?.upcomingThreshold ?? DEFAULT_UPCOMING_THRESHOLD,
       nextCycleMaxDistance: options?.nextCycleMaxDistance ?? DEFAULT_NEXT_CYCLE_MAX,
       planIdToIntervalId: options?.planIdToIntervalId,
+      deadIntervalCatalog: options?.deadIntervalCatalog,
     },
   });
 

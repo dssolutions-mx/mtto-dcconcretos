@@ -17,11 +17,19 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { createClient } from "@/lib/supabase"
 import {
   computeCyclicIntervalResults,
+  computeCyclicIntervalResultsForAsset,
   cyclicResultsToListFlags,
   filterRelevantCyclicResults,
-  parseMaintenanceUnitString,
 } from "@/lib/utils/cyclic-maintenance"
-import { getCurrentValue } from "@/lib/utils/maintenance-units"
+import {
+  getCurrentValue,
+  getMaintenanceUnit,
+  getRawModelMaintenanceUnit,
+} from "@/lib/utils/maintenance-units"
+import {
+  collectForeignPlanIds,
+  fetchDeadIntervalCatalogForPlanIds,
+} from "@/lib/maintenance/dead-interval-catalog"
 
 interface AssetsListProps {
   assets: Asset[] | null
@@ -79,11 +87,18 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
         const assetIds = assets.map(asset => asset.id)
         const { data: history, error: historyError } = await supabase
           .from('maintenance_history')
-          .select('asset_id, maintenance_plan_id, hours, kilometers, date')
+          .select('id, asset_id, maintenance_plan_id, hours, kilometers, date, type')
           .in('asset_id', assetIds)
           .order('date', { ascending: false })
         
         if (historyError) throw historyError
+
+        const knownIntervalIds = new Set((intervals ?? []).map((interval) => interval.id))
+        const foreignPlanIds = collectForeignPlanIds(history ?? [], knownIntervalIds)
+        const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+          supabase,
+          foreignPlanIds
+        )
         
         // Process data for each asset using CYCLIC maintenance logic
         const data: MaintenanceData = {}
@@ -94,21 +109,28 @@ export function AssetsList({ assets, loading = false, error }: AssetsListProps) 
 
           const assetHistory = history?.filter((h) => h.asset_id === asset.id) || []
 
-          const maintenanceUnit = parseMaintenanceUnitString(
-            (asset as { equipment_models?: { maintenance_unit?: string } }).equipment_models
-              ?.maintenance_unit
-          )
+          const maintenanceUnit = getMaintenanceUnit(asset)
+          const rawUnit = getRawModelMaintenanceUnit(asset)
           const currentValue = getCurrentValue(asset, maintenanceUnit)
 
           const intervalResults =
             assetIntervals.length > 0
-              ? computeCyclicIntervalResults({
-                  intervals: assetIntervals,
-                  history: assetHistory,
-                  currentValue,
-                  unit: maintenanceUnit,
-                  options: { applyEarliestUnpaid: true },
-                })
+              ? rawUnit === "both"
+                ? computeCyclicIntervalResultsForAsset({
+                    intervals: assetIntervals,
+                    history: assetHistory,
+                    currentHours: Number(asset.current_hours) || 0,
+                    currentKilometers: Number(asset.current_kilometers) || 0,
+                    rawMaintenanceUnit: rawUnit,
+                    options: { deadIntervalCatalog, applyEarliestUnpaid: true },
+                  })
+                : computeCyclicIntervalResults({
+                    intervals: assetIntervals,
+                    history: assetHistory,
+                    currentValue,
+                    unit: maintenanceUnit,
+                    options: { deadIntervalCatalog, applyEarliestUnpaid: true },
+                  })
               : []
 
           const flags = cyclicResultsToListFlags(intervalResults, assetHistory, maintenanceUnit)

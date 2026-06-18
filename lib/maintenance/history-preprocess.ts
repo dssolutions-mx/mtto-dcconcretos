@@ -29,6 +29,8 @@ export type HistoryPreprocessOptions = {
   planIdToIntervalId?: Record<string, string>;
   /** Interval ids known to the model catalog */
   knownIntervalIds?: Set<string>;
+  /** Current-model intervals used to remap foreign/dead plan ids by interval_value */
+  knownIntervals?: Array<{ id: string; interval_value?: number | null }>;
   /** Dead intervals still referenced in history (id → interval_value) */
   deadIntervalCatalog?: Map<string, { interval_value: number; type?: string | null }>;
 };
@@ -48,6 +50,13 @@ export function preprocessPreventiveHistory(
   const planMap = options?.planIdToIntervalId ?? {};
   const knownIds = options?.knownIntervalIds ?? new Set<string>();
   const deadCatalog = options?.deadIntervalCatalog ?? new Map();
+  const valueToKnownId = new Map<number, string>();
+  for (const interval of options?.knownIntervals ?? []) {
+    const value = Number(interval.interval_value) || 0;
+    if (value > 0 && !valueToKnownId.has(value)) {
+      valueToKnownId.set(value, interval.id);
+    }
+  }
 
   const usable: PreprocessedHistoryRow[] = [];
   const excluded: ExcludedHistoryRow[] = [];
@@ -62,7 +71,8 @@ export function preprocessPreventiveHistory(
       continue;
     }
 
-    let intervalId = row?.maintenance_plan_id ?? null;
+    const originalPlanId = row?.maintenance_plan_id ?? null;
+    let intervalId = originalPlanId;
     if (!intervalId) {
       excluded.push({ date: row?.date ?? null, maintenance_plan_id: null, why: "missing_plan_id" });
       continue;
@@ -70,6 +80,16 @@ export function preprocessPreventiveHistory(
 
     if (!knownIds.has(intervalId) && planMap[intervalId]) {
       intervalId = planMap[intervalId];
+    }
+
+    if (!knownIds.has(intervalId)) {
+      const deadValue =
+        deadCatalog.get(intervalId)?.interval_value ??
+        (originalPlanId ? deadCatalog.get(originalPlanId)?.interval_value : undefined);
+      if (deadValue != null) {
+        const remapped = valueToKnownId.get(deadValue);
+        if (remapped) intervalId = remapped;
+      }
     }
 
     const meterValue = getMaintenanceValue(row, unit);
@@ -85,9 +105,15 @@ export function preprocessPreventiveHistory(
     const isKnown = knownIds.has(intervalId);
     const isDead = deadCatalog.has(intervalId);
     if (!isKnown && !isDead) {
+      // Orphan plan id (deleted interval or wrong model): still a meter checkpoint.
+      usable.push({
+        ...row,
+        maintenance_plan_id: intervalId,
+        meterValue,
+      });
       excluded.push({
         date: row?.date ?? null,
-        maintenance_plan_id: intervalId,
+        maintenance_plan_id: originalPlanId,
         why: "dead_interval_id",
       });
       continue;

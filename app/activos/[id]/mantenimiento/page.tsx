@@ -31,6 +31,10 @@ import {
   cyclicResultsToMantenimientoRows,
   isActionableCyclicScheduleRow,
 } from "@/lib/utils/cyclic-maintenance";
+import {
+  collectForeignPlanIds,
+  fetchDeadIntervalCatalogForPlanIds,
+} from "@/lib/maintenance/dead-interval-catalog";
 
 interface MaintenancePageProps {
   params: Promise<{
@@ -200,6 +204,13 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                 }
               });
 
+              const compositeHistory = json?.data?.maintenance_history || [];
+              const knownIntervalIds = new Set(intervals.map((interval) => interval.id));
+              const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+                supabase,
+                collectForeignPlanIds(compositeHistory, knownIntervalIds)
+              );
+
               Object.entries(intervalsByModel).forEach(([modelId, modelIntervals]) => {
                 const component = componentByModel[modelId];
                 if (!component) return;
@@ -215,7 +226,7 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                   history: componentHistory,
                   currentValue: componentValue,
                   unit: componentUnit,
-                  options: { applyEarliestUnpaid: true },
+                  options: { deadIntervalCatalog, applyEarliestUnpaid: true },
                 });
 
                 processedIntervals.push(
@@ -281,6 +292,12 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
             setCurrentCycle(currentCycleNum);
             const rawUnit = getRawModelMaintenanceUnit(asset!);
 
+            const knownIntervalIds = new Set(intervals.map((interval) => interval.id));
+            const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+              supabase,
+              collectForeignPlanIds(maintenanceHistory, knownIntervalIds)
+            );
+
             const intervalResults =
               rawUnit === "both"
                 ? computeCyclicIntervalResultsForAsset({
@@ -289,12 +306,14 @@ export default function MaintenancePage({ params }: MaintenancePageProps) {
                     currentHours: Number(asset!.current_hours) || 0,
                     currentKilometers: Number(asset!.current_kilometers) || 0,
                     rawMaintenanceUnit: rawUnit,
+                    options: { deadIntervalCatalog },
                   })
                 : computeCyclicIntervalResults({
                     intervals,
                     history: maintenanceHistory,
                     currentValue,
                     unit: maintenanceUnit,
+                    options: { deadIntervalCatalog },
                   });
             const processedIntervals: CyclicMaintenanceInterval[] = cyclicResultsToMantenimientoRows(
               intervalResults

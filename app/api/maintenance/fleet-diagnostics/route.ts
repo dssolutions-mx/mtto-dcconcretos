@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase-server";
 import { buildDueLedger } from "@/lib/maintenance/due-engine";
 import { preprocessPreventiveHistory } from "@/lib/maintenance/history-preprocess";
 import { parseMaintenanceUnitString } from "@/lib/utils/cyclic-maintenance";
+import {
+  collectForeignPlanIds,
+  fetchDeadIntervalCatalogForPlanIds,
+} from "@/lib/maintenance/dead-interval-catalog";
 
 /**
  * Fleet-wide cyclic maintenance data-quality diagnostics.
@@ -59,6 +63,18 @@ export async function GET() {
       historyByAsset.get(row.asset_id)!.push(row);
     }
 
+    const knownIntervalIds = new Set((allIntervals ?? []).map((interval) => interval.id));
+    const foreignPlanIds = new Set<string>();
+    for (const history of historyByAsset.values()) {
+      for (const planId of collectForeignPlanIds(history, knownIntervalIds)) {
+        foreignPlanIds.add(planId);
+      }
+    }
+    const deadIntervalCatalog = await fetchDeadIntervalCatalogForPlanIds(
+      supabase,
+      [...foreignPlanIds]
+    );
+
     const diagnostics = (assets ?? []).map((asset) => {
       const intervals = intervalsByModel.get(asset.model_id ?? "") ?? [];
       const unit = parseMaintenanceUnitString(
@@ -82,6 +98,7 @@ export async function GET() {
           history,
           currentValue,
           unit,
+          options: { deadIntervalCatalog },
         });
         overdueCount = ledger.byInterval.filter((r) => r.status === "overdue").length;
       }
