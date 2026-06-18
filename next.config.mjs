@@ -24,6 +24,11 @@ const nextConfig = {
   turbopack: {
     root: __dirname,
   },
+  experimental: {
+    // Serwist adds a custom webpack hook, which disables the build worker by default.
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
