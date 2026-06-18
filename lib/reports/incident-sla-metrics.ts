@@ -122,6 +122,15 @@ export function aggregateSlaKpis(rows: IncidentSlaRow[]): SlaKpiSummary {
   }
 }
 
+function isDepartmentComplianceMet(row: IncidentSlaRow): boolean {
+  const scheduleEvaluated = row.met_schedule_target !== null
+  const resolveEvaluated = row.met_resolve_target !== null
+  if (!scheduleEvaluated && !resolveEvaluated) return false
+  if (scheduleEvaluated && row.met_schedule_target !== true) return false
+  if (resolveEvaluated && row.met_resolve_target !== true) return false
+  return true
+}
+
 export function rankDepartmentsByCompliance(rows: IncidentSlaRow[]): SlaDepartmentRanking[] {
   const byDept = new Map<string, IncidentSlaRow[]>()
 
@@ -137,15 +146,12 @@ export function rankDepartmentsByCompliance(rows: IncidentSlaRow[]): SlaDepartme
       const breaches = deptRows.filter(
         (row) =>
           row.met_schedule_target === false ||
-          row.met_resolve_target === false ||
-          row.routing_sla_breached === true,
+          row.met_resolve_target === false,
       ).length
       const evaluated = deptRows.filter(
         (row) => row.met_schedule_target !== null || row.met_resolve_target !== null,
       )
-      const met = evaluated.filter(
-        (row) => row.met_schedule_target !== false && row.met_resolve_target !== false,
-      ).length
+      const met = evaluated.filter(isDepartmentComplianceMet).length
       return {
         departmentId: departmentId === '__unrouted__' ? null : departmentId,
         departmentName: deptRows[0]?.department_name ?? 'Sin departamento',
@@ -237,7 +243,7 @@ export function computeSlaRowFromIncident(input: {
     : null
 
   const targetAck = impactToAckTarget(input.impact)
-  const targetSchedule = input.target_response_hours ?? 48
+  const targetSchedule = impactToScheduleTarget(input.impact)
   const targetResolve = impactToResolveTarget(input.impact)
 
   const metAck =
@@ -291,6 +297,13 @@ function impactToAckTarget(impact: string | null | undefined): number {
   if (impact === 'Medio') return 24
   if (impact === 'Bajo') return 48
   return 24
+}
+
+function impactToScheduleTarget(impact: string | null | undefined): number {
+  if (impact === 'Alto') return 24
+  if (impact === 'Medio') return 48
+  if (impact === 'Bajo') return 72
+  return 48
 }
 
 function impactToResolveTarget(impact: string | null | undefined): number {

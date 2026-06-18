@@ -31,6 +31,20 @@ CREATE INDEX IF NOT EXISTS idx_incident_sla_targets_active_priority
 COMMENT ON TABLE public.incident_sla_targets IS
   'Configurable SLA targets by incident type, impact, department, and plant.';
 
+ALTER TABLE public.incident_sla_targets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY incident_sla_targets_select ON public.incident_sla_targets
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY incident_sla_targets_insert ON public.incident_sla_targets
+  FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY incident_sla_targets_update ON public.incident_sla_targets
+  FOR UPDATE TO authenticated USING (true);
+
+CREATE POLICY incident_sla_targets_delete ON public.incident_sla_targets
+  FOR DELETE TO authenticated USING (true);
+
 -- Seed defaults mirroring common routing-rule targets (MTTA 24h, schedule 48h, resolve 7d).
 INSERT INTO public.incident_sla_targets (name, priority, match_impact, target_ack_hours, target_schedule_hours, target_resolve_hours)
 SELECT * FROM (VALUES
@@ -45,7 +59,8 @@ WHERE NOT EXISTS (SELECT 1 FROM public.incident_sla_targets LIMIT 1);
 -- Compliance view (MTTA / MTTR / schedule + routing SLA)
 -- ---------------------------------------------------------------------------
 
-CREATE OR REPLACE VIEW public.incident_sla_compliance AS
+CREATE OR REPLACE VIEW public.incident_sla_compliance
+WITH (security_invoker = true) AS
 SELECT
   ih.id AS incident_id,
   ih.type AS incident_type,
@@ -187,15 +202,19 @@ SELECT
   CASE
     WHEN ih.routed_at IS NULL OR ih.target_response_hours IS NULL THEN NULL
     WHEN LOWER(COALESCE(ih.status, '')) IN ('resuelto', 'cerrado', 'resolved', 'closed') THEN
-      EXTRACT(EPOCH FROM (COALESCE(ih.resolved_at, ih.routed_at) - ih.routed_at)) / 3600.0
-        > ih.target_response_hours
+      CASE
+        WHEN ih.resolved_at IS NULL THEN NULL
+        ELSE EXTRACT(EPOCH FROM (ih.resolved_at - ih.routed_at)) / 3600.0 > ih.target_response_hours
+      END
     ELSE
       EXTRACT(EPOCH FROM (NOW() - ih.routed_at)) / 3600.0 > ih.target_response_hours
   END AS routing_sla_breached
 FROM public.incident_history ih
-JOIN public.assets a ON a.id = ih.asset_id
+LEFT JOIN public.assets a ON a.id = ih.asset_id
 LEFT JOIN public.departments d ON d.id = ih.routing_department_id
 WHERE ih.merged_into_id IS NULL;
 
 COMMENT ON VIEW public.incident_sla_compliance IS
   'Per-incident SLA compliance with MTTA (ack), schedule, MTTR (resolve), and routing breach flags.';
+
+GRANT SELECT ON public.incident_sla_compliance TO authenticated, service_role;

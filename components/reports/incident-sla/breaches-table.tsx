@@ -81,6 +81,11 @@ export function IncidentSlaBreachesTable({ rows, metric }: Props) {
             )}
           </TableBody>
         </Table>
+        {filtered.length > 50 && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Mostrando 50 de {filtered.length}
+          </p>
+        )}
       </CardContent>
     </Card>
   )

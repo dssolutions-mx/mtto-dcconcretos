@@ -27,14 +27,68 @@ const INCIDENT_FALLBACK_SELECT = `
   departments:routing_department_id ( name, code )
 `
 
-function parseDateRange(searchParams: URLSearchParams): { from: string; to: string } {
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const VALID_BREACH_METRICS = new Set(['any', 'ack', 'schedule', 'resolve', 'routing'])
+
+function parseDateRange(
+  searchParams: URLSearchParams,
+): { from: string; to: string } | { error: string } {
   const now = new Date()
   const defaultTo = now.toISOString().slice(0, 10)
   const defaultFrom = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10)
-  return {
-    from: searchParams.get('from') ?? defaultFrom,
-    to: searchParams.get('to') ?? defaultTo,
+  const from = searchParams.get('from') ?? defaultFrom
+  const to = searchParams.get('to') ?? defaultTo
+
+  if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) {
+    return { error: 'Formato de fecha inválido' }
   }
+
+  if (from > to) {
+    return { error: 'La fecha inicial debe ser anterior o igual a la final' }
+  }
+
+  const fromDate = new Date(`${from}T00:00:00.000Z`)
+  const toDate = new Date(`${to}T00:00:00.000Z`)
+  const days = (toDate.getTime() - fromDate.getTime()) / 86_400_000
+  if (days > 366) {
+    return { error: 'El rango de fechas no puede exceder 366 días' }
+  }
+
+  return { from, to }
+}
+
+async function fetchAssigneeNames(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase-server').createClient>>,
+  assigneeIds: string[],
+): Promise<Map<string, string>> {
+  const assigneeMap = new Map<string, string>()
+  if (assigneeIds.length === 0) return assigneeMap
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, nombre, apellido')
+    .in('id', assigneeIds)
+
+  for (const profile of profiles ?? []) {
+    assigneeMap.set(
+      profile.id,
+      `${profile.nombre ?? ''} ${profile.apellido ?? ''}`.trim() || 'Sin nombre',
+    )
+  }
+
+  return assigneeMap
+}
+
+function enrichRowsWithAssigneeNames(
+  rows: IncidentSlaRow[],
+  assigneeMap: Map<string, string>,
+): IncidentSlaRow[] {
+  return rows.map((row) => ({
+    ...row,
+    assignee_name: row.assigned_to_id
+      ? assigneeMap.get(row.assigned_to_id) ?? null
+      : null,
+  }))
 }
 
 async function loadSlaRows(
@@ -43,7 +97,7 @@ async function loadSlaRows(
   to: string,
   plantId: string | null,
   departmentId: string | null,
-): Promise<IncidentSlaRow[]> {
+): Promise<{ rows: IncidentSlaRow[]; source: 'view' | 'fallback' }> {
   const viewQuery = supabase
     .from('incident_sla_compliance')
     .select('*')
@@ -56,8 +110,15 @@ async function loadSlaRows(
   const { data: viewRows, error: viewError } = await viewQuery
 
   if (!viewError && viewRows) {
-    return viewRows as IncidentSlaRow[]
+    const rows = viewRows as IncidentSlaRow[]
+    const assigneeIds = [
+      ...new Set(rows.map((row) => row.assigned_to_id).filter(Boolean)),
+    ] as string[]
+    const assigneeMap = await fetchAssigneeNames(supabase, assigneeIds)
+    return { rows: enrichRowsWithAssigneeNames(rows, assigneeMap), source: 'view' }
   }
+
+  console.warn('[incident-sla] view unavailable, using fallback', viewError)
 
   let fallback = supabase
     .from('incident_history')
@@ -74,22 +135,9 @@ async function loadSlaRows(
   const assigneeIds = [
     ...new Set((incidents ?? []).map((row) => row.assigned_to_id).filter(Boolean)),
   ] as string[]
+  const assigneeMap = await fetchAssigneeNames(supabase, assigneeIds)
 
-  const assigneeMap = new Map<string, string>()
-  if (assigneeIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, nombre, apellido')
-      .in('id', assigneeIds)
-    for (const profile of profiles ?? []) {
-      assigneeMap.set(
-        profile.id,
-        `${profile.nombre ?? ''} ${profile.apellido ?? ''}`.trim() || 'Sin nombre',
-      )
-    }
-  }
-
-  return (incidents ?? [])
+  const rows = (incidents ?? [])
     .map((row) => {
       const assets = row.assets as { plant_id?: string } | null
       const departments = row.departments as { name?: string; code?: string } | null
@@ -119,6 +167,8 @@ async function loadSlaRows(
       }
     })
     .filter((row): row is IncidentSlaRow => row !== null)
+
+  return { rows, source: 'fallback' }
 }
 
 export async function GET(request: NextRequest) {
@@ -127,18 +177,28 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response
 
     const { searchParams } = new URL(request.url)
-    const { from, to } = parseDateRange(searchParams)
+    const dateRange = parseDateRange(searchParams)
+    if ('error' in dateRange) {
+      return NextResponse.json({ error: dateRange.error }, { status: 400 })
+    }
+    const { from, to } = dateRange
+
     const plantId = searchParams.get('plantId')
     const departmentId = searchParams.get('departmentId')
     const breachMetric = (searchParams.get('breach') ?? 'any') as SlaMetricKind | 'any'
     const mode = searchParams.get('mode') ?? 'summary'
 
-    const rows = await loadSlaRows(auth.supabase, from, to, plantId, departmentId)
+    if (!VALID_BREACH_METRICS.has(breachMetric)) {
+      return NextResponse.json({ error: 'Parámetro breach inválido' }, { status: 400 })
+    }
+
+    const { rows, source } = await loadSlaRows(auth.supabase, from, to, plantId, departmentId)
 
     if (mode === 'breaches') {
       return NextResponse.json({
         from,
         to,
+        source,
         rows: filterBreachedRows(rows, breachMetric),
       })
     }
@@ -147,6 +207,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         from,
         to,
+        source,
         rows,
         kpis: aggregateSlaKpis(rows),
         departments: rankDepartmentsByCompliance(rows),
@@ -157,16 +218,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       from,
       to,
+      source,
       kpis: aggregateSlaKpis(rows),
       departments: rankDepartmentsByCompliance(rows),
       trend: monthlySlaTrend(rows),
-      breachCount: filterBreachedRows(rows, 'any').length,
     })
   } catch (error) {
     console.error('[incident-sla]', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Error al cargar SLA' },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: 'Error al cargar SLA' }, { status: 500 })
   }
 }
