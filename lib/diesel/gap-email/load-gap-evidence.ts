@@ -8,10 +8,20 @@ export type GapEvidencePhoto = {
   photoUrl: string
   description: string | null
   category: string | null
-  anchor: 'prev' | 'curr' | 'interval'
+  anchor: 'prev' | 'curr'
+}
+
+export type GapRegistrantInfo = {
+  prevRegistrantName: string
+  currRegistrantName: string
 }
 
 type TxMeta = { code: string; gapId: string; anchor: GapEvidencePhoto['anchor'] }
+
+function formatProfileName(nombre: string | null, apellido: string | null): string {
+  const name = `${nombre ?? ''} ${apellido ?? ''}`.trim()
+  return name || 'Usuario'
+}
 
 export async function loadGapEvidenceByGapId(
   admin: SupabaseClient,
@@ -27,9 +37,6 @@ export async function loadGapEvidenceByGapId(
     }
     add(gap.prev_anchor.tx_id, gap.prev_anchor.transaction_id, 'prev')
     add(gap.curr_anchor.tx_id, gap.curr_anchor.transaction_id, 'curr')
-    for (const tx of gap.transactions_in_interval) {
-      add(tx.id, tx.transaction_id, 'interval')
-    }
   }
 
   const txIds = [...txMeta.keys()]
@@ -60,6 +67,68 @@ export async function loadGapEvidenceByGapId(
       list.push(photo)
       result.set(meta.gapId, list)
     }
+  }
+
+  return result
+}
+
+export async function loadGapRegistrantsByGapId(
+  admin: SupabaseClient,
+  gaps: CuentaLitrosGap[],
+): Promise<Map<string, GapRegistrantInfo>> {
+  const result = new Map<string, GapRegistrantInfo>()
+  if (gaps.length === 0) return result
+
+  const txIds = [
+    ...new Set(gaps.flatMap((g) => [g.prev_anchor.tx_id, g.curr_anchor.tx_id])),
+  ]
+
+  const { data: txs, error: txErr } = await admin
+    .from('diesel_transactions')
+    .select('id, created_by')
+    .in('id', txIds)
+
+  if (txErr || !txs) {
+    for (const gap of gaps) {
+      result.set(gap.id, { prevRegistrantName: 'Usuario', currRegistrantName: 'Usuario' })
+    }
+    return result
+  }
+
+  const createdByByTxId = new Map(
+    txs.map((t) => [t.id as string, t.created_by as string | null]),
+  )
+  const userIds = [
+    ...new Set(
+      txs.map((t) => t.created_by).filter((id): id is string => Boolean(id)),
+    ),
+  ]
+
+  const namesByUserId = new Map<string, string>()
+  if (userIds.length > 0) {
+    const { data: profiles } = await admin
+      .from('profiles')
+      .select('id, nombre, apellido')
+      .in('id', userIds)
+
+    for (const p of profiles ?? []) {
+      namesByUserId.set(
+        p.id as string,
+        formatProfileName(p.nombre as string | null, p.apellido as string | null),
+      )
+    }
+  }
+
+  const nameForTx = (txId: string) => {
+    const userId = createdByByTxId.get(txId)
+    return userId ? namesByUserId.get(userId) ?? 'Usuario' : 'Usuario'
+  }
+
+  for (const gap of gaps) {
+    result.set(gap.id, {
+      prevRegistrantName: nameForTx(gap.prev_anchor.tx_id),
+      currRegistrantName: nameForTx(gap.curr_anchor.tx_id),
+    })
   }
 
   return result

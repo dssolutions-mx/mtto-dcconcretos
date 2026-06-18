@@ -1,5 +1,5 @@
 import type { CuentaLitrosGap } from '@/lib/diesel-cuenta-litros-gaps'
-import type { GapEvidencePhoto } from '@/lib/diesel/gap-email/load-gap-evidence'
+import type { GapEvidencePhoto, GapRegistrantInfo } from '@/lib/diesel/gap-email/load-gap-evidence'
 
 const B = {
   navy: '#1B365D',
@@ -120,11 +120,11 @@ function formatAsset(label: string | null | undefined): string {
 
 function evidenceCell(photos: GapEvidencePhoto[]): string {
   if (photos.length === 0) {
-    return td('Sin foto', { mono: false })
+    return td('Sin foto')
   }
 
-  const thumbs = photos.slice(0, 3).map((photo) => {
-    const label = `${photo.transactionCode} (${photo.anchor === 'prev' ? 'desde' : photo.anchor === 'curr' ? 'hasta' : 'intervalo'})`
+  const thumbs = photos.map((photo) => {
+    const label = `${photo.transactionCode} (${photo.anchor === 'prev' ? 'desde' : 'hasta'})`
     return `<div style="margin-bottom:8px">
       <a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:${B.navy};font-size:11px;font-weight:600">${escapeHtml(label)}</a><br>
       <a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener noreferrer">
@@ -133,20 +133,17 @@ function evidenceCell(photos: GapEvidencePhoto[]): string {
     </div>`
   })
 
-  const extra =
-    photos.length > 3
-      ? `<div style="font-size:10px;color:${B.textMuted}">+${photos.length - 3} foto(s) más (ver enlaces)</div>`
-      : ''
-
-  return td(`${thumbs.join('')}${extra}`, { html: true })
+  return td(thumbs.join(''), { html: true })
 }
 
 function gapTable(
   gaps: CuentaLitrosGap[],
   evidenceByGapId: Map<string, GapEvidencePhoto[]>,
+  registrantsByGapId: Map<string, GapRegistrantInfo>,
 ): string {
   const rows = gaps.map((gap, i) => {
     const photos = evidenceByGapId.get(gap.id) ?? []
+    const registrants = registrantsByGapId.get(gap.id)
     const equipment = `${formatAsset(gap.prev_anchor.asset_label)} → ${formatAsset(gap.curr_anchor.asset_label)}`
     const meterReadings = `${gap.prev_cuenta_litros.toFixed(0)} → ${gap.curr_cuenta_litros.toFixed(0)} L`
     const gapLiters = `${gap.gap_liters > 0 ? '+' : ''}${gap.gap_liters.toFixed(0)} L`
@@ -154,6 +151,8 @@ function gapTable(
       ${td(gap.short_label)}
       ${td(formatDateTime(gap.prev_anchor.transaction_date))}
       ${td(formatDateTime(gap.curr_anchor.transaction_date))}
+      ${td(registrants?.prevRegistrantName ?? 'Usuario')}
+      ${td(registrants?.currRegistrantName ?? 'Usuario')}
       ${td(equipment)}
       ${td(`${gap.prev_anchor.transaction_id} → ${gap.curr_anchor.transaction_id}`, { mono: true })}
       ${td(meterReadings, { right: true })}
@@ -173,6 +172,8 @@ function gapTable(
     ${th('Hallazgo')}
     ${th('Desde')}
     ${th('Hasta')}
+    ${th('Registró (desde)')}
+    ${th('Registró (hasta)')}
     ${th('Equipo')}
     ${th('Intervalo (Tx)')}
     ${th('Lecturas medidor', { right: true })}
@@ -194,6 +195,7 @@ export function buildDieselGapEmailHtml(input: {
   plantCode: string | null
   gaps: CuentaLitrosGap[]
   evidenceByGapId?: Map<string, GapEvidencePhoto[]>
+  registrantsByGapId?: Map<string, GapRegistrantInfo>
   appUrl?: string
   warehouseId: string
 }): { subject: string; html: string } {
@@ -202,6 +204,7 @@ export function buildDieselGapEmailHtml(input: {
     ? `${input.plantName} · ${input.plantCode}`
     : input.plantName
   const evidenceByGapId = input.evidenceByGapId ?? new Map<string, GapEvidencePhoto[]>()
+  const registrantsByGapId = input.registrantsByGapId ?? new Map<string, GapRegistrantInfo>()
 
   const totalGap = input.gaps.reduce(
     (sum, g) => sum + (g.gap_type === 'unregistered_dispense' ? g.gap_liters : 0),
@@ -220,8 +223,8 @@ export function buildDieselGapEmailHtml(input: {
       ${p('Estimado equipo,')}
       ${p(`Se detectaron <strong>${input.gaps.length}</strong> hueco${input.gaps.length !== 1 ? 's' : ''} significativo${input.gaps.length !== 1 ? 's' : ''} entre lecturas consecutivas del medidor <strong>cuenta litros</strong> en el almacén <strong>${warehouseLabel}</strong> (planta ${plantLabel}).`)}
       ${totalGap > 0 ? p(`Litros sin registrar en total (aprox.): <strong style="color:${B.gapWarn}">${totalGap.toFixed(0)} L</strong>.`) : ''}
-      ${p('Favor de revisar cada intervalo, registrar las salidas faltantes o justificar la diferencia en las próximas <strong>24 horas</strong>. Las fotos de evidencia aparecen en la columna final; también se adjuntan al correo cuando están disponibles.')}
-      ${gapTable(input.gaps, evidenceByGapId)}
+      ${p('Favor de revisar cada intervalo, registrar las salidas faltantes o justificar la diferencia en las próximas <strong>24 horas</strong>. Las fotos de las lecturas desde/hasta aparecen en la columna de evidencia; también se adjuntan al correo cuando están disponibles.')}
+      ${gapTable(input.gaps, evidenceByGapId, registrantsByGapId)}
       ${input.gaps.map((g) => `<p style="margin:0 0 8px;font-size:11px;color:${B.textMuted};line-height:1.5"><strong>${escapeHtml(g.short_label)}:</strong> ${escapeHtml(g.narrative)}</p>`).join('')}
       ${warehouseLink}
     </td></tr>

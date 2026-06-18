@@ -4,7 +4,9 @@ import { buildDieselGapEmailHtml } from '@/lib/diesel/gap-email/email-copy'
 import {
   collectUniqueEvidencePhotos,
   loadGapEvidenceByGapId,
+  loadGapRegistrantsByGapId,
   type GapEvidencePhoto,
+  type GapRegistrantInfo,
 } from '@/lib/diesel/gap-email/load-gap-evidence'
 import {
   fetchPlantRoleEmails,
@@ -33,6 +35,7 @@ export type DieselGapEmailDraft = {
   plantName: string
   plantCode: string | null
   evidencePhotos: GapEvidencePhoto[]
+  registrantsByGapId: Record<string, GapRegistrantInfo>
 }
 
 export async function buildDieselGapEmailDraft(
@@ -45,6 +48,7 @@ export async function buildDieselGapEmailDraft(
   const { to, cc } = resolveDieselGapRecipients(context.plantCode, roleEmails, extraCc)
 
   const evidenceByGapId = await loadGapEvidenceByGapId(admin, selectedGaps)
+  const registrantsByGapId = await loadGapRegistrantsByGapId(admin, selectedGaps)
   const evidencePhotos = collectUniqueEvidencePhotos(evidenceByGapId)
   const appUrl = resolveAppUrl()
 
@@ -55,6 +59,7 @@ export async function buildDieselGapEmailDraft(
     plantCode: context.plantCode,
     gaps: selectedGaps,
     evidenceByGapId,
+    registrantsByGapId,
     appUrl,
     warehouseId: context.warehouseId,
   })
@@ -74,5 +79,6 @@ export async function buildDieselGapEmailDraft(
     plantName: context.plantName,
     plantCode: context.plantCode,
     evidencePhotos,
+    registrantsByGapId: Object.fromEntries(registrantsByGapId),
   }
 }

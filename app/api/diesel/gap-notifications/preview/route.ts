@@ -57,6 +57,7 @@ async function buildPreviewResponse(
     warehouseCode: draft.warehouseCode,
     plantName: draft.plantName,
     plantCode: draft.plantCode,
+    registrantsByGapId: draft.registrantsByGapId,
   })
 }
 
