@@ -44,7 +44,7 @@ async function buildPreviewResponse(
   }
 
   const admin = createAdminClient()
-  const draft = await buildDieselGapEmailDraft(admin, context, selectedGaps)
+  const draft = await buildDieselGapEmailDraft(admin, context, selectedGaps, { preview: true })
 
   return NextResponse.json({
     subject: draft.subject,

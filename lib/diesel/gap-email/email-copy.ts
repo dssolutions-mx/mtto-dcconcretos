@@ -1,4 +1,5 @@
 import type { CuentaLitrosGap } from '@/lib/diesel-cuenta-litros-gaps'
+import { evidenceContentId } from '@/lib/diesel/gap-email/evidence-image-bytes'
 import type { GapEvidencePhoto, GapRegistrantInfo } from '@/lib/diesel/gap-email/load-gap-evidence'
 
 const B = {
@@ -118,18 +119,29 @@ function formatAsset(label: string | null | undefined): string {
   return label?.trim() ? label.trim() : '—'
 }
 
-function evidenceCell(photos: GapEvidencePhoto[]): string {
+function evidenceCell(
+  photos: GapEvidencePhoto[],
+  evidenceImageSrcByPhotoId?: Map<string, string>,
+): string {
   if (photos.length === 0) {
     return td('Sin foto')
   }
 
   const thumbs = photos.map((photo) => {
     const label = `${photo.transactionCode} (${photo.anchor === 'prev' ? 'desde' : 'hasta'})`
+    const previewSrc = evidenceImageSrcByPhotoId?.get(photo.id)
+    const imgSrc = previewSrc ?? `cid:${evidenceContentId(photo.id)}`
+
+    if (evidenceImageSrcByPhotoId && !previewSrc) {
+      return `<div style="margin-bottom:8px">
+        <div style="color:${B.navy};font-size:11px;font-weight:600">${escapeHtml(label)}</div>
+        <div style="margin-top:4px;font-size:11px;color:${B.textMuted}">Sin imagen</div>
+      </div>`
+    }
+
     return `<div style="margin-bottom:8px">
-      <a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:${B.navy};font-size:11px;font-weight:600">${escapeHtml(label)}</a><br>
-      <a href="${escapeHtml(photo.photoUrl)}" target="_blank" rel="noopener noreferrer">
-        <img src="${escapeHtml(photo.photoUrl)}" alt="${escapeHtml(label)}" width="120" style="display:block;margin-top:4px;border:1px solid ${B.borderMedium};border-radius:4px;max-width:120px;height:auto" />
-      </a>
+      <div style="color:${B.navy};font-size:11px;font-weight:600">${escapeHtml(label)}</div>
+      <img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(label)}" width="120" style="display:block;margin-top:4px;border:1px solid ${B.borderMedium};border-radius:4px;max-width:120px;height:auto" />
     </div>`
   })
 
@@ -140,6 +152,7 @@ function gapTable(
   gaps: CuentaLitrosGap[],
   evidenceByGapId: Map<string, GapEvidencePhoto[]>,
   registrantsByGapId: Map<string, GapRegistrantInfo>,
+  evidenceImageSrcByPhotoId?: Map<string, string>,
 ): string {
   const rows = gaps.map((gap, i) => {
     const photos = evidenceByGapId.get(gap.id) ?? []
@@ -160,7 +173,7 @@ function gapTable(
       ${td(`${gap.registered_liters.toFixed(0)} L`, { right: true })}
       ${td(gapLiters, { right: true })}
       ${td(gap.time_window_label)}
-      ${evidenceCell(photos)}
+      ${evidenceCell(photos, evidenceImageSrcByPhotoId)}
     </tr>`
     return i % 2 === 1 ? row.replace('<tr>', `<tr style="background:${B.rowAlt}">`) : row
   })
@@ -196,6 +209,7 @@ export function buildDieselGapEmailHtml(input: {
   gaps: CuentaLitrosGap[]
   evidenceByGapId?: Map<string, GapEvidencePhoto[]>
   registrantsByGapId?: Map<string, GapRegistrantInfo>
+  evidenceImageSrcByPhotoId?: Map<string, string>
   appUrl?: string
   warehouseId: string
 }): { subject: string; html: string } {
@@ -223,8 +237,8 @@ export function buildDieselGapEmailHtml(input: {
       ${p('Estimado equipo,')}
       ${p(`Se detectaron <strong>${input.gaps.length}</strong> hueco${input.gaps.length !== 1 ? 's' : ''} significativo${input.gaps.length !== 1 ? 's' : ''} entre lecturas consecutivas del medidor <strong>cuenta litros</strong> en el almacén <strong>${warehouseLabel}</strong> (planta ${plantLabel}).`)}
       ${totalGap > 0 ? p(`Litros sin registrar en total (aprox.): <strong style="color:${B.gapWarn}">${totalGap.toFixed(0)} L</strong>.`) : ''}
-      ${p('Favor de revisar cada intervalo, registrar las salidas faltantes o justificar la diferencia en las próximas <strong>24 horas</strong>. Las fotos de las lecturas desde/hasta aparecen en la columna de evidencia; también se adjuntan al correo cuando están disponibles.')}
-      ${gapTable(input.gaps, evidenceByGapId, registrantsByGapId)}
+      ${p('Favor de revisar cada intervalo, registrar las salidas faltantes o justificar la diferencia en las próximas <strong>24 horas</strong>. Las fotos de las lecturas desde/hasta aparecen embebidas en la columna de evidencia.')}
+      ${gapTable(input.gaps, evidenceByGapId, registrantsByGapId, input.evidenceImageSrcByPhotoId)}
       ${input.gaps.map((g) => `<p style="margin:0 0 8px;font-size:11px;color:${B.textMuted};line-height:1.5"><strong>${escapeHtml(g.short_label)}:</strong> ${escapeHtml(g.narrative)}</p>`).join('')}
       ${warehouseLink}
     </td></tr>

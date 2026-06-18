@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
       subject: finalSubject,
       html: finalHtml,
       evidencePhotos: draft.evidencePhotos,
+      admin,
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Error al enviar correo'
