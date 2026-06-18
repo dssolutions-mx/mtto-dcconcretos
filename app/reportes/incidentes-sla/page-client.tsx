@@ -10,7 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Download, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { Download, RefreshCw, Settings2 } from 'lucide-react'
+import { useAuthZustand } from '@/hooks/use-auth-zustand'
+import { canManageIncidentSlaTargets, INCIDENT_SLA_OBJETIVOS_PATH } from '@/lib/incidents/incident-sla-targets'
 import { IncidentSlaKpiStrip } from '@/components/reports/incident-sla/kpi-strip'
 import { IncidentSlaDepartmentRanking } from '@/components/reports/incident-sla/department-ranking'
 import { IncidentSlaTrendChart } from '@/components/reports/incident-sla/trend-chart'
@@ -50,7 +53,9 @@ function downloadCsv(filename: string, header: string[], lines: (string | number
 function IncidentSlaDashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { profile } = useAuthZustand()
   const defaults = defaultDateRange()
+  const canManageTargets = profile ? canManageIncidentSlaTargets(profile) : false
 
   const [from, setFrom] = useState(searchParams.get('from') ?? defaults.from)
   const [to, setTo] = useState(searchParams.get('to') ?? defaults.to)
@@ -163,6 +168,14 @@ function IncidentSlaDashboardContent() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canManageTargets && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={INCIDENT_SLA_OBJETIVOS_PATH}>
+                <Settings2 className="h-4 w-4 mr-2" />
+                Configurar objetivos SLA
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar

@@ -8,6 +8,10 @@ import {
   hasWriteAccess,
   type ModulePermissions,
 } from '@/lib/auth/role-permissions'
+import {
+  canManageIncidentSlaTargets,
+  INCIDENT_SLA_OBJETIVOS_PATH,
+} from '@/lib/incidents/incident-sla-targets'
 
 export type ReportCatalogEntry = {
   id: string
@@ -77,6 +81,14 @@ export const REPORT_CATALOG: ReportCatalogEntry[] = [
     description: 'Cumplimiento MTTA/MTTR por departamento, tendencias e incumplimientos.',
     group: 'operativo',
     matchPrefix: '/reportes/incidentes-sla',
+  },
+  {
+    id: 'incidentes-sla-objetivos',
+    href: INCIDENT_SLA_OBJETIVOS_PATH,
+    label: 'Objetivos SLA',
+    description: 'Administración de políticas de tiempos de atención, programación y resolución.',
+    group: 'operativo',
+    matchPrefix: INCIDENT_SLA_OBJETIVOS_PATH,
   },
   {
     id: 'legacy-analytics',
@@ -180,6 +192,7 @@ export function filterReportsForProfile(profile: {
   return REPORT_CATALOG.filter((entry) => {
     if (entry.id === 'ingresos-gastos') return canAccessIngresosGastosReport(profile)
     if (entry.id === 'manual-costs') return canAccessManualCostsReport(profile)
+    if (entry.id === 'incidentes-sla-objetivos') return canManageIncidentSlaTargets(profile)
     if (entry.id === 'legacy-analytics') {
       const key = permissionRoleKey(profile)
       return key ? hasModuleAccess(key, 'reports') : false
@@ -222,6 +235,12 @@ export function canAccessReportPath(
   }
   if (pathname.startsWith('/reportes/gerencial/manual-costs')) {
     return canAccessManualCostsReport(profile)
+  }
+  if (
+    pathname === INCIDENT_SLA_OBJETIVOS_PATH ||
+    pathname.startsWith(`${INCIDENT_SLA_OBJETIVOS_PATH}/`)
+  ) {
+    return canManageIncidentSlaTargets(profile)
   }
   return true
 }
