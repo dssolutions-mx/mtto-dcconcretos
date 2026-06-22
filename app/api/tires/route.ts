@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { checkTireIdentity } from '@/lib/tires/check-tire-identity'
 import { insertTireWithIdentity } from '@/lib/tires/identifier'
 import { NextRequest, NextResponse } from 'next/server'
 import type { CreateTireInput } from '@/types/tires'
@@ -45,6 +46,28 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as CreateTireInput
     if (!body.brand?.trim() || !body.size?.trim()) {
       return NextResponse.json({ error: 'Marca y medida son obligatorias' }, { status: 400 })
+    }
+
+    const identityCheck = await checkTireIdentity(supabase, {
+      dot: body.serial_number ?? null,
+      internal_code: body.internal_code ?? null,
+    })
+
+    if (identityCheck.dot?.state === 'duplicate') {
+      return NextResponse.json(
+        { error: identityCheck.dot.message ?? 'Este DOT ya está registrado' },
+        { status: 409 }
+      )
+    }
+
+    if (identityCheck.internal_code?.state === 'duplicate') {
+      return NextResponse.json(
+        {
+          error:
+            identityCheck.internal_code.message ?? 'Este código de flota ya está en uso',
+        },
+        { status: 409 }
+      )
     }
 
     const created = await insertTireWithIdentity(

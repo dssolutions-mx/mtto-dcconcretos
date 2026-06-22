@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -11,20 +11,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Separator } from "@/components/ui/separator"
 import { Loader2 } from "lucide-react"
-import { previewInternalCode } from "@/lib/tires/identifier"
 import { formatTirePrimaryId } from "@/lib/tires/display"
+import {
+  buildTireFormForAnother,
+  createEmptyTireForm,
+  hasIdentityBlockingFeedback,
+  normalizeDotSerial,
+  validateIdentificationStep,
+  validateSpecsStep,
+  type CreateTireWizardStep,
+} from "@/lib/tires/create-tire-form"
+import { useTireIdentityCheck } from "@/hooks/use-tire-identity-check"
+import { CreateTireWizardProgress } from "@/components/tires/create-tire/wizard-progress"
+import { CreateTireStepIdentification } from "@/components/tires/create-tire/step-identification"
+import { CreateTireStepSpecs } from "@/components/tires/create-tire/step-specs"
+import { CreateTireStepLocation } from "@/components/tires/create-tire/step-location"
 import type { CreateTireInput, TireIdRules } from "@/types/tires"
 
 interface WarehouseOption {
@@ -33,58 +35,207 @@ interface WarehouseOption {
   warehouse_code: string
 }
 
+interface PlantOption {
+  id: string
+  name: string
+  code?: string | null
+}
+
 interface CreateTireDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated: () => void
 }
 
+async function fetchPreviewCode(plantId?: string | null) {
+  const params = plantId ? `?plant_id=${encodeURIComponent(plantId)}` : ""
+  const res = await fetch(`/api/tires/preview-code${params}`)
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || "No se pudo cargar el código de flota")
+  return data as {
+    preview_code: string | null
+    id_rules: TireIdRules
+    plant_code?: string | null
+  }
+}
+
 export function CreateTireDialog({ open, onOpenChange, onCreated }: CreateTireDialogProps) {
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<CreateTireWizardStep>("identification")
   const [idRules, setIdRules] = useState<TireIdRules>({})
   const [previewCode, setPreviewCode] = useState<string | null>(null)
+  const [selectedPlantCode, setSelectedPlantCode] = useState<string | null>(null)
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([])
-  const [form, setForm] = useState<CreateTireInput>({
-    brand: "",
-    size: "",
-    condition: "nueva",
+  const [plants, setPlants] = useState<PlantOption[]>([])
+  const [form, setForm] = useState<CreateTireInput>(createEmptyTireForm())
+
+  const checkDot = !!form.serial_number?.trim()
+  const checkInternalCode = idRules.auto_generate !== true && !!form.internal_code?.trim()
+
+  const { dotFeedback, internalFeedback } = useTireIdentityCheck({
+    dot: form.serial_number ?? '',
+    internalCode: form.internal_code ?? '',
+    checkDot,
+    checkInternalCode,
+    enabled: open,
   })
+
+  const identityCheckOptions = useMemo(
+    () => ({ checkDot, checkInternalCode }),
+    [checkDot, checkInternalCode]
+  )
+
+  const resetWizard = useCallback(() => {
+    setStep("identification")
+    setForm(createEmptyTireForm())
+    setPreviewCode(null)
+    setSelectedPlantCode(null)
+    setIdRules({})
+  }, [])
+
+  const loadPreview = useCallback(async (plantId?: string | null) => {
+    try {
+      const data = await fetchPreviewCode(plantId)
+      setIdRules(data.id_rules ?? {})
+      setPreviewCode(data.preview_code ?? null)
+      setSelectedPlantCode(data.plant_code ?? null)
+    } catch {
+      setPreviewCode(null)
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
 
+    setStep("identification")
+
     Promise.all([
-      fetch("/api/tires/preview-code").then((r) => r.json()),
       fetch("/api/inventory/warehouses?is_active=true").then((r) => r.json()),
+      fetch("/api/plants").then((r) => r.json()),
     ])
-      .then(([previewData, warehouseData]) => {
+      .then(async ([warehouseData, plantData]) => {
+        const plantList = (plantData.plants ?? []) as PlantOption[]
+        setWarehouses(warehouseData.warehouses ?? [])
+        setPlants(plantList)
+
+        const initialForm = createEmptyTireForm()
+        const defaultPlantId = plantList.length === 1 ? plantList[0].id : undefined
+        if (defaultPlantId) {
+          initialForm.plant_id = defaultPlantId
+        }
+        setForm(initialForm)
+
+        const previewData = await fetchPreviewCode(defaultPlantId)
         setIdRules(previewData.id_rules ?? {})
         setPreviewCode(previewData.preview_code ?? null)
-        setWarehouses(warehouseData.warehouses ?? [])
+        setSelectedPlantCode(previewData.plant_code ?? null)
       })
       .catch(() => {
         setIdRules({})
         setPreviewCode(null)
         setWarehouses([])
+        setPlants([])
+        setForm(createEmptyTireForm())
       })
-  }, [open])
+  }, [open, loadPreview])
 
-  const manualPreview = previewInternalCode({
-    rules: idRules,
-    plantCode: "P1",
-    sequence: 1,
-  })
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) resetWizard()
+    onOpenChange(nextOpen)
+  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const patchForm = (patch: Partial<CreateTireInput>) => {
+    setForm((prev) => ({ ...prev, ...patch }))
+  }
 
-    if (idRules.dot_required && !form.serial_number?.trim()) {
-      toast.error("DOT / serial es obligatorio según la configuración de flota")
+  const handlePlantChange = async (plantId: string | undefined) => {
+    patchForm({ plant_id: plantId ?? null })
+    const plant = plants.find((p) => p.id === plantId)
+    setSelectedPlantCode(plant?.code?.trim() || null)
+    await loadPreview(plantId)
+  }
+
+  const handleDotBlur = () => {
+    if (!form.serial_number?.trim()) return
+    const normalized = normalizeDotSerial(form.serial_number)
+    if (normalized !== form.serial_number) {
+      patchForm({ serial_number: normalized })
+    }
+  }
+
+  const validateIdentification = (): boolean => {
+    const error = validateIdentificationStep(idRules, form)
+    if (error) {
+      toast.error(error)
+      return false
+    }
+
+    const identityError = hasIdentityBlockingFeedback(
+      dotFeedback,
+      internalFeedback,
+      identityCheckOptions
+    )
+    if (identityError) {
+      toast.error(identityError)
+      return false
+    }
+
+    return true
+  }
+
+  const validateCurrentStep = (): boolean => {
+    if (step === "identification") {
+      return validateIdentification()
+    }
+
+    if (step === "specs") {
+      const error = validateSpecsStep(form)
+      if (error) {
+        toast.error(error)
+        return false
+      }
+      return true
+    }
+
+    return true
+  }
+
+  const goNext = () => {
+    if (!validateCurrentStep()) return
+    if (step === "identification") setStep("specs")
+    else if (step === "specs") setStep("location")
+  }
+
+  const goBack = () => {
+    if (step === "location") setStep("specs")
+    else if (step === "specs") setStep("identification")
+  }
+
+  const submitPayload = useMemo((): CreateTireInput => {
+    const serial = form.serial_number?.trim()
+      ? normalizeDotSerial(form.serial_number)
+      : undefined
+    return {
+      ...form,
+      brand: form.brand.trim(),
+      size: form.size.trim(),
+      model: form.model?.trim() || undefined,
+      serial_number: serial,
+      internal_code: form.internal_code?.trim() || undefined,
+      notes: form.notes?.trim() || undefined,
+    }
+  }, [form])
+
+  const handleSave = async (registerAnother: boolean) => {
+    if (!validateIdentification()) {
+      setStep("identification")
       return
     }
 
-    if (!idRules.auto_generate && !form.serial_number?.trim() && !form.internal_code?.trim()) {
-      toast.error("Indique código interno o DOT / serial")
+    const specsError = validateSpecsStep(form)
+    if (specsError) {
+      toast.error(specsError)
+      setStep("specs")
       return
     }
 
@@ -93,7 +244,7 @@ export function CreateTireDialog({ open, onOpenChange, onCreated }: CreateTireDi
       const res = await fetch("/api/tires", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(submitPayload),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -103,10 +254,16 @@ export function CreateTireDialog({ open, onOpenChange, onCreated }: CreateTireDi
       const tire = data.tire
       const assignedCode = formatTirePrimaryId(tire)
       toast.success(`Llanta registrada: ${assignedCode}`)
-
-      setForm({ brand: "", size: "", condition: "nueva" })
-      onOpenChange(false)
       onCreated()
+
+      if (registerAnother) {
+        const keptPlantId = form.plant_id
+        setForm(buildTireFormForAnother(form, keptPlantId))
+        setStep("identification")
+        await loadPreview(keptPlantId)
+      } else {
+        handleOpenChange(false)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al registrar llanta")
     } finally {
@@ -115,196 +272,103 @@ export function CreateTireDialog({ open, onOpenChange, onCreated }: CreateTireDi
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar llanta</DialogTitle>
           <DialogDescription>
-            Alta en catálogo / inventario. Use dos identificadores distintos según su operación.
+            Alta en catálogo e inventario. Capture el DOT y confirme el código de flota antes de
+            guardar.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <section className="space-y-3">
-            <div>
-              <h3 className="text-sm font-medium">Identificación</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                El <strong>código interno</strong> es el ID operativo de su flota (almacén,
-                montajes, reportes). El <strong>DOT / serial</strong> es el código del fabricante
-                impreso en la pared lateral.
-              </p>
+        <CreateTireWizardProgress currentStep={step} />
+
+        <div className="py-1">
+          {step === "identification" && (
+            <CreateTireStepIdentification
+              form={form}
+              idRules={idRules}
+              previewCode={previewCode}
+              plants={plants}
+              selectedPlantCode={selectedPlantCode}
+              dotFeedback={dotFeedback}
+              internalFeedback={internalFeedback}
+              onFormChange={patchForm}
+              onPlantChange={handlePlantChange}
+              onDotBlur={handleDotBlur}
+            />
+          )}
+
+          {step === "specs" && (
+            <CreateTireStepSpecs form={form} onFormChange={patchForm} />
+          )}
+
+          {step === "location" && (
+            <CreateTireStepLocation
+              form={form}
+              previewCode={previewCode}
+              autoGenerate={idRules.auto_generate === true}
+              plants={plants}
+              warehouses={warehouses}
+              onFormChange={patchForm}
+            />
+          )}
+        </div>
+
+        <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+          <div className="flex w-full flex-wrap justify-between gap-2">
+            <div className="flex gap-2">
+              {step !== "identification" ? (
+                <Button type="button" variant="outline" onClick={goBack} disabled={loading}>
+                  Anterior
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleOpenChange(false)}
+                  disabled={loading}
+                >
+                  Cancelar
+                </Button>
+              )}
             </div>
 
-            {idRules.auto_generate ? (
-              <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-1">
-                <Label className="text-muted-foreground text-xs">Código interno (al guardar)</Label>
-                <p className="font-mono text-sm font-medium">{previewCode ?? manualPreview}</p>
-                <p className="text-xs text-muted-foreground">
-                  Se asignará automáticamente según las reglas de flota.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <Label htmlFor="internal-code">Código interno *</Label>
-                <Input
-                  id="internal-code"
-                  placeholder="Ej. DC-LL-P1-2026-00001"
-                  value={form.internal_code ?? ""}
-                  onChange={(e) => setForm({ ...form, internal_code: e.target.value })}
-                  required={!form.serial_number?.trim()}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Obligatorio si no captura DOT y la auto-generación está desactivada.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <Label htmlFor="serial">
-                DOT / serial del fabricante {idRules.dot_required ? "*" : "(opcional)"}
-              </Label>
-              <Input
-                id="serial"
-                placeholder="Ej. 0123 ABCD 4521"
-                value={form.serial_number ?? ""}
-                onChange={(e) => setForm({ ...form, serial_number: e.target.value })}
-                required={idRules.dot_required === true}
-              />
-              <p className="text-xs text-muted-foreground">
-                Código legal del fabricante; no se auto-genera.
-              </p>
-            </div>
-          </section>
-
-          <Separator />
-
-          <section className="space-y-3">
-            <h3 className="text-sm font-medium">Especificaciones</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="brand">Marca *</Label>
-                <Input
-                  id="brand"
-                  value={form.brand}
-                  onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="size">Medida *</Label>
-                <Input
-                  id="size"
-                  placeholder="11R22.5"
-                  value={form.size}
-                  onChange={(e) => setForm({ ...form, size: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="model">Modelo</Label>
-              <Input
-                id="model"
-                value={form.model ?? ""}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Condición</Label>
-              <Select
-                value={form.condition}
-                onValueChange={(v) =>
-                  setForm({ ...form, condition: v as CreateTireInput["condition"] })
+            {step !== "location" ? (
+              <Button
+                type="button"
+                onClick={goNext}
+                disabled={
+                  step === "identification" &&
+                  !!hasIdentityBlockingFeedback(
+                    dotFeedback,
+                    internalFeedback,
+                    identityCheckOptions
+                  )
                 }
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="nueva">Nueva</SelectItem>
-                  <SelectItem value="renovada">Renovada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </section>
-
-          <Separator />
-
-          <section className="space-y-3">
-            <h3 className="text-sm font-medium">Compra y almacén</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="cost">Costo de compra</Label>
-                <Input
-                  id="cost"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.purchase_cost ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      purchase_cost: e.target.value ? Number(e.target.value) : undefined,
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="purchase-date">Fecha de compra</Label>
-                <Input
-                  id="purchase-date"
-                  type="date"
-                  value={form.purchase_date ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, purchase_date: e.target.value || undefined })
-                  }
-                />
-              </div>
-            </div>
-            {warehouses.length > 0 && (
-              <div className="space-y-1">
-                <Label>Almacén</Label>
-                <Select
-                  value={form.warehouse_id ?? "__none__"}
-                  onValueChange={(v) =>
-                    setForm({ ...form, warehouse_id: v === "__none__" ? undefined : v })
-                  }
+                Siguiente
+              </Button>
+            ) : (
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={loading}
+                  onClick={() => handleSave(true)}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar almacén" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Sin asignar</SelectItem>
-                    {warehouses.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>
-                        {w.warehouse_code} — {w.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Guardar y registrar otra
+                </Button>
+                <Button type="button" disabled={loading} onClick={() => handleSave(false)}>
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Guardar llanta
+                </Button>
               </div>
             )}
-            <div className="space-y-1">
-              <Label htmlFor="notes">Notas</Label>
-              <Textarea
-                id="notes"
-                value={form.notes ?? ""}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                rows={2}
-              />
-            </div>
-          </section>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Guardar llanta
-            </Button>
-          </DialogFooter>
-        </form>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

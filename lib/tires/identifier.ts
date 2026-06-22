@@ -111,7 +111,7 @@ export async function loadTireIdRules(
   return (globalSettings?.id_rules as TireIdRules | undefined) ?? {}
 }
 
-async function loadPlantCode(
+export async function loadPlantCode(
   supabase: SupabaseClient,
   plantId?: string | null
 ): Promise<string | null> {
