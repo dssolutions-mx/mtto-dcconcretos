@@ -41,6 +41,9 @@ interface SmartPhotoUploadProps {
   disabled?: boolean
   category?: string
   className?: string
+  /** Persist compressed photo to IndexedDB immediately (diesel consumption). */
+  dieselStaging?: boolean
+  onStagingPhotoSaved?: (photoDraftId: string) => void
 }
 
 export function SmartPhotoUpload({
@@ -50,7 +53,9 @@ export function SmartPhotoUpload({
   onPhotoChange,
   disabled = false,
   category,
-  className
+  className,
+  dieselStaging = false,
+  onStagingPhotoSaved,
 }: SmartPhotoUploadProps) {
   const [photo, setPhoto] = useState<PhotoUploadResult | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -142,21 +147,53 @@ export function SmartPhotoUpload({
         itemId,
         file,
         {
-          quality: 0.8,
-          maxWidth: 1920,
-          maxHeight: 1080,
-          immediate: true, // Start upload immediately if online
+          quality: dieselStaging ? 0.55 : 0.8,
+          maxWidth: dieselStaging ? 1280 : 1920,
+          maxHeight: dieselStaging ? 960 : 1080,
+          immediate: dieselStaging ? false : true,
           category,
           captureSource,
         }
       )
       
-      setPhoto(result)
+      setPhoto({
+        id: result.id,
+        preview: result.preview,
+        status: dieselStaging ? "stored" : result.status,
+        compressedBlob: dieselStaging ? undefined : result.compressedBlob,
+        evidenceImageMetadata: result.evidenceImageMetadata,
+      })
 
-      // If we got an immediate upload URL, update parent
-      if (result.url) {
+      if (dieselStaging && result.compressedBlob) {
+        try {
+          const { offlineClient } = await import("@/lib/offline/offline-client")
+          const photoDraftId = await offlineClient.saveDieselConsumptionStagingPhoto(
+            result.compressedBlob,
+            {
+              fileName: file.name,
+              category: category ?? "machine_display",
+              evidenceType: "consumption",
+              metadata: result.evidenceImageMetadata ?? undefined,
+            }
+          )
+          photoService.releasePhotoMemory(result.id)
+          onStagingPhotoSaved?.(photoDraftId)
+          onPhotoChange(result.preview, result.id, result.evidenceImageMetadata ?? null)
+          toast.success("Foto guardada en el dispositivo", {
+            description: "Protegida ante cierre inesperado de la app",
+            duration: 3000,
+          })
+        } catch (persistError) {
+          console.error("Could not persist diesel staging photo:", persistError)
+          toast.error("No hay espacio para guardar la foto en el dispositivo", {
+            description:
+              "Libera memoria o caché del navegador y vuelve a tomar la foto antes de registrar.",
+          })
+          return
+        }
+      } else if (result.url) {
         onPhotoChange(result.url, result.id, result.evidenceImageMetadata ?? null)
-      } else if (typeof navigator !== 'undefined' && !navigator.onLine && result.compressedBlob) {
+      } else if (typeof navigator !== "undefined" && !navigator.onLine && result.compressedBlob) {
         // Offline: simple-photo-service only keeps the blob in memory (lost on reload
         // and never attached to the completion). Persist it to the durable offline
         // photo queue (db.photos) keyed by itemId, and record the preview so the item
@@ -176,16 +213,17 @@ export function SmartPhotoUpload({
         }
         onPhotoChange(result.preview, result.id, result.evidenceImageMetadata ?? null)
       }
-      
-      // Show appropriate feedback
-      if (isOnline) {
-        toast.success("Foto guardada - subiendo en segundo plano", {
-          description: "La foto se est? subiendo autom?ticamente"
-        })
-      } else {
-        toast.info("Foto guardada sin conexi?n", {
-          description: "Se subir? autom?ticamente cuando vuelva la conexi?n"
-        })
+
+      if (!dieselStaging) {
+        if (isOnline) {
+          toast.success("Foto guardada - subiendo en segundo plano", {
+            description: "La foto se está subiendo automáticamente",
+          })
+        } else {
+          toast.info("Foto guardada sin conexión", {
+            description: "Se subirá automáticamente cuando vuelva la conexión",
+          })
+        }
       }
       
     } catch (error) {

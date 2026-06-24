@@ -50,6 +50,10 @@ export function DieselOfflineStatus() {
   const handleManualSync = async () => {
     try {
       setIsSyncing(true)
+      const entries = await offlineClient.listDieselOutboxEntries()
+      for (const entry of entries.filter((e) => e.status === "dead_letter")) {
+        await offlineClient.retryDieselOutboxEntry(entry.id)
+      }
       await offlineClient.requestSync()
     } catch (error) {
       console.error('Error syncing diesel data:', error)

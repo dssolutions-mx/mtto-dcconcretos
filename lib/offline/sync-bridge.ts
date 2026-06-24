@@ -110,10 +110,23 @@ export async function requestSync(): Promise<void> {
 
   initSyncBridge()
   const activeWorker = getWorker()
-  if (!activeWorker) return
   const accessToken = await resolveAccessToken()
   const message: DrainMessage = { type: "DRAIN", accessToken }
-  activeWorker.postMessage(message)
+
+  if (activeWorker) {
+    activeWorker.postMessage(message)
+    return
+  }
+
+  // Worker unavailable (older WebViews, CSP) — drain on main thread so queued diesel
+  // transactions are not stranded forever.
+  try {
+    const { drainOutboxOnMainThread } = await import("./drain-outbox-main")
+    await drainOutboxOnMainThread(accessToken)
+    publishStats(await import("./stats").then((m) => m.collectSyncStats()))
+  } catch (error) {
+    console.warn("[offline-v2] main-thread drain failed:", error)
+  }
 }
 
 export function getLatestSyncStats(): SyncStats {

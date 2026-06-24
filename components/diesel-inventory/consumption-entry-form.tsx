@@ -33,20 +33,30 @@ import {
 } from "@/lib/diesel/submit-scope-validation"
 import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
-import type { Json } from "@/types/supabase-types"
-import { sanitizeValueForPostgresJsonb } from "@/lib/json/sanitize-for-postgres-jsonb"
-import {
-  describeDieselSaveError,
-  isPostgresUnicodeJsonError,
-} from "@/lib/diesel/diesel-save-error-message"
-import { dieselInsertReturnedNoRowDescription } from "@/lib/diesel/insert-transaction-no-row-message"
+import { describeDieselSaveError } from "@/lib/diesel/diesel-save-error-message"
 import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 import {
+  buildConsumptionTransactionData,
+  submitDurableDieselConsumption,
+} from "@/lib/diesel/durable-diesel-submit"
+import {
+  type DieselConsumptionDraftData,
+  dieselConsumptionDraftHasContent,
+  dieselConsumptionDraftIsComplete,
+  isDieselConsumptionDraftStale,
+} from "@/lib/diesel/diesel-consumption-draft"
+import {
+  buildConsumptionDraftSnapshot,
+  ensureConsumptionWipQueued,
+  isConsumptionFormSubmittable,
+} from "@/lib/diesel/diesel-consumption-wip"
+import { requestSync } from "@/lib/offline/sync-bridge"
+import {
   computeCuentaLitrosVariance,
   CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS,
-  shouldRequireValidationForCuentaLitrosVariance,
 } from "@/lib/diesel/cuenta-litros-variance"
+import { DieselOfflineStatus } from "@/components/diesel-inventory/diesel-offline-status"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -100,6 +110,16 @@ export function ConsumptionEntryForm({
   
   // Evidence photos
   const [machinePhoto, setMachinePhoto] = useState<string | null>(null)
+  const [machinePhotoDraftId, setMachinePhotoDraftId] = useState<string | null>(null)
+  const [wipOutboxId, setWipOutboxId] = useState<string | null>(null)
+  const [draftRecovered, setDraftRecovered] = useState(false)
+  const [recoveredWasComplete, setRecoveredWasComplete] = useState(false)
+  const autoSyncOnRecoverRef = useRef(false)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [pendingDieselSync, setPendingDieselSync] = useState(0)
+  const draftRestoredRef = useRef(false)
+  const previewObjectUrlRef = useRef<string | null>(null)
+  const formSnapshotRef = useRef<Record<string, unknown>>({})
   const [machineEvidenceMetadata, setMachineEvidenceMetadata] =
     useState<DieselEvidenceImageMetadata | null>(null)
 
@@ -130,7 +150,335 @@ export function ConsumptionEntryForm({
 
   useEffect(() => {
     void initOfflineClient()
+    void refreshPendingDieselCount()
+    void requestSync()
+    void supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.id) setUserId(data.user.id)
+    })
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current)
+      }
+    }
   }, [])
+
+  const refreshPendingDieselCount = async () => {
+    try {
+      const stats = await offlineClient.getDomainSyncStats("diesel")
+      setPendingDieselSync(stats.pending + stats.failed)
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  const buildWipContext = () => ({
+    productType,
+    productId: productId ?? "",
+    userId: userId ?? "",
+    selectedPlant,
+    selectedWarehouse: selectedWarehouse ?? "",
+    warehouses,
+    allBuWarehouses,
+    assetType,
+    selectedAsset,
+    exceptionAssetName,
+    quantityLiters,
+    cuentaLitros,
+    previousCuentaLitros,
+    cuentaLitrosVariance,
+    readings,
+    transactionDate,
+    transactionTime,
+    notes,
+    machinePhotoDraftId,
+    machineEvidenceMetadata,
+    wipOutboxId,
+  })
+
+  const flushDraftNow = async () => {
+    if (!productId) return
+    const draft = buildConsumptionDraftSnapshot({
+      ...buildWipContext(),
+      selectedBusinessUnit,
+      cuentaLitrosManuallyEdited,
+      wipOutboxId,
+    })
+    if (!dieselConsumptionDraftHasContent(draft)) return
+    try {
+      await offlineClient.saveDieselConsumptionDraft(draft)
+    } catch (error) {
+      console.warn("Could not flush diesel consumption draft:", error)
+    }
+  }
+
+  const flushWipNow = async () => {
+    if (!userId || !productId || !selectedWarehouse || loading) return
+    const ctx = buildWipContext()
+    if (!isConsumptionFormSubmittable(ctx)) return
+    try {
+      const id = await ensureConsumptionWipQueued(ctx)
+      if (id) {
+        setWipOutboxId(id)
+        await flushDraftNow()
+        void refreshPendingDieselCount()
+      }
+    } catch (error) {
+      console.warn("Could not flush diesel WIP queue:", error)
+    }
+  }
+
+  useEffect(() => {
+    formSnapshotRef.current = {
+      productType,
+      selectedBusinessUnit,
+      selectedPlant,
+      selectedWarehouse,
+      assetType,
+      selectedAsset,
+      exceptionAssetName,
+      quantityLiters,
+      transactionDate,
+      transactionTime,
+      cuentaLitros,
+      cuentaLitrosManuallyEdited,
+      readings,
+      notes,
+      machinePhotoDraftId,
+      wipOutboxId,
+      userId,
+      productId,
+    }
+  })
+
+  useEffect(() => {
+    const onPageHide = () => {
+      void flushDraftNow()
+      void flushWipNow()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") onPageHide()
+    }
+    window.addEventListener("pagehide", onPageHide)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.removeEventListener("pagehide", onPageHide)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  })
+
+  useEffect(() => {
+    if (draftRestoredRef.current) return
+    draftRestoredRef.current = true
+
+    void (async () => {
+      try {
+        const raw = await offlineClient.getDieselConsumptionDraft()
+        if (!raw || typeof raw !== "object") return
+        const draft = raw as DieselConsumptionDraftData
+        if (isDieselConsumptionDraftStale(draft) || !dieselConsumptionDraftHasContent(draft)) {
+          await offlineClient.clearDieselConsumptionDraft()
+          return
+        }
+
+        if (draft.productType === productType) {
+          setSelectedBusinessUnit(draft.selectedBusinessUnit)
+          setSelectedPlant(draft.selectedPlant)
+          setSelectedWarehouse(draft.selectedWarehouse)
+          setAssetType(draft.assetType)
+          if (draft.selectedAssetId) {
+            setSelectedAsset({
+              id: draft.selectedAssetId,
+              name: draft.selectedAssetName,
+            })
+          }
+          setExceptionAssetName(draft.exceptionAssetName)
+          setQuantityLiters(draft.quantityLiters)
+          setTransactionDate(draft.transactionDate)
+          setTransactionTime(draft.transactionTime)
+          setCuentaLitros(draft.cuentaLitros)
+          setCuentaLitrosManuallyEdited(draft.cuentaLitrosManuallyEdited)
+          setReadings(draft.readings)
+          setNotes(draft.notes)
+          setMachinePhotoDraftId(draft.machinePhotoDraftId)
+          if (draft.wipOutboxId) setWipOutboxId(draft.wipOutboxId)
+
+          const staging = await offlineClient.getDieselConsumptionStagingPhoto()
+          if (staging?.blob) {
+            if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current)
+            const url = URL.createObjectURL(staging.blob)
+            previewObjectUrlRef.current = url
+            setMachinePhoto(url)
+            setMachinePhotoDraftId(staging.id)
+          } else if (draft.machinePhotoPreview) {
+            setMachinePhoto(draft.machinePhotoPreview)
+          }
+
+          setDraftRecovered(true)
+          setRecoveredWasComplete(dieselConsumptionDraftIsComplete(draft))
+          toast.info("Consumo recuperado en este dispositivo", {
+            description: dieselConsumptionDraftIsComplete(draft)
+              ? "Los datos estaban completos y se protegieron ante un cierre inesperado."
+              : "Continúa donde lo dejaste.",
+            duration: 6000,
+          })
+        }
+      } catch (error) {
+        console.warn("Could not restore diesel consumption draft:", error)
+      }
+    })()
+  }, [productType])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!loading) void flushDraftNow()
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [
+    productType,
+    selectedBusinessUnit,
+    selectedPlant,
+    selectedWarehouse,
+    assetType,
+    selectedAsset,
+    exceptionAssetName,
+    quantityLiters,
+    transactionDate,
+    transactionTime,
+    cuentaLitros,
+    cuentaLitrosManuallyEdited,
+    readings,
+    notes,
+    machinePhotoDraftId,
+    wipOutboxId,
+    loading,
+    userId,
+    productId,
+  ])
+
+  useEffect(() => {
+    if (!userId || !productId || loading) return
+    const timer = setTimeout(() => {
+      void flushWipNow()
+      if (isOnline) void requestSync()
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [
+    userId,
+    productId,
+    selectedWarehouse,
+    selectedPlant,
+    assetType,
+    selectedAsset,
+    exceptionAssetName,
+    quantityLiters,
+    cuentaLitros,
+    previousCuentaLitros,
+    readings,
+    transactionDate,
+    transactionTime,
+    notes,
+    machinePhotoDraftId,
+    machineEvidenceMetadata,
+    wipOutboxId,
+    isOnline,
+    loading,
+    warehouses,
+    allBuWarehouses,
+  ])
+
+  useEffect(() => {
+    if (!wipOutboxId || !userId || !productId) return
+    void (async () => {
+      const entries = await offlineClient.listDieselOutboxEntries()
+      if (entries.some((e) => e.id === wipOutboxId)) {
+        void requestSync()
+        void refreshPendingDieselCount()
+        return
+      }
+      if (selectedWarehouse && isConsumptionFormSubmittable(buildWipContext())) {
+        const id = await ensureConsumptionWipQueued(buildWipContext())
+        if (id) setWipOutboxId(id)
+        void refreshPendingDieselCount()
+      }
+    })()
+  }, [wipOutboxId, userId, productId, selectedWarehouse, machinePhotoDraftId, quantityLiters])
+
+  // If the OS killed the browser after the form was complete, the WIP is already in
+  // IndexedDB — push it to the server automatically when the app reopens online.
+  useEffect(() => {
+    if (
+      !recoveredWasComplete ||
+      !wipOutboxId ||
+      !isOnline ||
+      !userId ||
+      !productId ||
+      autoSyncOnRecoverRef.current
+    ) {
+      return
+    }
+    if (!isConsumptionFormSubmittable(buildWipContext())) return
+
+    autoSyncOnRecoverRef.current = true
+
+    void (async () => {
+      setLoading(true)
+      try {
+        const result = await submitDurableDieselConsumption({
+          transactionData: {},
+          quantityLiters,
+          cuentaLitros,
+          isOnline: true,
+          existingOutboxId: wipOutboxId,
+        })
+
+        if (result.status === "synced") {
+          toast.success("Consumo recuperado y registrado en el servidor", {
+            description: "Se completó automáticamente tras un cierre inesperado de la app.",
+            duration: 6000,
+          })
+          setSelectedAsset(null)
+          setExceptionAssetName("")
+          setQuantityLiters("")
+          setCuentaLitros("")
+          setCuentaLitrosManuallyEdited(false)
+          setMachinePhoto(null)
+          setMachinePhotoDraftId(null)
+          setWipOutboxId(null)
+          setDraftRecovered(false)
+          setRecoveredWasComplete(false)
+          if (previewObjectUrlRef.current) {
+            URL.revokeObjectURL(previewObjectUrlRef.current)
+            previewObjectUrlRef.current = null
+          }
+          setMachineEvidenceMetadata(null)
+          setNotes("")
+          setReadings({})
+          setPreviousCuentaLitros(null)
+          void refreshPendingDieselCount()
+          if (onSuccess) onSuccess(result.outboxId)
+        } else if (result.status === "queued") {
+          toast.warning("Consumo recuperado — sincronización en curso", {
+            description: "Los datos están seguros en el dispositivo.",
+            duration: 8000,
+          })
+          void refreshPendingDieselCount()
+        }
+      } catch (error) {
+        console.error("Auto-sync recovered diesel consumption failed:", error)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [
+    recoveredWasComplete,
+    wipOutboxId,
+    isOnline,
+    userId,
+    productId,
+    quantityLiters,
+    cuentaLitros,
+    onSuccess,
+  ])
 
   // Load organizational structure and product on mount
   useEffect(() => {
@@ -501,7 +849,7 @@ export function ConsumptionEntryForm({
       return
     }
 
-    if (!machinePhoto) {
+    if (!machinePhotoDraftId) {
       toast.error("Toma una foto del display de la máquina")
       return
     }
@@ -521,159 +869,59 @@ export function ConsumptionEntryForm({
       return
     }
 
-    if (!isOnline) {
-      const plantIdForTx = resolveDieselTransactionPlantId(
-        selectedPlant,
-        selectedWarehouse,
-        warehouses,
-        allBuWarehouses
-      )
-      if (!plantIdForTx) {
-        toast.error('No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.')
-        return
-      }
-
-      const transactionData: Record<string, unknown> = {
-        plant_id: plantIdForTx,
-        warehouse_id: selectedWarehouse,
-        product_id: productId,
-        transaction_type: 'consumption',
-        asset_category: assetType,
-        quantity_liters: parseFloat(quantityLiters),
-        cuenta_litros: cuentaLitros ? parseFloat(cuentaLitros) : null,
-        operator_id: user.id,
-        transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
-        notes: notes || null,
-        requires_validation: shouldRequireValidationForCuentaLitrosVariance(
-          previousCuentaLitros,
-          cuentaLitros ? parseFloat(cuentaLitros) : null,
-          parseFloat(quantityLiters),
-        ),
-        validation_notes: shouldRequireValidationForCuentaLitrosVariance(
-          previousCuentaLitros,
-          cuentaLitros ? parseFloat(cuentaLitros) : null,
-          parseFloat(quantityLiters),
-        )
-          ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
-          : null,
-        created_by: user.id,
-        source_system: 'web_app',
-      }
-
-      if (assetType === 'formal' && selectedAsset) {
-        transactionData.asset_id = selectedAsset.id
-        transactionData.horometer_reading = readings.hours_reading || null
-        transactionData.kilometer_reading = readings.kilometers_reading || null
-        transactionData.previous_horometer = null
-        transactionData.previous_kilometer = null
-      } else if (assetType === 'exception') {
-        transactionData.asset_id = null
-        transactionData.exception_asset_name = exceptionAssetName.trim()
-        transactionData.horometer_reading = null
-        transactionData.kilometer_reading = null
-        transactionData.previous_horometer = null
-        transactionData.previous_kilometer = null
-      }
-
-      let photoBlob: Blob | undefined
-      if (machinePhoto) {
-        try {
-          const photoResponse = await fetch(machinePhoto)
-          photoBlob = await photoResponse.blob()
-        } catch (photoError) {
-          console.error('Could not read offline diesel photo:', photoError)
-          toast.error('No se pudo leer la foto para guardar sin conexión')
-          return
-        }
-      }
-
-      const assetName = assetType === 'formal'
-        ? selectedAsset?.name
-        : exceptionAssetName
-
-      await offlineClient.enqueueDieselTransaction(transactionData, {
-        photoBlob,
-        evidenceType: 'consumption',
-        category: 'machine_display',
-        description: `Display de la máquina - ${quantityLiters}L | Cuenta litros: ${cuentaLitros}L`,
-        metadata: machineEvidenceMetadata
-          ? sanitizeValueForPostgresJsonb(machineEvidenceMetadata)
-          : undefined,
-      })
-
-      toast.success("Consumo guardado sin conexión", {
-        description: `${quantityLiters}L para ${assetName} — se sincronizará al volver en línea`,
-        duration: 5000,
-      })
-
-      setSelectedAsset(null)
-      setExceptionAssetName("")
-      setQuantityLiters("")
-      setCuentaLitros("")
-      setCuentaLitrosManuallyEdited(false)
-      setMachinePhoto(null)
-      setMachineEvidenceMetadata(null)
-      setNotes("")
-      setReadings({})
-      setPreviousCuentaLitros(null)
-      setTransactionDate(getLocalDateString())
-      setTransactionTime(getLocalTimeString())
-      return
-    }
-
-    if (assetType === 'formal' && selectedAsset?.id) {
+    if (isOnline && assetType === "formal" && selectedAsset?.id) {
       try {
         const validateRes = await fetch(
           `/api/diesel/validate-consumption-asset?asset_id=${encodeURIComponent(selectedAsset.id)}`
         )
         const validateJson = await validateRes.json().catch(() => ({}))
         if (!validateRes.ok || validateJson.ok === false) {
-          toast.error(validateJson.error || 'El equipo seleccionado no puede recibir combustible.')
+          toast.error(validateJson.error || "El equipo seleccionado no puede recibir combustible.")
           return
         }
       } catch (validateErr) {
-        console.error('Consumption asset validation failed', validateErr)
-        toast.error('No se pudo validar el equipo. Intenta de nuevo.')
+        console.error("Consumption asset validation failed", validateErr)
+        toast.error("No se pudo validar el equipo. Intenta de nuevo.")
         return
       }
     }
 
     // Pre-submit policy warning for out-of-order/backdated entries
-    try {
-      if (selectedWarehouse) {
-        const selectedIso = new Date(transactionDate + 'T' + transactionTime + ':00')
-        const { data: latestTx } = await supabase
-          .from('diesel_transactions')
-          .select('transaction_date')
-          .eq('warehouse_id', selectedWarehouse)
-          .order('transaction_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+    if (isOnline) {
+      try {
+        if (selectedWarehouse) {
+          const selectedIso = new Date(transactionDate + "T" + transactionTime + ":00")
+          const { data: latestTx } = await supabase
+            .from("diesel_transactions")
+            .select("transaction_date")
+            .eq("warehouse_id", selectedWarehouse)
+            .order("transaction_date", { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
-        const now = new Date()
-        const deltaMinutes = Math.floor((now.getTime() - selectedIso.getTime()) / 60000)
-        const isBackdated = deltaMinutes > backdatingThresholdMinutes
-        const isOutOfOrder = latestTx?.transaction_date
-          ? selectedIso.getTime() < new Date(latestTx.transaction_date).getTime()
-          : false
+          const now = new Date()
+          const deltaMinutes = Math.floor((now.getTime() - selectedIso.getTime()) / 60000)
+          const isBackdated = deltaMinutes > backdatingThresholdMinutes
+          const isOutOfOrder = latestTx?.transaction_date
+            ? selectedIso.getTime() < new Date(latestTx.transaction_date).getTime()
+            : false
 
-        if (isBackdated || isOutOfOrder) {
-          const proceed = confirm(
-            '⚠️ Este movimiento será marcado para validación.\n\n' +
-            'No cumple la política de control de diésel (posible amonestación).\n' +
-            (isOutOfOrder ? '\n• Fuera de orden respecto a movimientos previos.' : '') +
-            (isBackdated ? `\n• Antidatado por ${deltaMinutes} min.` : '') +
-            '\n\n¿Deseas continuar?'
-          )
-          if (!proceed) return
+          if (isBackdated || isOutOfOrder) {
+            const proceed = confirm(
+              "⚠️ Este movimiento será marcado para validación.\n\n" +
+                "No cumple la política de control de diésel (posible amonestación).\n" +
+                (isOutOfOrder ? "\n• Fuera de orden respecto a movimientos previos." : "") +
+                (isBackdated ? `\n• Antidatado por ${deltaMinutes} min.` : "") +
+                "\n\n¿Deseas continuar?"
+            )
+            if (!proceed) return
+          }
         }
+      } catch (warnErr) {
+        console.warn("Pre-submit policy check failed", warnErr)
       }
-    } catch (warnErr) {
-      console.warn('Pre-submit policy check failed', warnErr)
     }
 
-    // Warning for cuenta litros variance (only if warehouse has meter)
-    // Allow submission but warn if variance is high
     if (
       previousCuentaLitros !== null &&
       cuentaLitrosValid === false &&
@@ -682,234 +930,195 @@ export function ConsumptionEntryForm({
     ) {
       const proceed = confirm(
         `⚠️ La diferencia entre litros y cuenta litros es de ${cuentaLitrosVariance.toFixed(1)}L.\n\n` +
-        `Cantidad: ${quantityLiters}L\n` +
-        `Movimiento cuenta litros: ${(parseFloat(cuentaLitros) - (previousCuentaLitros || 0)).toFixed(1)}L\n\n` +
-        `¿Deseas continuar? La transacción será marcada para validación.`
+          `Cantidad: ${quantityLiters}L\n` +
+          `Movimiento cuenta litros: ${(parseFloat(cuentaLitros) - (previousCuentaLitros || 0)).toFixed(1)}L\n\n` +
+          `¿Deseas continuar? La transacción será marcada para validación.`
       )
-
       if (!proceed) return
     }
 
-      console.log('Step 1 ✓: User:', user.id)
-
-      // Get warehouse current inventory (faster than RPC)
-      console.log('Step 2: Getting warehouse balance...')
+    if (isOnline && selectedWarehouse) {
       const { data: warehouseData, error: warehouseError } = await supabase
-        .from('diesel_warehouses')
-        .select('current_inventory')
-        .eq('id', selectedWarehouse)
+        .from("diesel_warehouses")
+        .select("current_inventory")
+        .eq("id", selectedWarehouse)
         .single()
 
       if (warehouseError) {
-        console.error('Error getting warehouse balance:', warehouseError)
+        console.error("Error getting warehouse balance:", warehouseError)
         toast.error("Error al obtener el balance del almacén")
         return
       }
 
       const currentWarehouseBalance = warehouseData?.current_inventory || 0
       const estimatedBalance = currentWarehouseBalance - parseFloat(quantityLiters)
-      console.log('Step 2 ✓: Current warehouse balance:', currentWarehouseBalance, 'Estimated after:', estimatedBalance)
 
-      // Check if balance is sufficient (user validation only - actual balance calculated by DB)
-      // Only warn if going from positive to very negative, not if already negative
       if (currentWarehouseBalance > 0 && estimatedBalance < -50) {
-        toast.error(`Balance insuficiente en el almacén. Balance actual: ${currentWarehouseBalance.toFixed(1)}L`)
-        return
-      }
-      
-      // Warn but allow if already negative (might be correcting an error)
-      if (currentWarehouseBalance < 0 && estimatedBalance < currentWarehouseBalance - 100) {
-        toast.warning(`Advertencia: El balance ya es negativo (${currentWarehouseBalance.toFixed(1)}L). Esta transacción lo hará más negativo.`)
-      }
-
-      // Create transaction (different structure for formal vs exception assets)
-      // NOTE: previous_balance and current_balance are calculated by database trigger
-      // We don't calculate them client-side to avoid race conditions and backdating issues
-      console.log('Step 3: Building transaction data...')
-      console.log('Selected Plant ID:', selectedPlant)
-      console.log('Product ID:', productId)
-      
-      const plantIdForTx = resolveDieselTransactionPlantId(
-        selectedPlant,
-        selectedWarehouse,
-        warehouses,
-        allBuWarehouses
-      )
-      if (!plantIdForTx) {
-        toast.error('No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.')
-        return
-      }
-
-      const transactionData: any = {
-        plant_id: plantIdForTx,
-        warehouse_id: selectedWarehouse,
-        product_id: productId,
-        transaction_type: 'consumption',
-        asset_category: assetType,
-        quantity_liters: parseFloat(quantityLiters),
-        cuenta_litros: cuentaLitros ? parseFloat(cuentaLitros) : null,
-        // previous_balance and current_balance will be calculated by database trigger
-        operator_id: user.id,
-        transaction_date: new Date(transactionDate + 'T' + transactionTime + ':00').toISOString(),
-        notes: notes || null,
-        requires_validation: shouldRequireValidationForCuentaLitrosVariance(
-          previousCuentaLitros,
-          cuentaLitros ? parseFloat(cuentaLitros) : null,
-          parseFloat(quantityLiters),
-        ),
-        validation_notes: shouldRequireValidationForCuentaLitrosVariance(
-          previousCuentaLitros,
-          cuentaLitros ? parseFloat(cuentaLitros) : null,
-          parseFloat(quantityLiters),
+        toast.error(
+          `Balance insuficiente en el almacén. Balance actual: ${currentWarehouseBalance.toFixed(1)}L`
         )
-          ? `Varianza cuenta litros: ${cuentaLitrosVariance?.toFixed(1)}L`
-          : null,
-        created_by: user.id,
-        source_system: 'web_app'
-      }
-      console.log('Step 3 ✓: Transaction data built:', transactionData)
-
-      // Formal asset: previous_horometer/kilometer are set in DB (BEFORE INSERT trigger) from
-      // chronologically prior consumption so backdated rows do not pick a "future" reading and fail check1.
-      if (assetType === 'formal' && selectedAsset) {
-        transactionData.asset_id = selectedAsset.id
-        transactionData.horometer_reading = readings.hours_reading || null
-        transactionData.kilometer_reading = readings.kilometers_reading || null
-        transactionData.previous_horometer = null
-        transactionData.previous_kilometer = null
-      }
-
-      // Add exception asset data (no asset_id, no readings per DB constraints)
-      if (assetType === 'exception') {
-        transactionData.asset_id = null
-        transactionData.exception_asset_name = exceptionAssetName.trim()
-        transactionData.horometer_reading = null
-        transactionData.kilometer_reading = null
-        transactionData.previous_horometer = null
-        transactionData.previous_kilometer = null
-      }
-
-      console.log('Step 4: Inserting transaction...')
-      console.log('Transaction data being inserted:', JSON.stringify(transactionData, null, 2))
-      
-      const { data: transaction, error: transactionError } = await supabase
-        .from('diesel_transactions')
-        .insert([transactionData])
-        .select()
-        .maybeSingle()
-
-      if (transactionError) {
-        console.error('=== TRANSACTION INSERT ERROR ===')
-        console.error('Error code:', transactionError.code)
-        console.error('Error message:', transactionError.message)
-        console.error('Error details:', transactionError.details)
-        console.error('Error hint:', transactionError.hint)
-        console.error('Full error:', JSON.stringify(transactionError, null, 2))
-        throw transactionError
-      }
-      if (!transaction) {
-        console.warn('diesel_transactions insert: no row in response (possible RLS on RETURNING)')
-        toast.error('No se pudo confirmar el registro', {
-          description: dieselInsertReturnedNoRowDescription(productType),
-          duration: 14000,
-        })
         return
       }
-      console.log('Step 4 ✓: Transaction created:', transaction.id)
-      console.log('Transaction balance calculated by DB:', {
-        previous_balance: transaction.previous_balance,
-        current_balance: transaction.current_balance
-      })
 
-      // Upload evidence photo (machine display only)
-      console.log('Step 5: Inserting evidence...')
-      if (machinePhoto) {
-        const safeMeta = machineEvidenceMetadata
-          ? (sanitizeValueForPostgresJsonb(machineEvidenceMetadata) as Json)
-          : null
-        const evidenceRow = {
-          transaction_id: transaction.id,
-          evidence_type: 'consumption' as const,
-          category: 'machine_display' as const,
-          photo_url: machinePhoto,
-          description: `Display de la máquina - ${quantityLiters}L | Cuenta litros: ${cuentaLitros}L`,
-          created_by: user.id,
-          metadata: safeMeta,
-        }
-        let { error: evidenceError } = await supabase.from('diesel_evidence').insert(evidenceRow)
-        if (evidenceError && isPostgresUnicodeJsonError(evidenceError) && safeMeta != null) {
-          console.warn('diesel_evidence: retrying insert without metadata after unicode rejection')
-          ;({ error: evidenceError } = await supabase
-            .from('diesel_evidence')
-            .insert({ ...evidenceRow, metadata: null }))
-          if (!evidenceError) {
-            toast.warning('Evidencia guardada sin metadatos técnicos de la foto', {
-              description: 'La base de datos rechazó los datos EXIF; el consumo quedó registrado.',
-              duration: 5000,
-            })
+      if (currentWarehouseBalance < 0 && estimatedBalance < currentWarehouseBalance - 100) {
+        toast.warning(
+          `Advertencia: El balance ya es negativo (${currentWarehouseBalance.toFixed(1)}L). Esta transacción lo hará más negativo.`
+        )
+      }
+    }
+
+    const plantIdForTx = resolveDieselTransactionPlantId(
+      selectedPlant,
+      selectedWarehouse,
+      warehouses,
+      allBuWarehouses
+    )
+    if (!plantIdForTx) {
+      toast.error("No se pudo determinar la planta del almacén. Vuelve a seleccionar el almacén.")
+      return
+    }
+
+    const transactionData = buildConsumptionTransactionData({
+      plantIdForTx,
+      selectedWarehouse,
+      productId,
+      assetType,
+      selectedAsset,
+      exceptionAssetName,
+      quantityLiters,
+      cuentaLitros,
+      previousCuentaLitros,
+      cuentaLitrosVariance,
+      readings,
+      transactionDate,
+      transactionTime,
+      notes,
+      userId: user.id,
+    })
+
+    const assetName = assetType === "formal" ? selectedAsset?.name : exceptionAssetName
+
+    let activeWipId = wipOutboxId
+    const queuedId = await ensureConsumptionWipQueued({
+      ...buildWipContext(),
+      userId: user.id,
+      productId,
+      selectedWarehouse,
+    })
+
+    if (queuedId) {
+      activeWipId = queuedId
+      setWipOutboxId(queuedId)
+    }
+
+    const submitResult = await submitDurableDieselConsumption(
+      activeWipId
+        ? {
+            transactionData: {},
+            quantityLiters,
+            cuentaLitros,
+            isOnline,
+            existingOutboxId: activeWipId,
           }
-        }
-        if (evidenceError) {
-          console.error('Evidence insert error:', evidenceError)
-          throw evidenceError
-        }
-        console.log('Step 5 ✓: Evidence inserted')
-      }
+        : {
+            transactionData,
+            quantityLiters,
+            cuentaLitros,
+            photoPreviewUrl: machinePhoto,
+            evidenceMetadata: machineEvidenceMetadata,
+            isOnline,
+          }
+    )
 
-      // Update asset readings if provided (only for formal assets)
-      console.log('Step 6: Updating asset readings...')
-      if (assetType === 'formal' && selectedAsset && (readings.hours_reading || readings.kilometers_reading)) {
-        const updateData: any = {}
-        if (readings.hours_reading) updateData.current_hours = readings.hours_reading
-        if (readings.kilometers_reading) updateData.current_kilometers = readings.kilometers_reading
-
-        const { error: updateError } = await supabase
-          .from('assets')
-          .update(updateData)
-          .eq('id', selectedAsset.id)
-        
-        if (updateError) {
-          console.error('Asset update error:', updateError)
-          // Don't throw - readings update is not critical
-        }
-        console.log('Step 6 ✓: Asset readings updated')
-      } else {
-        console.log('Step 6: Skipped (no readings to update)')
-      }
-
-      const assetName = assetType === 'formal' 
-        ? selectedAsset.name 
-        : exceptionAssetName
-
-      toast.success("✅ Consumo registrado exitosamente", {
-        description: `${quantityLiters}L consumidos por ${assetName}`,
-        duration: 4000
+    if (submitResult.status === "error") {
+      toast.error("No se pudo guardar el consumo", {
+        description: submitResult.message,
+        duration: 8000,
       })
+      return
+    }
 
-      if (previousCuentaLitros !== null && cuentaLitrosValid === false) {
-        toast.warning("⚠️ Transacción marcada para validación", {
-          description: "La diferencia con cuenta litros requiere revisión",
-          duration: 5000
-        })
-      }
-
-      // Clear form
+    const clearForm = () => {
       setSelectedAsset(null)
       setExceptionAssetName("")
       setQuantityLiters("")
       setCuentaLitros("")
       setCuentaLitrosManuallyEdited(false)
       setMachinePhoto(null)
+      setMachinePhotoDraftId(null)
+      setWipOutboxId(null)
+      setDraftRecovered(false)
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current)
+        previewObjectUrlRef.current = null
+      }
       setMachineEvidenceMetadata(null)
       setNotes("")
       setReadings({})
       setPreviousCuentaLitros(null)
       setTransactionDate(getLocalDateString())
       setTransactionTime(getLocalTimeString())
+    }
 
-      if (onSuccess) {
-        onSuccess(transaction.id)
+    if (submitResult.status === "synced") {
+      if (assetType === "formal" && selectedAsset && (readings.hours_reading || readings.kilometers_reading)) {
+        const updateData: Record<string, number> = {}
+        if (readings.hours_reading) updateData.current_hours = readings.hours_reading
+        if (readings.kilometers_reading) updateData.current_kilometers = readings.kilometers_reading
+        const { error: updateError } = await supabase
+          .from("assets")
+          .update(updateData)
+          .eq("id", selectedAsset.id)
+        if (updateError) {
+          console.error("Asset update error:", updateError)
+        }
       }
+
+      toast.success("✅ Consumo registrado exitosamente", {
+        description: `${quantityLiters}L consumidos por ${assetName}`,
+        duration: 4000,
+      })
+
+      if (previousCuentaLitros !== null && cuentaLitrosValid === false) {
+        toast.warning("⚠️ Transacción marcada para validación", {
+          description: "La diferencia con cuenta litros requiere revisión",
+          duration: 5000,
+        })
+      }
+
+      clearForm()
+      void refreshPendingDieselCount()
+      if (onSuccess) {
+        onSuccess(submitResult.outboxId)
+      }
+      return
+    }
+
+    // Queued locally — data is safe on device; server sync pending or failed.
+    clearForm()
+    void refreshPendingDieselCount()
+
+    if (!isOnline) {
+      toast.success("Consumo guardado en el dispositivo", {
+        description: `${quantityLiters}L para ${assetName}. Se sincronizará automáticamente al recuperar conexión.`,
+        duration: 8000,
+      })
+      return
+    }
+
+    if (submitResult.waitResult === "failed") {
+      toast.error("El consumo quedó guardado pero no se pudo sincronizar", {
+        description:
+          "Los datos están en este dispositivo. Usa «Sincronizar» en la barra de diesel o contacta a coordinación.",
+        duration: 12000,
+      })
+      return
+    }
+
+    toast.warning("Consumo guardado — sincronización pendiente", {
+      description: `${quantityLiters}L para ${assetName}. El servidor aún no confirmó el registro; no cierres la app hasta ver «En línea» sin pendientes.`,
+      duration: 12000,
+    })
     } catch (error) {
       console.error('=== ERROR CREATING CONSUMPTION ===')
       console.error('Error details:', error)
@@ -931,6 +1140,54 @@ export function ConsumptionEntryForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {(draftRecovered || wipOutboxId) && (
+        <Alert className="border-blue-300 bg-blue-50">
+          <CheckCircle2 className="h-4 w-4 text-blue-700" />
+          <AlertTitle className="text-blue-900">
+            {wipOutboxId
+              ? "Consumo protegido en este dispositivo"
+              : "Borrador recuperado"}
+          </AlertTitle>
+          <AlertDescription className="text-sm text-blue-800">
+            {wipOutboxId
+              ? "El formulario completo ya está guardado localmente. Si la app se cerró por memoria llena, tus datos siguen aquí — pulsa Registrar para confirmar en el servidor."
+              : "Continúa el registro; los cambios se guardan automáticamente."}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {(pendingDieselSync > 0 || !isOnline) && (
+        <Alert
+          className={
+            pendingDieselSync > 0
+              ? "border-amber-300 bg-amber-50"
+              : "border-orange-200 bg-orange-50"
+          }
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-700" />
+          <AlertTitle className="text-amber-900">
+            {pendingDieselSync > 0
+              ? `${pendingDieselSync} movimiento(s) de diesel pendiente(s) de sincronizar`
+              : "Sin conexión a internet"}
+          </AlertTitle>
+          <AlertDescription className="text-sm text-amber-800 space-y-2">
+            {pendingDieselSync > 0 ? (
+              <p>
+                Los consumos guardados en este dispositivo se enviarán al servidor automáticamente.
+                No borres datos del navegador hasta que el indicador muestre «En línea» sin pendientes.
+              </p>
+            ) : (
+              <p>
+                Puedes registrar consumos: se guardarán en el dispositivo y se sincronizarán al volver en línea.
+              </p>
+            )}
+            <div className="flex items-center gap-2 pt-1">
+              <DieselOfflineStatus />
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -1415,10 +1672,16 @@ export function ConsumptionEntryForm({
                       setMachinePhoto(url)
                       setMachineEvidenceMetadata(meta ?? null)
                     }}
+                    onStagingPhotoSaved={(photoDraftId) => {
+                      setMachinePhotoDraftId(photoDraftId)
+                      void flushDraftNow()
+                      void flushWipNow()
+                    }}
+                    dieselStaging
                     disabled={loading}
                     category="machine_display"
                   />
-                  {!machinePhoto && (
+                  {!machinePhotoDraftId && (
                     <Alert className="border-yellow-500 bg-yellow-50">
                       <AlertDescription className="text-yellow-800 text-sm">
                         ⚠️ <strong>Foto requerida:</strong> La foto del display es obligatoria. Debe mostrar claramente los litros despachados y el cuenta litros para validar la transacción.
@@ -1467,7 +1730,7 @@ export function ConsumptionEntryForm({
           
           <Button
             type="submit"
-            disabled={loading || !selectedWarehouse || (assetType === 'formal' && !selectedAsset) || (assetType === 'exception' && !exceptionAssetName) || !quantityLiters || (previousCuentaLitros !== null && !cuentaLitros) || !machinePhoto}
+            disabled={loading || !selectedWarehouse || (assetType === 'formal' && !selectedAsset) || (assetType === 'exception' && !exceptionAssetName) || !quantityLiters || (previousCuentaLitros !== null && !cuentaLitros) || !machinePhotoDraftId}
             className="flex-1 sm:flex-none"
           >
             {loading ? (

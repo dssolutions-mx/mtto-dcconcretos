@@ -348,6 +348,17 @@ class SimplePhotoService {
     }
   }
 
+  // Release in-memory copy after durable persistence (reduces RAM before OS may kill the tab).
+  releasePhotoMemory(photoId: string): void {
+    const photo = this.photos.get(photoId)
+    if (!photo) return
+    photo.compressedFile = null
+    photo.originalFile = null
+    this.photos.set(photoId, photo)
+    const idx = this.uploadQueue.indexOf(photoId)
+    if (idx > -1) this.uploadQueue.splice(idx, 1)
+  }
+
   // Delete photo
   async deletePhoto(photoId: string): Promise<boolean> {
     try {

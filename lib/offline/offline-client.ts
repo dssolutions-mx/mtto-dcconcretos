@@ -268,9 +268,11 @@ class OfflineClient {
     await this.ensureReady()
     let indexedDB = 0
 
-    // Dead-letter outbox entries can no longer be retried — drop them.
+    // Dead-letter outbox entries can no longer be retried — drop non-diesel only.
+    // Diesel dead letters are audit-critical; operators must retry or escalate manually.
     const deadLetters = await db.outbox.where("status").equals("dead_letter").toArray()
     for (const entry of deadLetters) {
+      if (entry.domain === "diesel") continue
       await db.outbox.delete(entry.id)
       indexedDB++
     }
@@ -726,6 +728,105 @@ class OfflineClient {
     return cached.assets
   }
 
+  // ---------------------------------------------------------------------------
+  // Diesel consumption drafts + staging photos (survive app kill / low memory)
+  // ---------------------------------------------------------------------------
+
+  async saveDieselConsumptionDraft(data: unknown): Promise<void> {
+    await this.ensureReady()
+    await this.saveDraft("diesel-consumption", data, "diesel-consumption-draft")
+    void requestStoragePersistIfNeeded()
+  }
+
+  async getDieselConsumptionDraft(): Promise<unknown | null> {
+    await this.ensureReady()
+    const draft = await db.drafts.get("diesel-consumption-draft")
+    return draft?.data ?? null
+  }
+
+  async clearDieselConsumptionDraft(): Promise<void> {
+    await this.ensureReady()
+    await db.drafts.delete("diesel-consumption-draft")
+  }
+
+  async saveDieselConsumptionStagingPhoto(
+    blob: Blob,
+    options?: {
+      fileName?: string
+      evidenceType?: string
+      category?: string
+      metadata?: unknown
+      id?: string
+    }
+  ): Promise<string> {
+    await this.ensureReady()
+    const photoId = options?.id ?? crypto.randomUUID()
+    const outboxId = "draft:diesel-consumption-photo"
+
+    await db.transaction("rw", db.diesel_photos, async () => {
+      const existing = await db.diesel_photos.where("outboxId").equals(outboxId).toArray()
+      for (const photo of existing) {
+        await db.diesel_photos.delete(photo.id)
+      }
+
+      const photo: DieselPhotoEntry = {
+        id: photoId,
+        outboxId,
+        blob,
+        fileName: options?.fileName ?? `diesel-consumption-${Date.now()}.jpg`,
+        evidenceType: options?.evidenceType ?? "consumption",
+        category: options?.category ?? "machine_display",
+        metadata: options?.metadata,
+        uploaded: false,
+        retryCount: 0,
+        createdAt: Date.now(),
+      }
+      await db.diesel_photos.put(photo)
+    })
+
+    void requestStoragePersistIfNeeded()
+    return photoId
+  }
+
+  async getDieselConsumptionStagingPhoto(): Promise<DieselPhotoEntry | undefined> {
+    await this.ensureReady()
+    const photos = await db.diesel_photos
+      .where("outboxId")
+      .equals("draft:diesel-consumption-photo")
+      .toArray()
+    return photos[0]
+  }
+
+  async clearDieselConsumptionStagingPhoto(): Promise<void> {
+    await this.ensureReady()
+    const photos = await db.diesel_photos
+      .where("outboxId")
+      .equals("draft:diesel-consumption-photo")
+      .toArray()
+    for (const photo of photos) {
+      await db.diesel_photos.delete(photo.id)
+    }
+  }
+
+  async listDieselOutboxEntries(): Promise<OutboxEntry[]> {
+    await this.ensureReady()
+    return db.outbox.where("domain").equals("diesel").sortBy("createdAt")
+  }
+
+  async retryDieselOutboxEntry(entryId: string): Promise<void> {
+    await this.ensureReady()
+    const entry = await db.outbox.get(entryId)
+    if (!entry || entry.domain !== "diesel") return
+
+    await db.outbox.update(entryId, {
+      status: "pending",
+      attemptCount: 0,
+      nextAttemptAt: Date.now(),
+      lastError: undefined,
+    })
+    void bridgeRequestSync()
+  }
+
   async enqueueDieselTransaction(
     transactionData: Record<string, unknown>,
     options?: {
@@ -743,6 +844,12 @@ class OfflineClient {
     const photoIds: string[] = []
 
     await db.transaction("rw", [db.outbox, db.diesel_photos], async () => {
+      const existingEntry = await db.outbox.get(entryId)
+      const existingPhotos = await db.diesel_photos.where("outboxId").equals(entryId).toArray()
+      for (const oldPhoto of existingPhotos) {
+        await db.diesel_photos.delete(oldPhoto.id)
+      }
+
       if (options?.photoBlob) {
         const photoId = crypto.randomUUID()
         const photo: DieselPhotoEntry = {
@@ -782,7 +889,7 @@ class OfflineClient {
         status: "pending",
         attemptCount: 0,
         nextAttemptAt: Date.now(),
-        createdAt: Date.now(),
+        createdAt: existingEntry?.createdAt ?? Date.now(),
       }
       await db.outbox.put(entry)
     })
