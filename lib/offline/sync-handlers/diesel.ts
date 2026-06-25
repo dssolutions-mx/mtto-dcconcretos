@@ -143,11 +143,23 @@ export async function syncDieselTransaction(
     throw new Error("Diesel evidence photos failed to upload")
   }
 
-  const { data, error } = await supabase
+  const clientTxId = payload.transactionData.client_transaction_id as string | undefined
+
+  let { data, error } = await supabase
     .from("diesel_transactions")
     .insert([payload.transactionData])
     .select()
     .maybeSingle()
+
+  if (error?.code === "23505" && clientTxId) {
+    const existing = await supabase
+      .from("diesel_transactions")
+      .select()
+      .eq("client_transaction_id", clientTxId)
+      .maybeSingle()
+    data = existing.data
+    error = existing.error
+  }
 
   if (error) throw new Error(error.message)
   if (!data) {

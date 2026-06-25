@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import type { CompletedChecklistData, ChecklistSectionDefinition, ChecklistItemDefinition } from "./types"
+import type { CompletedChecklistData, ChecklistSectionDefinition } from "./types"
 import { CompletedChecklistHeader } from "./completed-checklist-header"
 import { CompletedChecklistGeneralInfo } from "./completed-checklist-general-info"
 import { CompletedChecklistResultsSummary } from "./completed-checklist-results-summary"
@@ -19,6 +19,7 @@ import { CompletedChecklistItemsBySection } from "./completed-checklist-items-by
 import { CompletedChecklistIssuesCard } from "./completed-checklist-issues-card"
 import { CompletedChecklistExecutionInfo } from "./completed-checklist-execution-info"
 import { ChecklistEvidencePdfExport } from "@/components/checklists/checklist-evidence-pdf-export"
+import { countChecklistSectionItems } from "@/lib/checklist/completed-checklist-display"
 
 export function CompletedChecklistDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -37,21 +38,34 @@ export function CompletedChecklistDetailPage({ params }: { params: Promise<{ id:
         if (!response.ok) throw new Error('Error al cargar los detalles del checklist')
         const result = await response.json()
         setData(result.data)
+        const attendeeIds: string[] = []
         if (result.data?.security_data) {
-          const attendeeIds: string[] = []
           Object.values(result.data.security_data).forEach((sectionData: { attendees?: string[] }) => {
             if (sectionData.attendees?.length) attendeeIds.push(...sectionData.attendees)
           })
-          if (attendeeIds.length > 0) {
-            const res = await fetch(`/api/operators/register?ids=${[...new Set(attendeeIds)].join(',')}`)
-            if (res.ok) {
-              const operators = await res.json()
-              const namesMap: Record<string, { nombre: string; apellido: string; employee_code?: string }> = {}
-              operators.forEach((op: { id: string; nombre?: string; apellido?: string; employee_code?: string }) => {
-                namesMap[op.id] = { nombre: op.nombre || '', apellido: op.apellido || '', employee_code: op.employee_code }
-              })
-              setOperatorNames(namesMap)
-            }
+        }
+        if (result.data?.plant_operations_data) {
+          Object.values(result.data.plant_operations_data).forEach((sectionData: {
+            entries?: Array<{ operator_id?: string }>
+            decisions?: Array<{ operator_id?: string }>
+          }) => {
+            sectionData.entries?.forEach((e) => {
+              if (e.operator_id) attendeeIds.push(e.operator_id)
+            })
+            sectionData.decisions?.forEach((d) => {
+              if (d.operator_id) attendeeIds.push(d.operator_id)
+            })
+          })
+        }
+        if (attendeeIds.length > 0) {
+          const res = await fetch(`/api/operators/register?ids=${[...new Set(attendeeIds)].join(',')}`)
+          if (res.ok) {
+            const operators = await res.json()
+            const namesMap: Record<string, { nombre: string; apellido: string; employee_code?: string }> = {}
+            operators.forEach((op: { id: string; nombre?: string; apellido?: string; employee_code?: string }) => {
+              namesMap[op.id] = { nombre: op.nombre || '', apellido: op.apellido || '', employee_code: op.employee_code }
+            })
+            setOperatorNames(namesMap)
           }
         }
       } catch (err: unknown) {
@@ -101,27 +115,10 @@ export function CompletedChecklistDetailPage({ params }: { params: Promise<{ id:
     )
   }
 
-  const allSections = (data.checklists?.checklist_sections ?? []) as ChecklistSectionDefinition[]
-  const uniqueSections = allSections.reduce<ChecklistSectionDefinition[]>((acc, section) => {
-    if (!section) return acc
-    const sectionTypeKey = section.section_type ?? (section.id && data.security_data?.[section.id] ? 'security_talk' : 'checklist')
-    const key = `${sectionTypeKey}::${section.title ?? section.id ?? acc.length}`
-    if (!acc.some(existing => {
-      const existingTypeKey = existing.section_type ?? (existing.id && data.security_data?.[existing.id] ? 'security_talk' : 'checklist')
-      return `${existingTypeKey}::${existing.title ?? existing.id ?? 'unknown'}` === key
-    })) acc.push(section)
-    return acc
-  }, [])
-
-  const totalItems = uniqueSections.reduce((total, section) => {
-    const securityDataForSection = section?.id ? data.security_data?.[section.id] : undefined
-    const isSecuritySection = section.section_type === 'security_talk' || !!securityDataForSection
-    if (section.section_type === 'checklist' || (!section.section_type && !isSecuritySection)) {
-      const items = section.checklist_items as ChecklistItemDefinition[] | undefined
-      return total + (items?.length ?? 0)
-    }
-    return total
-  }, 0) || 0
+  const totalItems = countChecklistSectionItems(
+    (data.checklists?.checklist_sections ?? []) as ChecklistSectionDefinition[],
+    data.security_data
+  )
   const passedItems = data.completed_items?.filter(i => i.status === 'pass').length || 0
   const flaggedItems = data.completed_items?.filter(i => i.status === 'flag').length || 0
   const failedItems = data.completed_items?.filter(i => i.status === 'fail').length || 0

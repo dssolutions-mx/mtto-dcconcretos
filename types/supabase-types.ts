@@ -2239,6 +2239,9 @@ export type Database = {
           assigned_to: string | null
           created_at: string | null
           created_by: string | null
+          draft_payload: Json | null
+          draft_updated_at: string | null
+          draft_updated_by: string | null
           id: string
           maintenance_plan_id: string | null
           scheduled_date: string
@@ -2253,6 +2256,9 @@ export type Database = {
           assigned_to?: string | null
           created_at?: string | null
           created_by?: string | null
+          draft_payload?: Json | null
+          draft_updated_at?: string | null
+          draft_updated_by?: string | null
           id?: string
           maintenance_plan_id?: string | null
           scheduled_date: string
@@ -2267,6 +2273,9 @@ export type Database = {
           assigned_to?: string | null
           created_at?: string | null
           created_by?: string | null
+          draft_payload?: Json | null
+          draft_updated_at?: string | null
+          draft_updated_by?: string | null
           id?: string
           maintenance_plan_id?: string | null
           scheduled_date?: string
@@ -2316,6 +2325,7 @@ export type Database = {
       }
       checklist_sections: {
         Row: {
+          bonus_closure_config: Json | null
           checklist_id: string | null
           cleanliness_config: Json | null
           created_at: string | null
@@ -2323,6 +2333,8 @@ export type Database = {
           evidence_config: Json | null
           id: string
           order_index: number
+          punctuality_config: Json | null
+          funnel_config: Json | null
           section_type: string | null
           security_config: Json | null
           tire_readings_config: Json | null
@@ -2331,6 +2343,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          bonus_closure_config?: Json | null
           checklist_id?: string | null
           cleanliness_config?: Json | null
           created_at?: string | null
@@ -2338,6 +2351,8 @@ export type Database = {
           evidence_config?: Json | null
           id?: string
           order_index: number
+          punctuality_config?: Json | null
+          funnel_config?: Json | null
           section_type?: string | null
           security_config?: Json | null
           tire_readings_config?: Json | null
@@ -2346,6 +2361,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          bonus_closure_config?: Json | null
           checklist_id?: string | null
           cleanliness_config?: Json | null
           created_at?: string | null
@@ -2353,6 +2369,8 @@ export type Database = {
           evidence_config?: Json | null
           id?: string
           order_index?: number
+          punctuality_config?: Json | null
+          funnel_config?: Json | null
           section_type?: string | null
           security_config?: Json | null
           tire_readings_config?: Json | null
@@ -2448,6 +2466,8 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           description: string | null
+          /** Roles allowed to complete schedules from this template. */
+          executor_roles: string[] | null
           frequency: string | null
           hours_interval: number | null
           id: string
@@ -2461,6 +2481,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           description?: string | null
+          executor_roles?: string[] | null
           frequency?: string | null
           hours_interval?: number | null
           id?: string
@@ -2474,6 +2495,7 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           description?: string | null
+          executor_roles?: string[] | null
           frequency?: string | null
           hours_interval?: number | null
           id?: string
@@ -2524,6 +2546,7 @@ export type Database = {
           reading_timestamp: string | null
           schedule_id: string | null
           security_data: Json | null
+          plant_operations_data: Json | null
           service_order_id: string | null
           signature_data: string | null
           status: string | null
@@ -2549,6 +2572,7 @@ export type Database = {
           reading_timestamp?: string | null
           schedule_id?: string | null
           security_data?: Json | null
+          plant_operations_data?: Json | null
           service_order_id?: string | null
           signature_data?: string | null
           status?: string | null
@@ -2574,6 +2598,7 @@ export type Database = {
           reading_timestamp?: string | null
           schedule_id?: string | null
           security_data?: Json | null
+          plant_operations_data?: Json | null
           service_order_id?: string | null
           signature_data?: string | null
           status?: string | null
@@ -6858,6 +6883,152 @@ export type Database = {
             columns: ["previous_asset_id"]
             isOneToOne: false
             referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_evaluation_events: {
+        Row: {
+          created_at: string | null
+          event_date: string
+          event_type: string
+          evidence: Json | null
+          id: string
+          metadata: Json | null
+          operator_id: string
+          period_month: number | null
+          period_year: number | null
+          plant_id: string
+          reason: string | null
+          section_id: string | null
+          source_completion_id: string | null
+          source_schedule_id: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string | null
+          event_date: string
+          event_type: string
+          evidence?: Json | null
+          id?: string
+          metadata?: Json | null
+          operator_id: string
+          period_month?: number | null
+          period_year?: number | null
+          plant_id: string
+          reason?: string | null
+          section_id?: string | null
+          source_completion_id?: string | null
+          source_schedule_id?: string | null
+          status: string
+        }
+        Update: {
+          created_at?: string | null
+          event_date?: string
+          event_type?: string
+          evidence?: Json | null
+          id?: string
+          metadata?: Json | null
+          operator_id?: string
+          period_month?: number | null
+          period_year?: number | null
+          plant_id?: string
+          reason?: string | null
+          section_id?: string | null
+          source_completion_id?: string | null
+          source_schedule_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_uuid"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "authorization_limits"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "user_authorization_summary"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "user_plants_expanded"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["asset_plant_uuid"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "asset_operators_full"
+            referencedColumns: ["operator_plant_uuid"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_low_stock_alerts"
+            referencedColumns: ["plant_id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_plant_id_fkey"
+            columns: ["plant_id"]
+            isOneToOne: false
+            referencedRelation: "plants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_source_completion_id_fkey"
+            columns: ["source_completion_id"]
+            isOneToOne: false
+            referencedRelation: "completed_checklists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_source_schedule_id_fkey"
+            columns: ["source_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_evaluation_events_source_schedule_id_fkey"
+            columns: ["source_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "checklist_schedules_status"
             referencedColumns: ["id"]
           },
         ]

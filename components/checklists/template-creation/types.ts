@@ -30,19 +30,40 @@ export interface SecurityConfig {
   allow_evidence: boolean
 }
 
+export interface PunctualityConfig {
+  require_production_flag: boolean
+}
+
+export interface BonusClosureConfig {
+  bonus_type: "cleanliness"
+  deadline_day: number
+  suggest_eligibility_threshold: number
+}
+
+export interface SectionFunnelConfig {
+  lane: "maintenance" | "operations_evaluation"
+}
+
 import type { TireReadingsSectionConfig } from "@/types/tires"
 
 export interface ChecklistSection {
   id?: string
   title: string
   order_index: number
-  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings"
+  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings" | "operator_punctuality" | "bonus_closure"
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig
+  punctuality_config?: PunctualityConfig
+  bonus_closure_config?: BonusClosureConfig
   tire_readings_config?: TireReadingsSectionConfig
+  funnel_config?: SectionFunnelConfig
   items: ChecklistItem[]
 }
+
+import {
+  type ChecklistExecutorRole,
+} from "@/lib/checklist/executor-roles"
 
 export interface ChecklistTemplate {
   name: string
@@ -50,5 +71,6 @@ export interface ChecklistTemplate {
   model_id: string
   frequency: string
   hours_interval?: number
+  executor_roles?: ChecklistExecutorRole[]
   sections: ChecklistSection[]
 }

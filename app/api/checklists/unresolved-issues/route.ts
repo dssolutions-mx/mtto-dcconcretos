@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { isOperationsEvaluationSection } from '@/lib/checklist/section-funnel'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -53,8 +54,8 @@ export async function GET() {
       const sectionType = completedItem?.section_type || 'maintenance'
       const sectionTitle = completedItem?.section_title || 'Problema detectado'
 
-      // Skip cleanliness and security sections
-      if (sectionType === 'cleanliness_bonus' || sectionType === 'security_talk') {
+      // Lane B (evaluación operativa): sin checklist_issues ni OT
+      if (isOperationsEvaluationSection(sectionType)) {
         continue
       }
 
@@ -126,7 +127,7 @@ export async function GET() {
           const sectionType = completedItem?.section_type || 'maintenance'
           const sectionTitle = completedItem?.section_title || 'Problema detectado'
 
-          if (sectionType === 'cleanliness_bonus' || sectionType === 'security_talk') {
+          if (isOperationsEvaluationSection(sectionType)) {
             continue
           }
 

@@ -76,9 +76,10 @@ export function PlantDailyReadinessTable({
       <div className="divide-y divide-border/40">
         {rows.map((row, idx) => {
           const ok = row.readiness === "listo"
+          const isPlantControl = row.rowKind === "plant_control"
           return (
             <div
-              key={row.assetId}
+              key={isPlantControl ? "plant-control" : row.assetId}
               className={cn(
                 "grid gap-3 px-4 py-3 sm:px-5 sm:grid-cols-[auto_1fr_auto] sm:items-center",
                 !ok && "bg-amber-50/50 dark:bg-amber-950/15"
@@ -89,7 +90,9 @@ export function PlantDailyReadinessTable({
               </span>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold tabular-nums">{row.assetCode ?? "—"}</p>
+                  <p className="font-semibold tabular-nums">
+                    {isPlantControl ? row.assetName : (row.assetCode ?? "—")}
+                  </p>
                   {ok ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
                       <CheckCircle2 className="h-3 w-3" />
@@ -102,11 +105,20 @@ export function PlantDailyReadinessTable({
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.assetName ?? "—"}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground/80">Operador:</span>{" "}
-                  {row.operatorName ?? "Sin asignar"}
-                </p>
+                {!isPlantControl && (
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.assetName ?? "—"}</p>
+                )}
+                {!isPlantControl && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground/80">Operador:</span>{" "}
+                    {row.operatorName ?? "Sin asignar"}
+                  </p>
+                )}
+                {isPlantControl && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Checklist diario de operaciones de planta
+                  </p>
+                )}
                 {row.checklistName && (
                   <p className="mt-0.5 text-[11px] text-muted-foreground/90">{row.checklistName}</p>
                 )}

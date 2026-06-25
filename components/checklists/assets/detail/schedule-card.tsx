@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { AlertTriangle, Calendar, CalendarClock, Eye, Play } from "lucide-react"
 import Link from "next/link"
 import { getScheduleStatus } from "@/lib/utils/date-utils"
+import { ChecklistDraftBadge } from "@/components/checklists/checklist-draft-badge"
 
 interface ChecklistSchedule {
   id: string
@@ -14,6 +15,8 @@ interface ChecklistSchedule {
   scheduled_date: string
   status: string
   assigned_to: string | null
+  draft_payload?: unknown
+  draft_updated_at?: string | null
   checklists: {
     id: string
     name: string
@@ -85,8 +88,20 @@ const variantConfig: Record<
 
 function getStatusBadge(
   schedule: ChecklistSchedule,
-  formatDate: (s: string) => string
+  variant: ScheduleVariant
 ) {
+  if (variant === "future") {
+    return (
+      <Badge
+        variant="outline"
+        className="flex items-center gap-1 flex-shrink-0 cursor-default border-slate-300 dark:border-slate-600"
+      >
+        <Calendar className="h-3 w-3" />
+        Futuro
+      </Badge>
+    )
+  }
+
   const scheduleStatus = getScheduleStatus(
     (schedule as { scheduled_day?: string }).scheduled_day ||
       schedule.scheduled_date
@@ -136,7 +151,12 @@ function ScheduleCardInner({
     (schedule as { scheduled_day?: string }).scheduled_day ||
     schedule.scheduled_date
   const checklistName = schedule.checklists?.name || "Sin nombre"
-  const isFuture = variant === "future"
+  const executeLabel =
+    variant === "overdue"
+      ? "Ejecutar Ahora"
+      : variant === "future"
+        ? "Completar anticipado"
+        : "Ejecutar"
 
   return (
     <div
@@ -160,7 +180,10 @@ function ScheduleCardInner({
             </p>
           )}
         </div>
-        {getStatusBadge(schedule, formatDate)}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          {getStatusBadge(schedule, variant)}
+          <ChecklistDraftBadge schedule={schedule} />
+        </div>
       </div>
 
       {schedule.profiles && (
@@ -169,34 +192,32 @@ function ScheduleCardInner({
         </p>
       )}
 
-      {!isFuture && (
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" className={`${config.ctaClass} cursor-pointer`} asChild>
-            <Link href={`/checklists/ejecutar/${schedule.id}`}>
-              <Play className="h-3 w-3 mr-1" />
-              {variant === "overdue" ? "Ejecutar Ahora" : "Ejecutar"}
-            </Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onReschedule(schedule.id)}
+      <div className="flex gap-2 flex-wrap">
+        <Button size="sm" className={`${config.ctaClass} cursor-pointer`} asChild>
+          <Link href={`/checklists/ejecutar/${schedule.id}`}>
+            <Play className="h-3 w-3 mr-1" />
+            {executeLabel}
+          </Link>
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onReschedule(schedule.id)}
+          className="cursor-pointer transition-colors duration-200"
+        >
+          <CalendarClock className="h-3 w-3 mr-1" />
+          Reprogramar
+        </Button>
+        <Button size="sm" variant="outline" asChild>
+          <Link
+            href={`/checklists/plantillas/${schedule.template_id}`}
             className="cursor-pointer transition-colors duration-200"
           >
-            <CalendarClock className="h-3 w-3 mr-1" />
-            Reprogramar
-          </Button>
-          <Button size="sm" variant="outline" asChild>
-            <Link
-              href={`/checklists/plantillas/${schedule.template_id}`}
-              className="cursor-pointer transition-colors duration-200"
-            >
-              <Eye className="h-3 w-3 mr-1" />
-              Ver Plantilla
-            </Link>
-          </Button>
-        </div>
-      )}
+            <Eye className="h-3 w-3 mr-1" />
+            Ver Plantilla
+          </Link>
+        </Button>
+      </div>
     </div>
   )
 }

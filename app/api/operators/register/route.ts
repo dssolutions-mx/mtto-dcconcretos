@@ -17,6 +17,7 @@ import {
   operatorRowVisibleToJun,
   operatorRowVisibleToJp,
 } from '@/lib/auth/operator-scope'
+import { isOperatorProfile } from '@/lib/hr/plant-operations-roster'
 
 export async function POST(request: NextRequest) {
   try {
@@ -475,8 +476,12 @@ export async function GET(request: NextRequest) {
         query = query.or(orParts.join(','))
       }
 
-      if (rhOrGgView && role) {
-        query = query.or(`role.eq.${role},business_role.eq.${role}`)
+      if (role) {
+        if (role === 'OPERADOR') {
+          query = query.or('role.eq.OPERADOR,business_role.eq.OPERADOR')
+        } else {
+          query = query.or(`role.eq.${role},business_role.eq.${role}`)
+        }
       }
     }
 
@@ -528,6 +533,14 @@ export async function GET(request: NextRequest) {
           actor.profile.plant_id!
         )
       )
+    }
+
+    if (role && !ids) {
+      if (role === 'OPERADOR') {
+        list = list.filter((op) => isOperatorProfile(op))
+      } else {
+        list = list.filter((op) => op.role === role || op.business_role === role)
+      }
     }
 
     return NextResponse.json(list)

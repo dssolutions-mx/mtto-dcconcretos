@@ -11,48 +11,57 @@ import {
   Camera,
   ExternalLink,
   Shield,
+  Clock,
+  Award,
+  XCircle,
 } from "lucide-react"
 import { SecurityConfig } from "@/types"
+import type { PunctualitySectionData, BonusClosureSectionData } from "@/types"
 import type { CompletedChecklistData, CompletedItem, ChecklistSectionDefinition, ChecklistItemDefinition } from "./types"
 import { CompletedItemRow } from "./completed-item-row"
 import { CompletedTireReadingsSection } from "./completed-tire-readings-section"
 import type { ChecklistTireReadingInput } from "@/lib/tires/checklist-readings"
+import {
+  buildItemDescriptionMap,
+  getEffectiveTemplateItemId,
+  getSectionChecklistItems,
+  normalizeCompletedChecklistSections,
+  resolveCompletedItemDescription,
+  sortSectionsByOrder,
+} from "@/lib/checklist/completed-checklist-display"
 
 interface CompletedChecklistItemsBySectionProps {
   data: CompletedChecklistData
   operatorNames: Record<string, { nombre: string; apellido: string; employee_code?: string }>
 }
 
-export function CompletedChecklistItemsBySection({ data, operatorNames }: CompletedChecklistItemsBySectionProps) {
-  const allSections = (data.checklists?.checklist_sections ?? []) as ChecklistSectionDefinition[]
-  const uniqueSections = allSections.reduce<ChecklistSectionDefinition[]>((acc, section) => {
-    if (!section) return acc
-    const sectionTypeKey = section.section_type ?? (section.id && data.security_data?.[section.id] ? 'security_talk' : 'checklist')
-    const key = `${sectionTypeKey}::${section.title ?? section.id ?? acc.length}`
-    if (!acc.some(existing => {
-      const existingTypeKey = existing.section_type ?? (existing.id && data.security_data?.[existing.id] ? 'security_talk' : 'checklist')
-      return `${existingTypeKey}::${existing.title ?? existing.id ?? 'unknown'}` === key
-    })) acc.push(section)
-    return acc
-  }, [])
+const PUNCTUALITY_STATUS_LABELS: Record<string, string> = {
+  on_time: "Puntual",
+  late: "Tarde",
+  absent: "Ausente",
+}
 
-  // Build description map from all sections - support both id and item_id (version format)
-  const itemIdToDescription = new Map<string, string>()
-  for (const section of uniqueSections) {
-    const items = (section.checklist_items ?? (section as any).items) as Array<{ id?: string; item_id?: string; description?: string }> | undefined
-    if (items) for (const item of items) {
-      const desc = item?.description
-      if (desc) {
-        if (item?.id) itemIdToDescription.set(item.id, desc)
-        if (item?.item_id) itemIdToDescription.set(item.item_id, desc)
-      }
-    }
-  }
+function isPunctualityData(value: unknown): value is PunctualitySectionData {
+  return Boolean(value && typeof value === "object" && "entries" in (value as object))
+}
+
+function isBonusClosureData(value: unknown): value is BonusClosureSectionData {
+  return Boolean(value && typeof value === "object" && "decisions" in (value as object))
+}
+
+export function CompletedChecklistItemsBySection({ data, operatorNames }: CompletedChecklistItemsBySectionProps) {
+  const sections = sortSectionsByOrder(
+    normalizeCompletedChecklistSections(
+      (data.checklists?.checklist_sections ?? []) as ChecklistSectionDefinition[]
+    )
+  )
+
+  const itemIdToDescription = buildItemDescriptionMap(sections)
   const getDescription = (itemId: string, item?: CompletedItem) =>
-    itemIdToDescription.get(itemId) ?? item?.description ?? `Item ${(itemId ?? '?').toString().slice(0, 8)}`
+    resolveCompletedItemDescription(itemId, item, itemIdToDescription)
   const getItemCompletionData = (itemId: string): CompletedItem | null =>
     data.completed_items?.find(item => item.item_id === itemId) || null
-  const getEffectiveItemId = (item: { id?: string; item_id?: string }) => item?.id ?? item?.item_id
+  const getEffectiveItemId = getEffectiveTemplateItemId
 
   const renderFallbackItemsCard = () => {
     const items = data.completed_items ?? []
@@ -81,11 +90,10 @@ export function CompletedChecklistItemsBySection({ data, operatorNames }: Comple
     )
   }
 
-  if (uniqueSections.length === 0) return renderFallbackItemsCard()
+  if (sections.length === 0) return renderFallbackItemsCard()
 
   const displayedItemIds = new Set<string>()
-  const sectionCards = [...uniqueSections]
-    .sort((a, b) => a.order_index - b.order_index)
+  const sectionCards = sections
     .map((section) => {
       const securityData = section?.id ? data.security_data?.[section.id] : undefined
       const hasAttendeeList = Array.isArray(securityData?.attendees) && securityData?.attendees.length > 0
@@ -108,6 +116,136 @@ export function CompletedChecklistItemsBySection({ data, operatorNames }: Comple
             config={section.tire_readings_config}
             readings={snapshot}
           />
+        )
+      }
+
+      const plantOpsData = section?.id ? data.plant_operations_data?.[section.id] : undefined
+
+      if (section.section_type === 'operator_punctuality' || (plantOpsData && isPunctualityData(plantOpsData))) {
+        if (!plantOpsData || !isPunctualityData(plantOpsData)) return null
+        return (
+          <Card key={section.id || `punctuality-${section.title}`} className="border-sky-200 bg-sky-50/50 shadow-checklist-2">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5 text-sky-600" aria-hidden />
+                {section.title || 'Puntualidad de operadores'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {section.punctuality_config?.require_production_flag !== false && (
+                <div className="flex items-center gap-2 text-sm">
+                  {plantOpsData.had_production === true ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" aria-hidden />
+                  ) : plantOpsData.had_production === false ? (
+                    <XCircle className="h-4 w-4 text-gray-400" aria-hidden />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden />
+                  )}
+                  <span>
+                    {plantOpsData.had_production === true
+                      ? 'Hubo producción en el día'
+                      : plantOpsData.had_production === false
+                        ? 'No hubo producción en el día'
+                        : 'Producción no registrada'}
+                  </span>
+                </div>
+              )}
+              {plantOpsData.entries?.length ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">Registro por operador</div>
+                  <ul className="space-y-2">
+                    {plantOpsData.entries.map((entry) => {
+                      const op = operatorNames[entry.operator_id]
+                      const name = op
+                        ? `${op.nombre} ${op.apellido}${op.employee_code ? ` (${op.employee_code})` : ''}`
+                        : `Operador ${entry.operator_id.substring(0, 8)}…`
+                      return (
+                        <li key={entry.operator_id} className="rounded-md border bg-background/80 px-3 py-2 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{name}</span>
+                            <span className="text-muted-foreground">
+                              {PUNCTUALITY_STATUS_LABELS[entry.status] ?? entry.status}
+                            </span>
+                          </div>
+                          {entry.notes?.trim() ? (
+                            <p className="mt-1 text-muted-foreground whitespace-pre-wrap">{entry.notes}</p>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin registros de puntualidad</p>
+              )}
+            </CardContent>
+          </Card>
+        )
+      }
+
+      if (section.section_type === 'bonus_closure' || (plantOpsData && isBonusClosureData(plantOpsData))) {
+        if (!plantOpsData || !isBonusClosureData(plantOpsData)) return null
+        const monthLabel = plantOpsData.period_month && plantOpsData.period_year
+          ? `${String(plantOpsData.period_month).padStart(2, '0')}/${plantOpsData.period_year}`
+          : null
+        return (
+          <Card key={section.id || `bonus-${section.title}`} className="border-violet-200 bg-violet-50/50 shadow-checklist-2">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Award className="h-5 w-5 text-violet-600" aria-hidden />
+                {section.title || 'Cierre de bono'}
+                {monthLabel ? (
+                  <span className="text-sm font-normal text-muted-foreground">— {monthLabel}</span>
+                ) : null}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {plantOpsData.decisions?.length ? (
+                <div className="space-y-3">
+                  {plantOpsData.decisions.map((decision) => {
+                    const op = operatorNames[decision.operator_id]
+                    const name = decision.operator_name
+                      ?? (op ? `${op.nombre} ${op.apellido}` : `Operador ${decision.operator_id.substring(0, 8)}…`)
+                    return (
+                      <div key={decision.operator_id} className="rounded-md border bg-background/80 px-3 py-3 text-sm space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium">{name}</span>
+                          <span className={decision.eligible ? 'text-green-700' : 'text-red-700'}>
+                            {decision.eligible ? 'Elegible' : 'No elegible'}
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground">
+                          Cumplimiento semanal: {Math.round((decision.weekly_pass_rate ?? 0) * 100)}%
+                          {decision.system_suggested_eligible != null && (
+                            <span className="ml-2">
+                              (sugerencia: {decision.system_suggested_eligible ? 'elegible' : 'no elegible'})
+                            </span>
+                          )}
+                        </div>
+                        {!decision.eligible && decision.ineligible_reason?.trim() ? (
+                          <p className="text-muted-foreground whitespace-pre-wrap">{decision.ineligible_reason}</p>
+                        ) : null}
+                        {decision.evidence?.length ? (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1">
+                            {decision.evidence.map((evidence, idx) => (
+                              <div key={idx} className="relative">
+                                <img src={evidence.photo_url} alt={`Evidencia ${idx + 1}`} className="w-full h-24 object-cover rounded border" />
+                                <a href={evidence.photo_url} target="_blank" rel="noopener noreferrer" className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded">
+                                  <ExternalLink className="h-3 w-3" aria-hidden />
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin decisiones de bono registradas</p>
+              )}
+            </CardContent>
+          </Card>
         )
       }
 
@@ -191,7 +329,7 @@ export function CompletedChecklistItemsBySection({ data, operatorNames }: Comple
         )
       }
 
-      const items = (section.checklist_items ?? (section as any).items) as Array<ChecklistItemDefinition & { item_id?: string }> | undefined
+      const items = getSectionChecklistItems(section) as Array<ChecklistItemDefinition & { item_id?: string }>
       const completedSectionItems = items
         ?.filter(item => {
           const eid = getEffectiveItemId(item)

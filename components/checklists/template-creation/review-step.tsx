@@ -8,6 +8,10 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase"
+import {
+  DEFAULT_EXECUTOR_ROLES,
+  EXECUTOR_ROLE_LABELS,
+} from "@/lib/checklist/executor-roles"
 import { validateTemplate as validateTemplateShared } from "@/components/checklists/template-editor/use-template-editor-state"
 import type { ChecklistTemplate } from "./types"
 
@@ -24,6 +28,8 @@ const SECTION_TYPE_LABELS: Record<string, string> = {
   cleanliness_bonus: "Limpieza",
   security_talk: "Seguridad",
   tire_readings: "Llantas",
+  operator_punctuality: "Puntualidad",
+  bonus_closure: "Cierre de bono",
 }
 
 interface ReviewStepProps {
@@ -72,6 +78,7 @@ export function ReviewStep({
           model_id: template.model_id,
           frequency: template.frequency,
           hours_interval: template.hours_interval ?? null,
+          executor_roles: template.executor_roles ?? DEFAULT_EXECUTOR_ROLES,
         })
         .select()
         .single()
@@ -92,6 +99,8 @@ export function ReviewStep({
             cleanliness_config: section.cleanliness_config || null,
             security_config: section.security_config || null,
             tire_readings_config: section.tire_readings_config || null,
+            punctuality_config: section.punctuality_config || null,
+            bonus_closure_config: section.bonus_closure_config || null,
           })
           .select("id")
           .single()
@@ -171,6 +180,12 @@ export function ReviewStep({
                 {template.description}
               </p>
             )}
+            <p>
+              <span className="text-muted-foreground">Roles ejecutores:</span>{" "}
+              {(template.executor_roles ?? DEFAULT_EXECUTOR_ROLES)
+                .map((r) => EXECUTOR_ROLE_LABELS[r] ?? r)
+                .join(", ")}
+            </p>
           </CardContent>
         </Card>
 
@@ -211,6 +226,14 @@ export function ReviewStep({
             </ul>
           </CardContent>
         </Card>
+
+        {template.frequency === "mensual" &&
+        (template.sections || []).some((s) => s.section_type === "bonus_closure") ? (
+          <p className="text-sm text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+            Plantilla mensual de cierre de bono: prográmela en activo PLANTA con roles
+            DOSIFICADOR o JEFE_PLANTA. El cierre vence el día 24 de cada mes.
+          </p>
+        ) : null}
       </div>
 
       <Button

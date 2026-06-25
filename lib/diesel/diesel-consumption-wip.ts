@@ -29,7 +29,8 @@ export interface ConsumptionWipContext {
   notes: string
   machinePhotoDraftId: string | null
   machineEvidenceMetadata: DieselEvidenceImageMetadata | null
-  wipOutboxId: string | null
+  /** Stable outbox id — must be provided by the caller (never minted here). */
+  wipId: string
 }
 
 export function isConsumptionFormSubmittable(ctx: ConsumptionWipContext): boolean {
@@ -67,8 +68,6 @@ export async function ensureConsumptionWipQueued(
   )
   if (!plantIdForTx) return null
 
-  const wipId = ctx.wipOutboxId ?? crypto.randomUUID()
-
   const transactionData = buildConsumptionTransactionData({
     plantIdForTx,
     selectedWarehouse: ctx.selectedWarehouse,
@@ -88,7 +87,7 @@ export async function ensureConsumptionWipQueued(
   })
 
   await offlineClient.enqueueDieselTransaction(transactionData, {
-    id: wipId,
+    id: ctx.wipId,
     photoBlob: staging.blob,
     evidenceType: "consumption",
     category: "machine_display",
@@ -98,7 +97,7 @@ export async function ensureConsumptionWipQueued(
       : undefined,
   })
 
-  return wipId
+  return ctx.wipId
 }
 
 export function buildConsumptionDraftSnapshot(
@@ -164,7 +163,7 @@ export async function recoverOrphanWipOnMount(
 
   const requeued = await ensureConsumptionWipQueued({
     ...ctx,
-    wipOutboxId: draft.wipOutboxId,
+    wipId: draft.wipOutboxId,
   })
   return requeued
 }

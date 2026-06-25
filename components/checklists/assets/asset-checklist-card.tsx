@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { PlantaAssetBadge } from "@/components/checklists/planta-asset-badge"
 import { MapPin, Users, Play, AlertTriangle, CheckCircle, Clock, Calendar } from "lucide-react"
 import Link from "next/link"
 
@@ -13,6 +14,7 @@ export interface AssetChecklistCardData {
   asset_id: string
   location: string | null
   department: string | null
+  model_id?: string | null
   pending_checklists: number
   overdue_checklists: number
   next_checklist_date: string | null
@@ -20,7 +22,12 @@ export interface AssetChecklistCardData {
   checklist_status: ChecklistStatus
   plants?: { name: string } | null
   departments?: { name: string } | null
-  equipment_models?: { id: string; name: string; manufacturer?: string | null } | null
+  equipment_models?: {
+    id: string
+    name: string
+    manufacturer?: string | null
+    maintenance_unit?: string | null
+  } | null
 }
 
 interface AssetChecklistCardProps {
@@ -92,7 +99,10 @@ export function AssetChecklistCard({ asset, formatDate }: AssetChecklistCardProp
         <CardHeader className="pb-3">
           <div className="flex justify-between items-start">
             <div className="min-w-0 flex-1">
-              <h3 className="text-lg font-semibold truncate font-mono tabular-nums">{asset.asset_id}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold truncate font-mono tabular-nums">{asset.asset_id}</h3>
+                <PlantaAssetBadge asset={asset} />
+              </div>
               <p className="text-sm text-muted-foreground">
                 Modelo: {modelName}
               </p>

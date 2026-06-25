@@ -47,7 +47,8 @@ import {
   Minimize2,
   Maximize2,
   Sparkles,
-  Shield
+  Shield,
+  Award,
 } from "lucide-react"
 import { SignatureCanvas } from "@/components/checklists/signature-canvas"
 import { EnhancedOfflineStatus } from "@/components/checklists/enhanced-offline-status"
@@ -60,7 +61,6 @@ import {
 } from "@/components/checklists/tire-readings-section"
 import type { ChecklistTireReadingInput } from "@/lib/tires/checklist-readings"
 import {
-  countCompletedTireReadings,
   normalizeTireReadingsConfig,
   validateTireReadingsSection,
 } from "@/lib/tires/tire-readings-validation"
@@ -71,6 +71,8 @@ import {
 } from "@/lib/checklist/equipment-readings-validation"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
 import { SecurityTalkSection } from "@/components/checklists/security-talk-section"
+import { OperatorPunctualitySection } from "@/components/checklists/operator-punctuality-section"
+import { BonusClosureSection } from "@/components/checklists/bonus-closure-section"
 import { CorrectiveWorkOrderDialog } from "@/components/checklists/corrective-work-order-dialog"
 import { SmartPhotoUpload } from "@/components/checklists/smart-photo-upload"
 import { useOfflineSync } from "@/hooks/useOfflineSync"
@@ -86,7 +88,37 @@ import { ChecklistCompletionOverlay } from "@/components/checklists/checklist-co
 import { createBrowserClient } from '@supabase/ssr'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
-
+import { shouldCreateChecklistIssue, getSectionFunnelLane } from "@/lib/checklist/section-funnel"
+import { SectionFunnelLaneBadge } from "@/components/checklists/section-funnel-lane-badge"
+import {
+  aggregateChecklistProgress,
+  computeSectionProgressCounts,
+} from "@/lib/checklist/checklist-completion-progress"
+import {
+  isChecklistScheduleDraftPayload,
+  localDraftHasRestorableData,
+  mergeSectionRecordMaps,
+  mergeServerAndLocalDraftPayload,
+  clearServerScheduleDraft,
+  patchServerDraftWithMerge,
+  type ChecklistScheduleDraftPayload,
+} from "@/lib/checklist/schedule-draft"
+import {
+  detectDraftRestorePrompt,
+  formatDraftSavedAt,
+  formatDraftSavedBy,
+  resolveDraftSyncStatus,
+  type DraftRestoreSource,
+} from "@/lib/checklist/schedule-draft-display"
+import { DraftRestoreBanner } from "@/components/checklists/draft-restore-banner"
+import { DraftStatusChip } from "@/components/checklists/draft-status-chip"
+import {
+  isBonusClosureSectionComplete,
+} from "@/lib/checklist/bonus-closure-validation"
+import {
+  evaluateCompletionEligibilitySync,
+  resolveScheduleAuthContext,
+} from "@/lib/checklist/executor-authorization"
 import {
   Collapsible,
   CollapsibleContent,
@@ -100,7 +132,7 @@ interface ChecklistExecutionProps {
 interface SectionProgress {
   id: string
   title: string
-  type: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
+  type: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings' | 'operator_punctuality' | 'bonus_closure'
   total: number
   completed: number
   hasIssues: boolean
@@ -139,6 +171,7 @@ function checklistStateFromCache(cached: import("@/lib/offline/types").CachedTem
     assetCode: asset?.asset_id || "",
     asset: asset?.name || "",
     assetLocation: asset?.location || "",
+    plantId: asset?.plant_id || null,
     modelId: schedule.checklists?.model_id || "",
     model: schedule.checklists?.equipment_models?.name || "N/A",
     manufacturer: schedule.checklists?.equipment_models?.manufacturer || "N/A",
@@ -180,6 +213,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const [completionOverlaySubtitle, setCompletionOverlaySubtitle] = useState("")
   const [completionRedirectLabel, setCompletionRedirectLabel] = useState("Inicio")
   const [operatorAutoWoSubmitting, setOperatorAutoWoSubmitting] = useState(false)
+  const [canCompleteChecklist, setCanCompleteChecklist] = useState(true)
+  const [allowedExecutorRoles, setAllowedExecutorRoles] = useState<string[]>([])
+  const [completionDeniedReason, setCompletionDeniedReason] = useState<string | null>(null)
   
   // Estados para lecturas de equipo
   const [equipmentReadings, setEquipmentReadings] = useState<{
@@ -195,6 +231,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Estados para datos de charla de seguridad
   const [securityData, setSecurityData] = useState<Record<string, any>>({})
+  const [plantOperationsData, setPlantOperationsData] = useState<Record<string, any>>({})
+  const [bonusClosureConfirmOpen, setBonusClosureConfirmOpen] = useState(false)
+  const bonusClosureConfirmedRef = useRef(false)
 
   // Lecturas de llantas por sección (Phase D)
   const [tireReadingsData, setTireReadingsData] = useState<
@@ -207,7 +246,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Usar el nuevo hook para estado offline
   const { isOnline, hasPendingSyncs } = useOfflineSync()
-  const { profile } = useAuthZustand()
+  const { profile, user } = useAuthZustand()
   const operatorSimpleFlow = isOperatorChecklistRole(profile?.role ?? null)
 
   const resolvedVisibleMeters = useMemo(() => {
@@ -227,9 +266,34 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Estados para auto-guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [laneBDraftDirty, setLaneBDraftDirty] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [isLoadingFromStorage, setIsLoadingFromStorage] = useState(false)
+  const [hasLocalDraft, setHasLocalDraft] = useState(false)
+  const [discardingDraft, setDiscardingDraft] = useState(false)
+  const [draftRestorePrompt, setDraftRestorePrompt] = useState<{
+    source: DraftRestoreSource
+    savedAt: Date
+    savedByName: string | null
+    serverPayload: ChecklistScheduleDraftPayload | null
+    serverUpdatedAt: string | null
+    localData: Record<string, any> | null
+  } | null>(null)
+  const [serverDraftUpdatedAt, setServerDraftUpdatedAt] = useState<string | null>(null)
   const hasUnsavedChangesRef = useRef(false)
+  const serverDraftUpdatedAtRef = useRef<string | null>(null)
+  const draftRestorePromptRef = useRef(draftRestorePrompt)
+  const setDraftRestorePromptSynced = useCallback(
+    (value: typeof draftRestorePrompt) => {
+      draftRestorePromptRef.current = value
+      setDraftRestorePrompt(value)
+    },
+    []
+  )
+  useEffect(() => {
+    draftRestorePromptRef.current = draftRestorePrompt
+  }, [draftRestorePrompt])
 
   // Remove this useEffect that was causing the infinite loop
 
@@ -238,179 +302,120 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     void initOfflineClient()
   }, [])
 
-  // Auto-guardar cambios cada 30 segundos si hay cambios no guardados
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    
-    const autoSaveInterval = setInterval(() => {
-      if (hasUnsavedChanges && checklist) {
-        saveToLocalStorage()
+  const applyClientCompletionAuth = useCallback(
+    (scheduleRow: Parameters<typeof resolveScheduleAuthContext>[0]) => {
+      if (!profile?.role || !user?.id) {
+        setCanCompleteChecklist(true)
+        setAllowedExecutorRoles([])
+        setCompletionDeniedReason(null)
+        return
       }
-    }, 30000)
-    
-    return () => clearInterval(autoSaveInterval)
-  }, [hasUnsavedChanges, !!checklist])
 
-  // Enhanced Section Progress Calculation
-  const getSectionProgress = useCallback((): SectionProgress[] => {
+      const { executorRoles, asset } = resolveScheduleAuthContext(scheduleRow)
+      const eligibility = evaluateCompletionEligibilitySync(
+        {
+          userId: user.id,
+          profile: {
+            id: profile.id,
+            role: profile.role,
+            business_unit_id: profile.business_unit_id ?? null,
+            plant_id: profile.plant_id ?? null,
+            managed_plant_ids: profile.managed_plant_ids ?? null,
+            can_authorize_up_to: profile.can_authorize_up_to ?? null,
+          },
+          effectiveBusinessRole: null,
+          scope: 'plant',
+          authorizationLimit: profile.can_authorize_up_to ?? 0,
+        },
+        executorRoles,
+        asset
+      )
+
+      setCanCompleteChecklist(eligibility.allowed)
+      setAllowedExecutorRoles(eligibility.allowedExecutorRoles)
+      setCompletionDeniedReason(eligibility.allowed ? null : eligibility.reason ?? null)
+    },
+    [profile, user?.id]
+  )
+
+  const loadCompletionAuth = useCallback(
+    async (scheduleRow: Parameters<typeof resolveScheduleAuthContext>[0]) => {
+      if (!navigator.onLine) {
+        applyClientCompletionAuth(scheduleRow)
+        return
+      }
+
+      try {
+        const res = await fetch(`/api/checklists/execution?id=${id}`, {
+          credentials: 'include',
+        })
+        if (res.ok) {
+          const payload = await res.json()
+          setCanCompleteChecklist(payload.can_complete ?? true)
+          setAllowedExecutorRoles(payload.allowed_executor_roles ?? [])
+          setCompletionDeniedReason(
+            payload.can_complete
+              ? null
+              : (payload.completion_denied_reason as string | null) ?? null
+          )
+          return
+        }
+      } catch (error) {
+        console.warn('Completion auth check failed, using client fallback', error)
+      }
+
+      applyClientCompletionAuth(scheduleRow)
+    },
+    [applyClientCompletionAuth, id]
+  )
+
+  const buildSectionProgressInput = useCallback(
+    (section: any) => ({
+      section,
+      itemStatus,
+      sectionEvidences: evidenceData[section.id] || [],
+      sectionSecurityData: securityData[section.id] || {},
+      sectionPlantData: plantOperationsData[section.id],
+      sectionTireReadings: tireReadingsData[section.id] ?? [],
+    }),
+    [itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData]
+  )
+
+  const getAllSectionProgressSlices = useCallback(() => {
     if (!checklist?.sections) return []
-    
     return checklist.sections.map((section: any) => {
-      if (section.section_type === 'evidence') {
-        const sectionEvidences = evidenceData[section.id] || []
-        const config = section.evidence_config || {}
-        const requiredPhotos = (config.categories || []).length * (config.min_photos || 1)
-        
-        return {
-          id: section.id,
-          title: section.title,
-          type: 'evidence' as const,
-          total: requiredPhotos,
-          completed: sectionEvidences.length,
-          hasIssues: sectionEvidences.some(e => e.status === 'failed'),
-          isCollapsed: sectionCollapsed[section.id] || false
-        }
-      } else if (section.section_type === 'cleanliness_bonus') {
-        const items = section.checklist_items || section.items || []
-        const sectionEvidences = evidenceData[section.id] || []
-        const config = section.cleanliness_config || {}
-        
-        // Count checklist items completion
-        const itemsCompleted = items.filter((item: any) => itemStatus[item.id]).length
-        
-        // Count evidence requirements (optional for cleanliness)
-        const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
-        const evidenceCompleted = Math.min(sectionEvidences.length, requiredPhotos)
-        
-        // For cleanliness sections, we primarily count checklist items
-        // Evidence is supplementary for HR documentation
-        return {
-          id: section.id,
-          title: section.title,
-          type: 'cleanliness_bonus' as const,
-          total: items.length, // Only count checklist items in main progress
-          completed: itemsCompleted,
-          hasIssues: items.some((item: any) => 
-            itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
-          ) || sectionEvidences.some(e => e.status === 'failed'),
-          isCollapsed: sectionCollapsed[section.id] || false,
-          // Additional info for evidence tracking (not counted in main progress)
-          evidenceTotal: requiredPhotos,
-          evidenceCompleted: evidenceCompleted
-        }
-      } else if (section.section_type === 'security_talk') {
-        // Ensure we have a valid config - if section.security_config is null/undefined, use defaults
-        const config = section.security_config && typeof section.security_config === 'object' 
-          ? section.security_config 
-          : {
-              mode: 'operator',
-              require_attendance: true, // Default to true to ensure counter works
-              require_topic: true,
-              require_reflection: true,
-              allow_evidence: false
-            }
-        
-        const sectionSecurityData = securityData[section.id] || {}
-        
-        // Check if attendance is marked (for operator mode) or has attendees (for plant manager mode)
-        const isPlantManagerMode = config.mode === 'plant_manager'
-        const hasAttendance = isPlantManagerMode 
-          ? (sectionSecurityData.attendees?.length || 0) > 0
-          : sectionSecurityData.attendance === true
-        
-        // Count required fields completion
-        // Logic: If attendance is required but not marked, only count attendance field
-        // If attendance is not required OR attendance is marked, then count topic/reflection if required
-        let totalFields = 0
-        let completedFields = 0
-        
-        // Count attendance field if it's required
-        if (config.require_attendance) {
-          totalFields++
-          if (hasAttendance) {
-            completedFields++
-          }
-        }
-        
-        // Only require topic/reflection if attendance is marked (or attendance is not required)
-        const shouldRequireDetails = !config.require_attendance || hasAttendance
-        
-        // Count topic field only if it should be required (attendance marked or not required)
-        if (config.require_topic && shouldRequireDetails) {
-          totalFields++
-          if (sectionSecurityData.topic?.trim().length > 0) {
-            completedFields++
-          }
-        }
-        
-        // Count reflection field only if it should be required (attendance marked or not required)
-        if (config.require_reflection && shouldRequireDetails) {
-          totalFields++
-          if (sectionSecurityData.reflection?.trim().length > 0) {
-            completedFields++
-          }
-        }
-        
-        // If no fields are required at all, consider section as optional (complete)
-        // But this should rarely happen - at minimum attendance should be required
-        if (totalFields === 0) {
-          totalFields = 1
-          completedFields = 1
-        }
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[Security Section ${section.id}] Progress: ${completedFields}/${totalFields}`, {
-            config,
-            hasAttendance,
-            shouldRequireDetails,
-            sectionSecurityData
-          })
-        }
-        
-        return {
-          id: section.id,
-          title: section.title,
-          type: 'security_talk' as const,
-          total: totalFields,
-          completed: completedFields,
-          hasIssues: false,
-          isCollapsed: sectionCollapsed[section.id] || false
-        }
-      } else if (section.section_type === 'tire_readings') {
-        const readings = tireReadingsData[section.id] ?? []
-        const config = normalizeTireReadingsConfig(section.tire_readings_config)
-        const total =
-          config.reading_mode === 'none' ? 0 : Math.max(readings.length, 1)
-        const completed =
-          config.reading_mode === 'none' ? 0 : countCompletedTireReadings(readings, config)
-        return {
-          id: section.id,
-          title: section.title,
-          type: 'tire_readings' as const,
-          total,
-          completed,
-          hasIssues: false,
-          isCollapsed: sectionCollapsed[section.id] || false,
-        }
-      } else {
-        const items = section.checklist_items || section.items || []
-        const completed = items.filter((item: any) => itemStatus[item.id]).length
-        const hasIssues = items.some((item: any) => 
-          itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
-        )
-        
-        return {
-          id: section.id,
-          title: section.title,
-          type: 'checklist' as const,
-          total: items.length,
-          completed,
-          hasIssues,
-          isCollapsed: sectionCollapsed[section.id] || false
-        }
+      const counts = computeSectionProgressCounts(buildSectionProgressInput(section))
+      return {
+        section_type: section.section_type,
+        funnel_config: section.funnel_config,
+        total: counts.total,
+        completed: counts.completed,
+        hasIssues: counts.hasIssues,
       }
     })
-  }, [checklist, itemStatus, evidenceData, securityData, tireReadingsData, sectionCollapsed])
+  }, [checklist, buildSectionProgressInput])
+
+  const getUnifiedProgress = useCallback(() => {
+    return aggregateChecklistProgress(getAllSectionProgressSlices())
+  }, [getAllSectionProgressSlices])
+
+  const getSectionProgress = useCallback((): SectionProgress[] => {
+    if (!checklist?.sections) return []
+
+    return checklist.sections.map((section: any) => {
+      const counts = computeSectionProgressCounts(buildSectionProgressInput(section))
+
+      return {
+        id: section.id,
+        title: section.title,
+        type: (section.section_type || 'checklist') as SectionProgress['type'],
+        total: counts.total,
+        completed: counts.completed,
+        hasIssues: counts.hasIssues,
+        isCollapsed: sectionCollapsed[section.id] || false,
+      }
+    })
+  }, [checklist, buildSectionProgressInput, sectionCollapsed])
 
   // Auto-collapse completed sections when enabled
   useEffect(() => {
@@ -526,6 +531,107 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
   }, [getSectionProgress, scrollToSection])
 
+  const applyServerDraftPayload = useCallback(
+    (payload: unknown, updatedAt: string | null) => {
+      if (!isChecklistScheduleDraftPayload(payload)) return
+
+      setIsLoadingFromStorage(true)
+      if (payload.security_data && typeof payload.security_data === 'object') {
+        setSecurityData((prev) =>
+          mergeSectionRecordMaps(
+            prev,
+            payload.security_data as Record<string, unknown>
+          )
+        )
+      }
+      if (
+        payload.plant_operations_data &&
+        typeof payload.plant_operations_data === 'object'
+      ) {
+        setPlantOperationsData((prev) =>
+          mergeSectionRecordMaps(
+            prev,
+            payload.plant_operations_data as Record<string, unknown>
+          )
+        )
+      }
+      serverDraftUpdatedAtRef.current = updatedAt
+      setServerDraftUpdatedAt(updatedAt)
+      setLaneBDraftDirty(false)
+      setIsLoadingFromStorage(false)
+    },
+    []
+  )
+
+  const saveDraftToServer = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!checklist || !navigator.onLine) return false
+
+      const hasLaneBData =
+        Object.keys(securityData).length > 0 ||
+        Object.keys(plantOperationsData).length > 0
+      if (!hasLaneBData && !laneBDraftDirty) return false
+
+      setSavingDraft(true)
+      try {
+        const result = await patchServerDraftWithMerge(
+          id,
+          {
+            securityData,
+            plantOperationsData,
+            serverDraftUpdatedAt: serverDraftUpdatedAtRef.current,
+          },
+          {
+            clientUpdatedAt: serverDraftUpdatedAtRef.current ?? undefined,
+          }
+        )
+
+        if (!result.ok) {
+          if (result.status === 409 && result.conflict) {
+            applyServerDraftPayload(
+              mergeServerAndLocalDraftPayload(result.conflict, {
+                securityData,
+                plantOperationsData,
+              }),
+              result.draft_updated_at ?? null
+            )
+            toast.warning(
+              'Borrador actualizado en otro dispositivo, se combinaron los cambios',
+              { duration: 5000 }
+            )
+            return false
+          }
+          throw new Error(`HTTP ${result.status}`)
+        }
+
+        serverDraftUpdatedAtRef.current = result.draft_updated_at ?? null
+        setServerDraftUpdatedAt(result.draft_updated_at ?? null)
+        setLaneBDraftDirty(false)
+        setLastSaved(new Date())
+        if (!options?.silent) {
+          toast.success('Borrador guardado')
+        }
+        return true
+      } catch (error) {
+        console.error('Error saving server draft:', error)
+        if (!options?.silent) {
+          toast.error('No se pudo guardar el borrador en el servidor')
+        }
+        return false
+      } finally {
+        setSavingDraft(false)
+      }
+    },
+    [
+      applyServerDraftPayload,
+      checklist,
+      id,
+      laneBDraftDirty,
+      plantOperationsData,
+      securityData,
+    ]
+  )
+
   // Guardar en localStorage para recuperación
   const saveToLocalStorage = useCallback(() => {
     if (!checklist) return
@@ -546,6 +652,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       selectedItem,
       equipmentReadings,
       evidenceData: lightEvidenceData,
+      securityData,
+      plantOperationsData,
+      tireReadingsData,
       sectionCollapsed,
       timestamp: Date.now()
     }
@@ -553,13 +662,33 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     void offlineClient.saveDraft(id, saveData)
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
+    setHasLocalDraft(true)
     setLastSaved(new Date())
     toast.success("Borrador guardado localmente", { duration: 2000 })
-  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, selectedItem, equipmentReadings, evidenceData, sectionCollapsed, id])
+  }, [checklist, itemStatus, itemNotes, itemPhotos, notes, technician, signature, selectedItem, equipmentReadings, evidenceData, securityData, plantOperationsData, tireReadingsData, sectionCollapsed, id])
 
-  const restoreDraftData = useCallback((data: Record<string, any>) => {
+  // Auto-guardar Lane B en servidor cada 30s; local para el resto
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const autoSaveInterval = setInterval(() => {
+      if (laneBDraftDirty && checklist && navigator.onLine) {
+        void saveDraftToServer({ silent: true }).then((ok) => {
+          if (ok) toast.success('Borrador guardado', { duration: 2000 })
+        })
+      } else if (hasUnsavedChanges && checklist) {
+        saveToLocalStorage()
+      }
+    }, 30000)
+
+    return () => clearInterval(autoSaveInterval)
+  }, [laneBDraftDirty, hasUnsavedChanges, checklist, saveDraftToServer, saveToLocalStorage])
+
+  const restoreDraftData = useCallback((
+    data: Record<string, any>,
+    options?: { skipLaneB?: boolean; silent?: boolean }
+  ) => {
     const isRecent = Date.now() - (data.timestamp || 0) < 48 * 60 * 60 * 1000
-    const hasValidData = data.itemStatus || data.notes || data.technician || data.signature
 
     if (!isRecent) {
       console.log('📅 Local draft expired, cleaning up')
@@ -567,7 +696,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       return false
     }
 
-    if (!hasValidData) {
+    if (!localDraftHasRestorableData(data)) {
       console.log('🔍 No significant data in local draft')
       return false
     }
@@ -578,33 +707,59 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       hasTechnician: !!data.technician,
       hasSignature: !!data.signature,
       hasEquipmentReadings: !!(data.equipmentReadings?.hours_reading || data.equipmentReadings?.kilometers_reading),
-      evidenceSections: Object.keys(data.evidenceData || {}).length
+      evidenceSections: Object.keys(data.evidenceData || {}).length,
+      securitySections: Object.keys(data.securityData || {}).length,
+      plantOpsSections: Object.keys(data.plantOperationsData || {}).length,
+      tireReadingSections: Object.keys(data.tireReadingsData || {}).length,
     })
 
     setIsLoadingFromStorage(true)
 
     Promise.resolve().then(() => {
-      setItemStatus(data.itemStatus || {})
-      setItemNotes(data.itemNotes || {})
-      setItemPhotos(data.itemPhotos || {})
-      setNotes(data.notes || "")
-      setTechnician(data.technician || "")
-      setSignature(data.signature || null)
-      setSelectedItem(data.selectedItem || null)
-      setEquipmentReadings(data.equipmentReadings || {})
-      setEquipmentReadingsValidation(null)
-      setReadingsFormKey((key) => key + 1)
-      setEvidenceData(data.evidenceData || {})
-      setSectionCollapsed(data.sectionCollapsed || {})
+      if (data.itemStatus) setItemStatus(data.itemStatus)
+      if (data.itemNotes) setItemNotes(data.itemNotes)
+      if (data.itemPhotos) setItemPhotos(data.itemPhotos)
+      if (data.notes !== undefined) setNotes(data.notes || "")
+      if (data.technician !== undefined) setTechnician(data.technician || "")
+      if (data.signature !== undefined) setSignature(data.signature || null)
+      if (data.selectedItem !== undefined) setSelectedItem(data.selectedItem || null)
+      if (data.equipmentReadings) {
+        setEquipmentReadings(data.equipmentReadings)
+        setEquipmentReadingsValidation(null)
+        setReadingsFormKey((key) => key + 1)
+      }
+      if (data.evidenceData) setEvidenceData(data.evidenceData)
+      if (!options?.skipLaneB) {
+        if (data.securityData) {
+          setSecurityData((prev) =>
+            mergeSectionRecordMaps(prev, data.securityData)
+          )
+        }
+        if (data.plantOperationsData) {
+          setPlantOperationsData((prev) =>
+            mergeSectionRecordMaps(prev, data.plantOperationsData)
+          )
+        }
+      }
+      if (data.tireReadingsData) {
+        setTireReadingsData((prev) => ({
+          ...prev,
+          ...data.tireReadingsData,
+        }))
+      }
+      if (data.sectionCollapsed) setSectionCollapsed(data.sectionCollapsed)
       setHasUnsavedChanges(false)
       hasUnsavedChangesRef.current = false
+      setHasLocalDraft(true)
       setIsLoadingFromStorage(false)
 
-      const completedItems = Object.keys(data.itemStatus || {}).length
-      toast.success("📋 Progreso restaurado", {
-        description: `${completedItems} items completados, notas y firma preservados`,
-        duration: 4000
-      })
+      if (!options?.silent) {
+        const completedItems = Object.keys(data.itemStatus || {}).length
+        toast.success("📋 Progreso restaurado", {
+          description: `${completedItems} items completados, notas y firma preservados`,
+          duration: 4000
+        })
+      }
     })
 
     return true
@@ -616,13 +771,108 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     try {
       const draft = await offlineClient.getDraft(id)
       if (draft?.data && typeof draft.data === 'object') {
+        setHasLocalDraft(localDraftHasRestorableData(draft.data))
         return restoreDraftData(draft.data as Record<string, any>)
       }
+      setHasLocalDraft(false)
     } catch (error) {
       console.error('Error loading Dexie draft:', error)
     }
     return false
   }, [id, restoreDraftData])
+
+  const applyDraftRestore = useCallback(
+    (prompt: {
+      savedAt: Date
+      serverPayload: ChecklistScheduleDraftPayload | null
+      serverUpdatedAt: string | null
+      localData: Record<string, any> | null
+    }) => {
+      const serverAt = prompt.serverUpdatedAt
+        ? new Date(prompt.serverUpdatedAt).getTime()
+        : 0
+      const localAt =
+        typeof prompt.localData?.timestamp === 'number'
+          ? prompt.localData.timestamp
+          : 0
+      const preferServer =
+        !!prompt.serverPayload && (!prompt.localData || serverAt >= localAt)
+
+      if (preferServer && prompt.serverPayload) {
+        applyServerDraftPayload(prompt.serverPayload, prompt.serverUpdatedAt)
+        if (prompt.localData) {
+          restoreDraftData(prompt.localData, { skipLaneB: true, silent: true })
+        }
+        toast.info('Se restauró el borrador del servidor', { duration: 4000 })
+      } else if (prompt.localData) {
+        restoreDraftData(prompt.localData)
+      }
+
+      setLastSaved(prompt.savedAt)
+      setDraftRestorePromptSynced(null)
+    },
+    [applyServerDraftPayload, restoreDraftData, setDraftRestorePromptSynced]
+  )
+
+  const handleContinueDraft = useCallback(() => {
+    if (!draftRestorePrompt) return
+    applyDraftRestore(draftRestorePrompt)
+  }, [draftRestorePrompt, applyDraftRestore])
+
+  const handleDiscardDraft = useCallback(async () => {
+    if (!draftRestorePrompt) return
+    setDiscardingDraft(true)
+    try {
+      let serverCleared = true
+      if (navigator.onLine) {
+        const serverResult = await clearServerScheduleDraft(id)
+        serverCleared = serverResult.ok
+      }
+
+      await offlineClient.clearDraft(id)
+      setHasLocalDraft(false)
+      serverDraftUpdatedAtRef.current = null
+      setServerDraftUpdatedAt(null)
+      setLaneBDraftDirty(false)
+      setDraftRestorePromptSynced(null)
+
+      if (!serverCleared && navigator.onLine) {
+        toast.warning(
+          'Borrador descartado en este dispositivo; no se pudo limpiar en el servidor.',
+          { duration: 5000 }
+        )
+      } else {
+        toast.message(
+          'Borrador descartado. Puede iniciar el checklist desde cero en cualquier dispositivo.'
+        )
+      }
+    } finally {
+      setDiscardingDraft(false)
+    }
+  }, [draftRestorePrompt, id, setDraftRestorePromptSynced])
+
+  const probeLocalDraftPrompt = useCallback(async () => {
+    const localDraft = await offlineClient.getDraft(id)
+    const localData =
+      localDraft?.data && typeof localDraft.data === 'object'
+        ? (localDraft.data as Record<string, any>)
+        : null
+    setHasLocalDraft(localDraftHasRestorableData(localData))
+    const promptMeta = detectDraftRestorePrompt({
+      serverPayload: null,
+      serverUpdatedAt: null,
+      serverAuthorName: null,
+      localData,
+    })
+    if (promptMeta) {
+      setDraftRestorePromptSynced({
+        ...promptMeta,
+        serverPayload: null,
+        serverUpdatedAt: null,
+        localData,
+      })
+    }
+  }, [id, setDraftRestorePromptSynced])
 
   // Moved after markAsUnsaved declaration
 
@@ -649,8 +899,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         
         if (section.section_type === 'evidence') {
           const config = section.evidence_config || {}
-          const minPhotos = config.min_photos || 1
+          const minPhotos =
+            typeof config.min_photos === 'number' ? config.min_photos : 1
           const categories = config.categories || []
+
+          if (minPhotos <= 0 || categories.length === 0) {
+            return
+          }
           
           categories.forEach((category: string) => {
             const categoryCount = sectionEvidences.filter(e => e.category === category).length
@@ -724,8 +979,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
           if (cached) {
             setChecklist(checklistStateFromCache(cached))
+            void loadCompletionAuth(cached.template as Parameters<typeof resolveScheduleAuthContext>[0])
             setLoading(false)
-            setTimeout(() => loadFromLocalStorage(), 0)
+            setTimeout(() => void probeLocalDraftPrompt(), 0)
             return
           } else {
             toast.error("Este checklist no está disponible offline. Use «Preparar offline» con conexión.")
@@ -745,6 +1001,13 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             .from('checklist_schedules')
             .select(`
               *,
+              draft_payload,
+              draft_updated_at,
+              draft_updated_by,
+              draft_updater:profiles!draft_updated_by (
+                nombre,
+                apellido
+              ),
               checklists (
                 *,
                 checklist_sections (
@@ -809,6 +1072,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             frequency: data.checklists?.frequency || '',
             sections: orderedSections,
             scheduledDate: data.scheduled_date || '',
+            scheduledDay:
+              data.scheduled_day ||
+              (data.scheduled_date ? String(data.scheduled_date).split('T')[0] : ''),
             technicianId: data.assigned_to || '',
             maintenance_plan_id: data.maintenance_plan_id || null,
             // Información del activo para lecturas
@@ -820,19 +1086,57 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             maintenanceUnit: maintenanceUnitForForm,
           }
           
+          serverDraftUpdatedAtRef.current = data.draft_updated_at ?? null
+          setServerDraftUpdatedAt(data.draft_updated_at ?? null)
+
+          const localDraft = await offlineClient.getDraft(id)
+          const localData =
+            localDraft?.data && typeof localDraft.data === 'object'
+              ? (localDraft.data as Record<string, any>)
+              : null
+          setHasLocalDraft(localDraftHasRestorableData(localData))
+
+          const draftUpdaterRaw = (data as { draft_updater?: unknown }).draft_updater
+          const draftUpdater = Array.isArray(draftUpdaterRaw)
+            ? draftUpdaterRaw[0]
+            : draftUpdaterRaw
+          const authorName = formatDraftSavedBy(
+            draftUpdater as { nombre?: string | null; apellido?: string | null } | null
+          )
+
+          const promptMeta = detectDraftRestorePrompt({
+            serverPayload: data.draft_payload,
+            serverUpdatedAt: data.draft_updated_at ?? null,
+            serverAuthorName: authorName,
+            localData,
+          })
+
+          if (promptMeta) {
+            setDraftRestorePromptSynced({
+              ...promptMeta,
+              serverPayload: isChecklistScheduleDraftPayload(data.draft_payload)
+                ? data.draft_payload
+                : null,
+              serverUpdatedAt: data.draft_updated_at ?? null,
+              localData,
+            })
+          } else if (data.draft_updated_at) {
+            setLastSaved(new Date(data.draft_updated_at))
+          }
+
+          // Resolve draft prompt before mounting Lane B sections (avoids prefill overwriting server draft).
           setChecklist(checklistData)
 
           await offlineClient.cacheTemplate(id, data, data.assets)
-          
-          // Intentar cargar datos guardados in the next tick
-          setTimeout(() => void loadFromLocalStorage(), 0)
+          void loadCompletionAuth(data)
         }
       } catch (error: unknown) {
         console.error("Error loading checklist data:", error)
         const cached = await offlineClient.getCachedTemplate(id)
         if (cached) {
           setChecklist(checklistStateFromCache(cached))
-          setTimeout(() => loadFromLocalStorage(), 0)
+          void loadCompletionAuth(cached.template as Parameters<typeof resolveScheduleAuthContext>[0])
+          setTimeout(() => void probeLocalDraftPrompt(), 0)
           return
         }
         const message = error instanceof Error ? error.message : "Error desconocido"
@@ -844,7 +1148,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
 
     fetchChecklistData()
-  }, [id, router]) // Removed isOnline to prevent refetching on connectivity changes
+  }, [id, router, applyServerDraftPayload, probeLocalDraftPrompt, loadCompletionAuth])
 
   // Separate useEffect to handle connectivity changes without refetching data
   useEffect(() => {
@@ -861,6 +1165,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         if (hasUnsavedChanges && checklist) {
           console.log('📤 Coming back online with unsaved changes - preserving data')
           saveToLocalStorage()
+        }
+
+        if (laneBDraftDirty && checklist) {
+          void saveDraftToServer({ silent: true })
         }
         
         // Also try to reload any saved progress that might have been lost
@@ -906,7 +1214,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       window.removeEventListener('online', handleConnectivityChange)
       window.removeEventListener('offline', handleConnectivityChange)
     }
-  }, [hasUnsavedChanges, checklist, saveToLocalStorage])
+  }, [hasUnsavedChanges, laneBDraftDirty, checklist, saveToLocalStorage, saveDraftToServer])
 
   // Enhanced protection against data loss - save before page unload
   useEffect(() => {
@@ -963,10 +1271,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   // Manejar cambios en datos de seguridad
   const handleSecurityDataChange = useCallback((sectionId: string, data: any) => {
+    if (draftRestorePromptRef.current) return
     setSecurityData(prev => ({
       ...prev,
       [sectionId]: data
     }))
+    setLaneBDraftDirty(true)
+    markAsUnsaved()
+  }, [markAsUnsaved])
+
+  const handlePlantOperationsDataChange = useCallback((sectionId: string, data: any) => {
+    if (draftRestorePromptRef.current) return
+    setPlantOperationsData(prev => ({
+      ...prev,
+      [sectionId]: data
+    }))
+    setLaneBDraftDirty(true)
     markAsUnsaved()
   }, [markAsUnsaved])
 
@@ -1015,35 +1335,24 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const prepareCompletedItems = useCallback(() => {
     return Object.keys(itemStatus).map(itemId => {
       const sectionAndItem = findSectionAndItemById(itemId)
+      const section = sectionAndItem?.section
       return {
         item_id: itemId,
         status: itemStatus[itemId],
         notes: itemNotes[itemId] || null,
         photo_url: itemPhotos[itemId] || null,
         description: sectionAndItem?.item?.description || null,
-        section_type: sectionAndItem?.section?.section_type || null,
-        section_title: sectionAndItem?.section?.title || null
+        section_type: section?.section_type || null,
+        section_title: section?.title || null,
+        funnel_lane: section ? getSectionFunnelLane(section) : 'maintenance',
       }
     })
   }, [itemStatus, itemNotes, itemPhotos])
 
   // Essential helper functions - MOVED UP to fix hoisting issue
-  const getTotalItems = () => {
-    if (!checklist || !checklist.sections) return 0
-    
-    let total = 0
-    checklist.sections.forEach((section: any) => {
-      const items = section.checklist_items || section.items
-      if (items) {
-        total += items.length
-      }
-    })
-    return total
-  }
+  const getTotalItems = () => getUnifiedProgress().totalItems
 
-  const getCompletedItems = () => {
-    return Object.values(itemStatus).filter(Boolean).length
-  }
+  const getCompletedItems = () => getUnifiedProgress().completedItems
 
   // Helper validation functions - MOVED ABOVE handleSubmit to fix hoisting issue
   const validateBasicCompletion = () => {
@@ -1076,9 +1385,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
     if (completedItems < totalItems) {
       const missingCount = totalItems - completedItems
-      errors.push(`📋 ${missingCount} item${missingCount > 1 ? 's' : ''} del checklist sin evaluar`)
+      errors.push(`📋 ${missingCount} campo${missingCount > 1 ? 's' : ''} pendiente${missingCount > 1 ? 's' : ''}`)
       
-      // Find specific uncompleted items
+      // Find specific uncompleted checklist items for detail warnings
       const uncompletedItems: string[] = []
       checklist.sections.forEach((section: any) => {
         const items = section.checklist_items || section.items
@@ -1167,15 +1476,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const firstIncompleteSectionDomId = useMemo(() => {
     if (!checklist?.sections) return null
     for (const section of checklist.sections) {
-      const items = section.checklist_items || section.items || []
-      for (const item of items) {
-        if (!itemStatus[item.id]) {
-          return `section-${section.id}`
-        }
+      const counts = computeSectionProgressCounts({
+        section,
+        itemStatus,
+        sectionEvidences: evidenceData[section.id] || [],
+        sectionSecurityData: securityData[section.id] || {},
+        sectionPlantData: plantOperationsData[section.id],
+        sectionTireReadings: tireReadingsData[section.id] ?? [],
+      })
+      if (!counts.isComplete) {
+        return `section-${section.id}`
       }
     }
     return null
-  }, [checklist, itemStatus])
+  }, [checklist, itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData])
 
   const liveBlockingIssues = useMemo(() => {
     if (!checklist) {
@@ -1187,7 +1501,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (completedItems < totalItems) {
       issues.push({
         id: "items",
-        label: `${totalItems - completedItems} sin evaluar`,
+        label: `${totalItems - completedItems} pendiente${totalItems - completedItems > 1 ? 's' : ''}`,
         targetId: firstIncompleteSectionDomId || "checklist-scroll-items-start",
       })
     }
@@ -1246,6 +1560,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     firstIncompleteSectionDomId,
     resolvedVisibleMeters,
     tireReadingsData,
+    plantOperationsData,
+    securityData,
   ])
 
   const handleSubmit = async () => {
@@ -1332,6 +1648,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     }
 
+    // 3c. Validate bonus_closure sections
+    if (checklist?.sections) {
+      for (const section of checklist.sections) {
+        if (section.section_type !== 'bonus_closure') continue
+        const sectionData = plantOperationsData[section.id]
+        const operatorCount = sectionData?.decisions?.length ?? 0
+        if (!isBonusClosureSectionComplete(sectionData, operatorCount)) {
+          validationErrors.push('🏆 Cierre de bono: defina elegibilidad y motivos')
+        }
+      }
+    }
+
     // 4. Separate cleanliness items from maintenance items
     if (process.env.NODE_ENV === 'development') {
       console.log('🔍 Analyzing items with issues...')
@@ -1345,9 +1673,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     
     const maintenanceItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
       const sectionAndItem = findSectionAndItemById(itemId)
-      return sectionAndItem?.section?.section_type !== 'cleanliness_bonus' &&
-             sectionAndItem?.section?.section_type !== 'security_talk' &&
-             sectionAndItem?.section?.section_type !== 'tire_readings'
+      return shouldCreateChecklistIssue(sectionAndItem?.section ?? {})
     })
 
     const cleanlinessItemsWithIssues = allItemsWithIssues.filter(([itemId]) => {
@@ -1427,6 +1753,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     // PROCEED WITH SUBMISSION
     // =====================================================
 
+    const hasBonusClosure = checklist?.sections?.some(
+      (s: { section_type?: string }) => s.section_type === 'bonus_closure'
+    )
+    if (hasBonusClosure && !bonusClosureConfirmedRef.current) {
+      setBonusClosureConfirmOpen(true)
+      return
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('🚀 Proceeding with submission...')
     }
@@ -1498,13 +1832,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             status: itemStatus[itemId] as "flag" | "fail",
             sectionTitle: sectionAndItem?.section?.title,
             sectionType: sectionAndItem?.section?.section_type,
+            funnelConfig: sectionAndItem?.section?.funnel_config,
           }
         })
-        .filter(
-          (item) =>
-            item.sectionType !== "cleanliness_bonus" &&
-            item.sectionType !== "security_talk" &&
-            item.sectionType !== "tire_readings"
+        .filter((item) =>
+          shouldCreateChecklistIssue({
+            section_type: item.sectionType,
+            funnel_config: item.funnelConfig,
+          })
         )
 
       if (operatorSimpleFlow) {
@@ -1635,6 +1970,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         kilometers_reading: kmOut,
         evidence_data: evidenceData,
         security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
+        plant_operations_data:
+          Object.keys(plantOperationsData).length > 0
+            ? plantOperationsData
+            : undefined,
         tire_readings: Object.values(tireReadingsData).flat(),
       }
       
@@ -1794,7 +2133,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             hours_reading: hoursOut,
             kilometers_reading: kmOut,
             evidence_data: evidenceData,
-            security_data: Object.keys(securityData).length > 0 ? securityData : undefined
+            security_data: Object.keys(securityData).length > 0 ? securityData : undefined,
+            plant_operations_data:
+              Object.keys(plantOperationsData).length > 0
+                ? plantOperationsData
+                : undefined,
+            tire_readings: Object.values(tireReadingsData).flat(),
           }
 
           const offlineId = `checklist-${id}-${Date.now()}`
@@ -1841,15 +2185,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           photo: itemPhotos[itemId] || null,
           status: itemStatus[itemId],
           sectionTitle: sectionAndItem?.section?.title,
-          sectionType: sectionAndItem?.section?.section_type
+          sectionType: sectionAndItem?.section?.section_type,
+          funnelConfig: sectionAndItem?.section?.funnel_config,
         }
       })
-      // Exclude cleanliness verification items and security talk sections from corrective work orders
-      .filter(
-        (item) =>
-          item.sectionType !== "cleanliness_bonus" &&
-          item.sectionType !== "security_talk" &&
-          item.sectionType !== "tire_readings"
+      .filter((item) =>
+        shouldCreateChecklistIssue({
+          section_type: item.sectionType,
+          funnel_config: item.funnelConfig,
+        })
       )
 
     if (itemsWithIssues.length === 0) {
@@ -1974,126 +2318,61 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     return hasBasicInfo && hasProgress
   }
 
-  // Strict completion check for final validation
   const isFullyComplete = () => {
     if (!checklist || !checklist.sections) return false
-    
-    let totalItems = 0
-    let completedItems = 0
-    
-    checklist.sections.forEach((section: any) => {
-      const items = section.checklist_items || section.items
-      if (items) {
-        items.forEach((item: any) => {
-          totalItems++
-          if (itemStatus[item.id]) {
-            completedItems++
-          }
-        })
-      }
-    })
-    
-    return totalItems > 0 && 
-           completedItems === totalItems && 
-           technician.trim() !== "" && 
-           signature !== null
+
+    const { totalItems, completedItems } = getUnifiedProgress()
+
+    return (
+      totalItems > 0 &&
+      completedItems === totalItems &&
+      technician.trim() !== "" &&
+      signature !== null
+    )
   }
 
-  // Enhanced Section Status Calculation
   const getSectionStatus = (section: any) => {
-    if (section.section_type === 'evidence') {
-      const sectionEvidences = evidenceData[section.id] || []
-      const config = section.evidence_config || {}
-      const requiredPhotos = (config.categories || []).length * (config.min_photos || 1)
-      
-      return {
-        completed: sectionEvidences.length,
-        total: requiredPhotos,
-        hasIssues: sectionEvidences.some(e => e.status === 'failed'),
-        isComplete: sectionEvidences.length >= requiredPhotos
-      }
-    } else if (section.section_type === 'cleanliness_bonus') {
-      const items = section.checklist_items || section.items || []
+    const counts = computeSectionProgressCounts(buildSectionProgressInput(section))
+
+    if (section.section_type === 'cleanliness_bonus') {
       const sectionEvidences = evidenceData[section.id] || []
       const config = section.cleanliness_config || {}
-      
-      // Count checklist items completion
-      const itemsCompleted = items.filter((item: any) => itemStatus[item.id]).length
-      const hasItemIssues = items.some((item: any) => 
-        itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
-      )
-      
-      // Evidence requirements (supplementary)
       const requiredPhotos = (config.areas || []).length * (config.min_photos || 2)
       const evidenceCompleted = Math.min(sectionEvidences.length, requiredPhotos)
-      
+
       return {
-        completed: itemsCompleted,
-        total: items.length,
-        hasIssues: hasItemIssues || sectionEvidences.some(e => e.status === 'failed'),
-        isComplete: itemsCompleted === items.length,
-        // Additional evidence info
-        evidenceCompleted: evidenceCompleted,
+        completed: counts.completed,
+        total: counts.total,
+        hasIssues: counts.hasIssues,
+        isComplete: counts.isComplete,
+        evidenceCompleted,
         evidenceTotal: requiredPhotos,
-        evidenceComplete: evidenceCompleted >= requiredPhotos
+        evidenceComplete: evidenceCompleted >= requiredPhotos,
       }
-    } else if (section.section_type === 'tire_readings') {
-      const readings = tireReadingsData[section.id] ?? []
-      const config = normalizeTireReadingsConfig(section.tire_readings_config)
-      if (config.reading_mode === 'none' || readings.length === 0) {
-        return {
-          completed: 0,
-          total: 0,
-          hasIssues: false,
-          isComplete: true,
-        }
-      }
-      const completed = countCompletedTireReadings(readings, config)
-      const validation = validateTireReadingsSection({
-        readings,
-        positionCount: readings.length,
-        config,
-        sectionTitle: section.title,
-      })
-      return {
-        completed,
-        total: readings.length,
-        hasIssues: false,
-        isComplete: validation.valid,
-      }
-    } else {
-      const items = section.checklist_items || section.items || []
-      const completed = items.filter((item: any) => itemStatus[item.id]).length
-      const hasIssues = items.some((item: any) => 
-        itemStatus[item.id] === 'flag' || itemStatus[item.id] === 'fail'
-      )
-      
-      return {
-        completed,
-        total: items.length,
-        hasIssues,
-        isComplete: completed === items.length
-      }
+    }
+
+    return {
+      completed: counts.completed,
+      total: counts.total,
+      hasIssues: counts.hasIssues,
+      isComplete: counts.isComplete,
     }
   }
 
-  // Get overall progress statistics
   const getOverallProgress = () => {
     const sectionProgress = getSectionProgress()
-    const totalItems = sectionProgress.reduce((sum, section) => sum + section.total, 0)
-    const completedItems = sectionProgress.reduce((sum, section) => sum + section.completed, 0)
-    const sectionsWithIssues = sectionProgress.filter(section => section.hasIssues).length
-    const completedSections = sectionProgress.filter(section => 
-      section.completed === section.total && section.total > 0
+    const aggregate = getUnifiedProgress()
+    const completedSections = sectionProgress.filter(
+      (section) => section.completed === section.total && section.total > 0
     ).length
-    
+
     return {
-      totalItems,
-      completedItems,
-      sectionsWithIssues,
+      totalItems: aggregate.totalItems,
+      completedItems: aggregate.completedItems,
+      sectionsWithIssues: aggregate.sectionsWithMaintenanceIssues,
       completedSections,
       totalSections: sectionProgress.length,
-      progressPercentage: totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+      progressPercentage: aggregate.progressPercentage,
     }
   }
 
@@ -2122,13 +2401,47 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const sectionProgress = getSectionProgress()
   const overallProgress = getOverallProgress()
+  const draftSyncStatus = resolveDraftSyncStatus({
+    saving: savingDraft,
+    isOnline,
+    hasPendingSync,
+    laneBDraftDirty,
+    hasUnsavedChanges,
+    serverDraftUpdatedAt,
+    hasLocalDraft,
+  })
+  const lastSavedLabel = formatDraftSavedAt(lastSaved)
 
   return (
     <div className={cn("space-y-6 relative", !completed && "pb-40 md:pb-6")}>
+      {!canCompleteChecklist ? (
+        <Alert variant="destructive">
+          <Shield className="h-4 w-4" />
+          <AlertTitle>Su rol no puede completar este checklist</AlertTitle>
+          <AlertDescription>
+            {completionDeniedReason ??
+              `Roles permitidos: ${allowedExecutorRoles.join(', ') || 'No definidos'}`}
+            {allowedExecutorRoles.length > 0 && completionDeniedReason
+              ? ` Roles permitidos: ${allowedExecutorRoles.join(', ')}.`
+              : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {draftRestorePrompt ? (
+        <DraftRestoreBanner
+          savedAt={draftRestorePrompt.savedAt}
+          savedByName={draftRestorePrompt.savedByName}
+          source={draftRestorePrompt.source}
+          onContinue={handleContinueDraft}
+          onDiscard={handleDiscardDraft}
+          discarding={discardingDraft}
+        />
+      ) : null}
       {/* Simplified Navigation Bar */}
       <div className="sticky top-0 z-50 bg-white border-b shadow-sm" data-navigation-header>
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-4">
+            <DraftStatusChip status={draftSyncStatus} />
             {/* Progress Indicator */}
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <BarChart3 className="h-4 w-4" />
@@ -2172,11 +2485,23 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={saveToLocalStorage}
-              disabled={!hasUnsavedChanges}
+              onClick={() => {
+                if (laneBDraftDirty && navigator.onLine) {
+                  void saveDraftToServer()
+                } else {
+                  saveToLocalStorage()
+                }
+              }}
+              disabled={!hasUnsavedChanges && !laneBDraftDirty}
               title="Guardar borrador"
+              className="gap-2"
             >
               <Save className="h-4 w-4" />
+              {lastSavedLabel ? (
+                <span className="hidden text-xs text-muted-foreground lg:inline">
+                  {lastSavedLabel}
+                </span>
+              ) : null}
             </Button>
           </div>
         </div>
@@ -2608,6 +2933,140 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
+              if (section.section_type === 'operator_punctuality') {
+                const config = section.punctuality_config || {}
+                const sectionPunctualityData = plantOperationsData[section.id]
+                const plantId = checklist?.plantId
+
+                return (
+                  <div
+                    key={`punctuality-${section.id}`}
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <Collapsible
+                      open={!isCollapsed}
+                      onOpenChange={() => toggleSectionCollapse(section.id)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <Card className="cursor-pointer hover:shadow-md transition-shadow border-sky-200 bg-sky-50/50">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Clock className="h-5 w-5 text-sky-600" />
+                                <div>
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <CardDescription>
+                                    Puntualidad de operadores
+                                  </CardDescription>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                                >
+                                  {sectionStatus.completed}/{sectionStatus.total}
+                                </Badge>
+                                {sectionStatus.isComplete && (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-2">
+                          <OperatorPunctualitySection
+                            sectionId={section.id}
+                            sectionTitle={section.title}
+                            config={config}
+                            plantId={plantId}
+                            onDataChange={handlePlantOperationsDataChange}
+                            initialData={sectionPunctualityData}
+                            disabled={submitting}
+                          />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )
+              }
+
+              if (section.section_type === 'bonus_closure') {
+                const config = section.bonus_closure_config
+                const sectionBonusData = plantOperationsData[section.id]
+                const plantId = checklist?.plantId
+                const scheduledDay = checklist?.scheduledDay
+
+                return (
+                  <div
+                    key={`bonus-closure-${section.id}`}
+                    id={`section-${section.id}`}
+                    className="scroll-mt-20"
+                  >
+                    <Collapsible
+                      open={!isCollapsed}
+                      onOpenChange={() => toggleSectionCollapse(section.id)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <Card className="cursor-pointer hover:shadow-md transition-shadow border-violet-200 bg-violet-50/50">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Award className="h-5 w-5 text-violet-600" />
+                                <div>
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <CardDescription>
+                                    Cierre mensual de bono de limpieza
+                                  </CardDescription>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
+                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
+                                >
+                                  {sectionStatus.completed}/{sectionStatus.total}
+                                </Badge>
+                                {sectionStatus.isComplete && (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-400" />
+                                )}
+                              </div>
+                            </div>
+                          </CardHeader>
+                        </Card>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-2">
+                          <BonusClosureSection
+                            sectionId={section.id}
+                            sectionTitle={section.title}
+                            config={config}
+                            plantId={plantId}
+                            scheduledDay={scheduledDay}
+                            onDataChange={handlePlantOperationsDataChange}
+                            initialData={sectionBonusData}
+                            disabled={submitting}
+                          />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )
+              }
+
               if (section.section_type === 'tire_readings') {
                 return (
                   <div
@@ -2656,7 +3115,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                             <div className="flex items-center gap-3">
                               <List className="h-5 w-5 text-blue-600" />
                               <div>
-                                <CardTitle className="text-lg">{section.title}</CardTitle>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <CardTitle className="text-lg">{section.title}</CardTitle>
+                                  <SectionFunnelLaneBadge section={section} />
+                                </div>
                                 <CardDescription>
                                   {items.length} item{items.length !== 1 ? 's' : ''} de verificación
                                 </CardDescription>
@@ -2847,9 +3309,37 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             "fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:shadow-none"
           )}
         >
-          <Button variant="outline" onClick={() => router.back()} className="w-full md:w-auto shrink-0">
-            Cancelar
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:w-auto sm:items-center">
+            <Button variant="outline" onClick={() => router.back()} className="w-full sm:w-auto shrink-0">
+              Cancelar
+            </Button>
+            <div className="flex w-full flex-col gap-1 sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (laneBDraftDirty && navigator.onLine) {
+                    void saveDraftToServer()
+                  } else {
+                    saveToLocalStorage()
+                  }
+                }}
+                disabled={savingDraft || (!hasUnsavedChanges && !laneBDraftDirty)}
+                className="w-full sm:w-auto shrink-0"
+              >
+                {savingDraft ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Guardar borrador
+              </Button>
+              {lastSavedLabel ? (
+                <p className="text-center text-xs text-muted-foreground sm:text-left">
+                  Último guardado: {lastSavedLabel}
+                </p>
+              ) : null}
+            </div>
+          </div>
           <div className="flex w-full flex-col gap-2 md:max-w-md md:items-end">
             {!liveBlockingIssues.length ? (
               <p className="text-sm text-muted-foreground">
@@ -2884,7 +3374,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             </div>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || completed || operatorAutoWoSubmitting}
+              disabled={submitting || completed || operatorAutoWoSubmitting || !canCompleteChecklist}
               className={cn("w-full min-h-12 text-base", completed && "bg-green-600 hover:bg-green-600")}
               size="lg"
             >
@@ -2925,6 +3415,30 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
         primaryActionLabel="Continuar"
       />
 
+      <AlertDialog open={bonusClosureConfirmOpen} onOpenChange={setBonusClosureConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cerrar período de bono?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cerrar período es irreversible. Las decisiones de elegibilidad quedarán
+              registradas para el mes en curso.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                bonusClosureConfirmedRef.current = true
+                setBonusClosureConfirmOpen(false)
+                void handleSubmit()
+              }}
+            >
+              Confirmar cierre
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Corrective Work Order Dialog */}
       <CorrectiveWorkOrderDialog
         open={correctiveDialogOpen}
@@ -2951,15 +3465,15 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               photo: itemPhotos[itemId] || null,
               status: currentStatus as "flag" | "fail",
               sectionTitle: sectionAndItem?.section?.title,
-              sectionType: sectionAndItem?.section?.section_type
+              sectionType: sectionAndItem?.section?.section_type,
+              funnelConfig: sectionAndItem?.section?.funnel_config,
             }
           })
-          // Exclude cleanliness verification items and security talk sections from corrective work orders
-          .filter(
-            (item) =>
-              item.sectionType !== "cleanliness_bonus" &&
-              item.sectionType !== "security_talk" &&
-              item.sectionType !== "tire_readings"
+          .filter((item) =>
+            shouldCreateChecklistIssue({
+              section_type: item.sectionType,
+              funnel_config: item.funnelConfig,
+            })
           )}
         onWorkOrderCreated={handleWorkOrderCreated}
         onNavigateToAssetsPage={handlePostCompletionNavigation}
@@ -2979,7 +3493,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 </span>
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={saveToLocalStorage}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (laneBDraftDirty && navigator.onLine) {
+                  void saveDraftToServer()
+                } else {
+                  saveToLocalStorage()
+                }
+              }}
+              disabled={savingDraft}
+            >
               Guardar borrador
             </Button>
           </AlertDescription>

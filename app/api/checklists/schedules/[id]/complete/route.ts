@@ -1,11 +1,19 @@
 import { createClient } from '@/lib/supabase-server'
 import { enrichEquipmentReadingsValidation } from '@/lib/checklist/equipment-readings-validation'
+import {
+  assertCanCompleteChecklistSchedule,
+  resolveScheduleAuthContext,
+} from '@/lib/checklist/executor-authorization'
+import { isOperationsEvaluationCompletedItem } from '@/lib/checklist/section-funnel'
+import { loadActorContext } from '@/lib/auth/server-authorization'
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   saveChecklistTireReadings,
   type ChecklistTireReadingInput,
 } from '@/lib/tires/checklist-readings'
+import { clearedScheduleDraftRowUpdate } from '@/lib/checklist/schedule-draft'
+import { writeAllOperatorEvaluationEvents } from '@/lib/hr/operator-evaluation-events'
 
 export async function POST(
   request: NextRequest,
@@ -47,36 +55,23 @@ export async function POST(
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role, status')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile || profile.status !== 'active') {
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
       return NextResponse.json(
         { error: 'Perfil no encontrado o inactivo' },
         { status: 403 }
       )
     }
 
-    const allowedCompletionRoles = [
-      'OPERADOR',
-      'DOSIFICADOR',
-      'GERENCIA_GENERAL',
-      'JEFE_UNIDAD_NEGOCIO',
-      'JEFE_PLANTA',
-      'GERENTE_MANTENIMIENTO',
-      'COORDINADOR_MANTENIMIENTO',
-      'MECANICO'
-    ]
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('status')
+      .eq('id', user.id)
+      .single()
 
-    if (!allowedCompletionRoles.includes(profile.role)) {
+    if (!profile || profile.status !== 'active') {
       return NextResponse.json(
-        {
-          error: 'No tiene permisos para completar checklists',
-          details: `El rol '${profile.role}' no está autorizado para registrar checklists completados`
-        },
+        { error: 'Perfil no encontrado o inactivo' },
         { status: 403 }
       )
     }
@@ -90,6 +85,7 @@ export async function POST(
       kilometers_reading,
       evidence_data,
       security_data,
+      plant_operations_data,
       tire_readings,
     } = await request.json()
 
@@ -153,9 +149,18 @@ export async function POST(
         id,
         asset_id,
         template_id,
+        scheduled_day,
+        scheduled_date,
+        checklists!template_id (
+          executor_roles,
+          model_id,
+          equipment_models ( maintenance_unit )
+        ),
         assets!inner(
           id,
           name,
+          plant_id,
+          model_id,
           current_hours,
           current_kilometers,
           equipment_models(
@@ -174,7 +179,38 @@ export async function POST(
       )
     }
 
-    const asset = scheduleData.assets as any
+    const { executorRoles, asset: authAsset } =
+      resolveScheduleAuthContext(scheduleData)
+
+    const assetRow = Array.isArray(scheduleData.assets)
+      ? scheduleData.assets[0]
+      : scheduleData.assets
+    const asset = assetRow as {
+      id?: string
+      name?: string
+      plant_id?: string | null
+      model_id?: string | null
+      current_hours?: number | null
+      current_kilometers?: number | null
+      equipment_models?: { maintenance_unit?: string | null } | null
+    }
+
+    const completionAuth = await assertCanCompleteChecklistSchedule(
+      supabase,
+      actor,
+      executorRoles,
+      authAsset
+    )
+
+    if (!completionAuth.allowed) {
+      return NextResponse.json(
+        {
+          error: 'No tiene permisos para completar este checklist',
+          details: completionAuth.reason,
+        },
+        { status: 403 }
+      )
+    }
 
     // De-duplication is handled deterministically inside complete_checklist_with_readings,
     // which is idempotent per schedule_id (returns the existing completion instead of
@@ -310,7 +346,23 @@ export async function POST(
       // Continuar sin template_version_id
     }
 
-    // Usar la función mejorada para completar el checklist
+    // Completar vía RPC — excluye secciones Lane B (evaluación operativa) de
+    // checklist_issues y estado "Con Problemas" (ver section-funnel + migración RPC).
+    const opsEvalIssueCount = completed_items.filter(
+      (item: {
+        status?: string
+        section_type?: string
+        funnel_lane?: string
+      }) =>
+        (item.status === 'flag' || item.status === 'fail') &&
+        isOperationsEvaluationCompletedItem(item)
+    ).length
+    if (opsEvalIssueCount > 0) {
+      console.log(
+        `Lane B: ${opsEvalIssueCount} ítem(s) con falla/flag no generan checklist_issues`
+      )
+    }
+
     console.log('=== CALLING complete_checklist_with_readings RPC ===')
     console.log('Parameters:', {
       p_schedule_id: id,
@@ -364,6 +416,15 @@ export async function POST(
     console.log('=== RPC SUCCESS ===')
     console.log('Checklist completion result:', completionResult)
 
+    const { error: draftClearError } = await supabase
+      .from('checklist_schedules')
+      .update(clearedScheduleDraftRowUpdate())
+      .eq('id', id)
+
+    if (draftClearError) {
+      console.error('[complete] failed to clear schedule draft (non-critical):', draftClearError)
+    }
+
     // Guardar evidencias si se proporcionaron
     let evidenceSaveResult = null
     if (evidence_data && Object.keys(evidence_data).length > 0 && completionResult?.completed_id) {
@@ -396,6 +457,7 @@ export async function POST(
     }
 
     // Guardar datos de seguridad si se proporcionaron
+    let persistedSecurityData = security_data as Record<string, unknown> | null | undefined
     if (security_data && Object.keys(security_data).length > 0 && completionResult?.completed_id) {
       try {
         const { error: securityError } = await supabase
@@ -408,11 +470,90 @@ export async function POST(
           // No fallar el checklist por esto, solo registrar el error
         } else {
           console.log('Security data saved successfully')
+          persistedSecurityData = security_data
         }
       } catch (securityError) {
         console.error('Error in security data saving process:', securityError)
         // No fallar el checklist por esto
       }
+    }
+
+    if (
+      plant_operations_data &&
+      Object.keys(plant_operations_data).length > 0 &&
+      completionResult?.completed_id
+    ) {
+      try {
+        const { error: plantOpsError } = await supabase
+          .from('completed_checklists')
+          .update({ plant_operations_data })
+          .eq('id', completionResult.completed_id)
+
+        if (plantOpsError) {
+          console.error('Error saving plant operations data:', plantOpsError)
+        } else {
+          console.log('Plant operations data saved successfully')
+        }
+      } catch (plantOpsError) {
+        console.error('Error in plant operations data saving process:', plantOpsError)
+      }
+    }
+
+    // Lane B: denormalized operator evaluation events (idempotent per completion)
+    let evaluationEventsSummary = null
+    if (completionResult?.completed_id && asset?.plant_id) {
+      try {
+        const scheduleRow = scheduleData as {
+          scheduled_day?: string | null
+          scheduled_date?: string | null
+        }
+        const eventDate =
+          scheduleRow.scheduled_day ??
+          (scheduleRow.scheduled_date
+            ? String(scheduleRow.scheduled_date).split('T')[0]
+            : new Date().toISOString().split('T')[0])
+
+        evaluationEventsSummary = await writeAllOperatorEvaluationEvents(supabase, {
+          completion: {
+            id: completionResult.completed_id,
+            schedule_id: id,
+            event_date: eventDate,
+            asset_id: scheduleData.asset_id,
+            template_version_id: templateVersionId,
+          },
+          plantId: asset.plant_id,
+          plantOperationsData: plant_operations_data,
+          securityData: persistedSecurityData as typeof security_data,
+          completedItems: completed_items,
+        })
+        console.log('Operator evaluation events written:', evaluationEventsSummary)
+        if (
+          persistedSecurityData &&
+          Object.keys(persistedSecurityData).length > 0 &&
+          evaluationEventsSummary.byType.security_talk === 0
+        ) {
+          console.warn(
+            '[complete] security_data present but no security_talk events written',
+            {
+              completion_id: completionResult.completed_id,
+              schedule_id: id,
+              plant_id: asset.plant_id,
+            }
+          )
+        }
+      } catch (evalEventsError) {
+        console.error('Error writing operator evaluation events (non-critical):', evalEventsError)
+      }
+    } else if (
+      completionResult?.completed_id &&
+      security_data &&
+      Object.keys(security_data).length > 0 &&
+      !asset?.plant_id
+    ) {
+      console.warn(
+        '[complete] skipped operator evaluation events — asset missing plant_id',
+        { schedule_id: id, asset_id: scheduleData.asset_id }
+      )
     }
 
     // Guardar lecturas de llantas (Phase D)
@@ -443,6 +584,7 @@ export async function POST(
         reading_update: completionResult.reading_update,
         evidence_summary: evidenceSaveResult,
         tire_readings_summary: tireReadingsSummary,
+        evaluation_events_summary: evaluationEventsSummary,
         asset_info: {
           name: asset?.name || 'Desconocido',
           previous_hours: completionResult.reading_update?.previous_hours,

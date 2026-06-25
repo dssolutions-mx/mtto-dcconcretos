@@ -42,7 +42,10 @@ import {
   Camera,
   Sparkles,
   Shield,
-  CircleDot
+  CircleDot,
+  Clock,
+  Award,
+  Factory
 } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase'
@@ -54,8 +57,48 @@ import { TemplatePreviewDialog } from './dialogs/template-preview-dialog'
 import { BasicInfoCard } from './template-editor/basic-info-card'
 import { validateTemplate as validateTemplateShared } from './template-editor/use-template-editor-state'
 import { TireReadingsConfigEditor } from '@/components/checklists/tire-readings-config-editor'
+import {
+  DEFAULT_EXECUTOR_ROLES,
+  executorRolesForModel,
+  isPlantaModelId,
+  normalizeExecutorRoles,
+  type ChecklistExecutorRole,
+} from '@/lib/checklist/executor-roles'
+import {
+  buildPlantaDailyPreset,
+  buildPlantaMonthlyPreset,
+} from '@/lib/checklist/planta-template-presets'
+import { DEFAULT_PUNCTUALITY_CONFIG } from '@/lib/checklist/punctuality-validation'
+import { DEFAULT_BONUS_CLOSURE_CONFIG } from '@/lib/checklist/bonus-closure-validation'
 import { DEFAULT_TIRE_READINGS_CONFIG } from '@/lib/tires/tire-readings-validation'
 import type { TireReadingsSectionConfig } from '@/types/tires'
+
+type SectionType =
+  | 'checklist'
+  | 'evidence'
+  | 'cleanliness_bonus'
+  | 'security_talk'
+  | 'tire_readings'
+  | 'operator_punctuality'
+  | 'bonus_closure'
+
+const SECTION_TYPES_WITHOUT_ITEMS: SectionType[] = [
+  'evidence',
+  'security_talk',
+  'tire_readings',
+  'operator_punctuality',
+  'bonus_closure',
+]
+
+interface PunctualityConfig {
+  require_production_flag: boolean
+}
+
+interface BonusClosureConfig {
+  bonus_type: 'cleanliness'
+  deadline_day: number
+  suggest_eligibility_threshold: number
+}
 
 interface ChecklistItem {
   id?: string
@@ -87,11 +130,14 @@ interface ChecklistSection {
   _clientId?: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
+  section_type?: SectionType
   evidence_config?: EvidenceConfig
   cleanliness_config?: CleanlinessConfig
   security_config?: SecurityConfig
+  punctuality_config?: PunctualityConfig
+  bonus_closure_config?: BonusClosureConfig
   tire_readings_config?: TireReadingsSectionConfig
+  funnel_config?: { lane: "maintenance" | "operations_evaluation" }
   items: ChecklistItem[]
 }
 
@@ -127,6 +173,7 @@ interface ChecklistTemplate {
   model_id: string
   frequency: string
   hours_interval?: number
+  executor_roles?: ChecklistExecutorRole[]
   sections: ChecklistSection[]
 }
 
@@ -158,6 +205,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     description: '',
     model_id: preSelectedModelId || '',
     frequency: 'mensual',
+    executor_roles: [...DEFAULT_EXECUTOR_ROLES],
     sections: []
   })
   
@@ -203,7 +251,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [sectionTypeChangeConfirm, setSectionTypeChangeConfirm] = useState<{
     sectionIndex: number
-    newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
+    newType: SectionType
   } | null>(null)
   const [previewVersion, setPreviewVersion] = useState<TemplateVersion | null>(null)
 
@@ -402,7 +450,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         evidence_config: section.evidence_config || undefined,
         cleanliness_config: section.cleanliness_config || undefined,
         security_config: section.security_config || undefined,
+        punctuality_config: section.punctuality_config || undefined,
+        bonus_closure_config: section.bonus_closure_config || undefined,
         tire_readings_config: section.tire_readings_config || undefined,
+        funnel_config: section.funnel_config || undefined,
         items: section.checklist_items?.map((item: any) => ({
           id: item.id,
           description: item.description,
@@ -421,6 +472,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         model_id: templateData.model_id || '',
         frequency: templateData.frequency || 'mensual',
         hours_interval: templateData.hours_interval,
+        executor_roles: normalizeExecutorRoles(templateData.executor_roles),
         sections: sections.sort((a: ChecklistSection, b: ChecklistSection) => a.order_index - b.order_index)
       })
       setValidationErrors([])
@@ -574,6 +626,71 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       ...prev,
       sections: [...prev.sections, newSection]
     }))
+    setHasChanges(true)
+  }
+
+  const addPunctualitySection = () => {
+    const newTitle = `Puntualidad ${template.sections.filter(s => s.section_type === 'operator_punctuality').length + 1}`
+    const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
+      title: newTitle,
+      order_index: template.sections.length,
+      section_type: 'operator_punctuality',
+      punctuality_config: { ...DEFAULT_PUNCTUALITY_CONFIG },
+      items: []
+    }
+
+    const newSectionIndex = template.sections.length
+    setSectionTitles(prev => ({
+      ...prev,
+      [newSectionIndex]: newTitle
+    }))
+
+    setTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }))
+    setHasChanges(true)
+  }
+
+  const addBonusClosureSection = () => {
+    const newTitle = `Cierre de bono ${template.sections.filter(s => s.section_type === 'bonus_closure').length + 1}`
+    const newSection: ChecklistSection = {
+      _clientId: crypto.randomUUID(),
+      title: newTitle,
+      order_index: template.sections.length,
+      section_type: 'bonus_closure',
+      bonus_closure_config: { ...DEFAULT_BONUS_CLOSURE_CONFIG },
+      items: []
+    }
+
+    const newSectionIndex = template.sections.length
+    setSectionTitles(prev => ({
+      ...prev,
+      [newSectionIndex]: newTitle
+    }))
+
+    setTemplate(prev => ({
+      ...prev,
+      sections: [...prev.sections, newSection]
+    }))
+    setHasChanges(true)
+  }
+
+  const applyPlantaPreset = (preset: 'daily' | 'monthly') => {
+    const built = preset === 'daily' ? buildPlantaDailyPreset() : buildPlantaMonthlyPreset()
+    setTemplate(prev => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : built.name,
+      frequency: built.frequency,
+      executor_roles: built.executor_roles,
+      sections: built.sections.map((s, i) => ({
+        ...s,
+        _clientId: crypto.randomUUID(),
+        order_index: i,
+      })),
+    }))
+    setTemplateName(prev => (prev.trim() ? prev : built.name))
     setHasChanges(true)
   }
 
@@ -1147,9 +1264,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     setCleanlinessAreasStr(newCleanlinessAreasStr)
   }
 
-  const handleSectionTypeChange = (sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => {
+  const handleSectionTypeChange = (sectionIndex: number, newType: SectionType) => {
     const section = template.sections[sectionIndex]
-    const wouldLoseItems = (newType === 'evidence' || newType === 'security_talk' || newType === 'tire_readings') && (section?.items?.length ?? 0) > 0
+    const wouldLoseItems =
+      SECTION_TYPES_WITHOUT_ITEMS.includes(newType) && (section?.items?.length ?? 0) > 0
     if (wouldLoseItems) {
       setSectionTypeChangeConfirm({ sectionIndex, newType })
     } else {
@@ -1157,7 +1275,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
     }
   }
 
-  const updateSectionType = useCallback((sectionIndex: number, newType: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => {
+  const updateSectionType = useCallback((sectionIndex: number, newType: SectionType) => {
     setTemplate(prev => {
       const section = prev.sections[sectionIndex]
       const updates: Partial<ChecklistSection> = {
@@ -1184,10 +1302,16 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
           require_reflection: true,
           allow_evidence: false
         } : section?.security_config,
+        punctuality_config: newType === 'operator_punctuality'
+          ? { ...DEFAULT_PUNCTUALITY_CONFIG }
+          : section?.punctuality_config,
+        bonus_closure_config: newType === 'bonus_closure'
+          ? { ...DEFAULT_BONUS_CLOSURE_CONFIG }
+          : section?.bonus_closure_config,
         tire_readings_config: newType === 'tire_readings'
           ? { ...DEFAULT_TIRE_READINGS_CONFIG }
           : section?.tire_readings_config,
-        items: newType === 'evidence' || newType === 'security_talk' || newType === 'tire_readings' ? [] : (section?.items ?? [])
+        items: SECTION_TYPES_WITHOUT_ITEMS.includes(newType) ? [] : (section?.items ?? [])
       }
       const newSections = prev.sections.map((s, i) => i === sectionIndex ? { ...s, ...updates } : s)
       return { ...prev, sections: newSections }
@@ -1707,6 +1831,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             model_id: template.model_id,
             frequency: template.frequency,
             hours_interval: template.hours_interval,
+            executor_roles: template.executor_roles ?? DEFAULT_EXECUTOR_ROLES,
             updated_at: new Date().toISOString()
           })
           .eq('id', templateId)
@@ -1736,7 +1861,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               evidence_config: section.evidence_config || null,
               cleanliness_config: section.cleanliness_config || null,
               security_config: section.security_config || null,
-              tire_readings_config: section.tire_readings_config || null
+              punctuality_config: section.punctuality_config || null,
+              bonus_closure_config: section.bonus_closure_config || null,
+              tire_readings_config: section.tire_readings_config || null,
+              funnel_config: section.funnel_config || null
             })
             .select('id')
             .single()
@@ -1877,7 +2005,8 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             description: template.description,
             model_id: template.model_id,
             frequency: template.frequency,
-            hours_interval: template.hours_interval
+            hours_interval: template.hours_interval,
+            executor_roles: template.executor_roles ?? DEFAULT_EXECUTOR_ROLES,
           })
           .select()
           .single()
@@ -1898,7 +2027,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
               evidence_config: section.evidence_config || null,
               cleanliness_config: section.cleanliness_config || null,
               security_config: section.security_config || null,
-              tire_readings_config: section.tire_readings_config || null
+              punctuality_config: section.punctuality_config || null,
+              bonus_closure_config: section.bonus_closure_config || null,
+              tire_readings_config: section.tire_readings_config || null,
+              funnel_config: section.funnel_config || null
             })
             .select('id')
             .single()
@@ -1958,7 +2090,21 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
   }
 
   const onModelChange = useCallback((value: string) => {
-    setTemplate(prev => ({ ...prev, model_id: value }))
+    const selected = models.find((m) => m.id === value)
+    const presetRoles = executorRolesForModel(
+      value,
+      selected?.maintenance_unit ?? null
+    )
+    setTemplate(prev => ({
+      ...prev,
+      model_id: value,
+      executor_roles: presetRoles,
+    }))
+    setHasChanges(true)
+  }, [models])
+
+  const onExecutorRolesChange = useCallback((roles: ChecklistExecutorRole[]) => {
+    setTemplate(prev => ({ ...prev, executor_roles: roles }))
     setHasChanges(true)
   }, [])
 
@@ -1987,6 +2133,36 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
       newSections[sectionIndex] = {
         ...section,
         security_config: { ...currentConfig, ...updates }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
+
+  const updatePunctualityConfig = useCallback((sectionIndex: number, updates: Partial<PunctualityConfig>) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const currentConfig = section.punctuality_config || { ...DEFAULT_PUNCTUALITY_CONFIG }
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        punctuality_config: { ...currentConfig, ...updates }
+      }
+      return { ...prev, sections: newSections }
+    })
+    setHasChanges(true)
+  }, [])
+
+  const updateBonusClosureConfig = useCallback((sectionIndex: number, updates: Partial<BonusClosureConfig>) => {
+    setTemplate(prev => {
+      const section = prev.sections[sectionIndex]
+      if (!section) return prev
+      const currentConfig = section.bonus_closure_config || { ...DEFAULT_BONUS_CLOSURE_CONFIG }
+      const newSections = [...prev.sections]
+      newSections[sectionIndex] = {
+        ...section,
+        bonus_closure_config: { ...currentConfig, ...updates }
       }
       return { ...prev, sections: newSections }
     })
@@ -2087,6 +2263,90 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                 />
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderPunctualitySection = (section: ChecklistSection, sectionIndex: number) => {
+    const config = section.punctuality_config || { ...DEFAULT_PUNCTUALITY_CONFIG }
+
+    return (
+      <div className="space-y-4 border-l-4 border-sky-500 pl-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock className="h-5 w-5 text-sky-600" />
+          <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">
+            Puntualidad de operadores
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          El dosificador registrará producción y asistencia al ejecutar el checklist.
+        </p>
+        <div className="flex items-center justify-between rounded-md border px-3 py-2">
+          <Label htmlFor={`production-flag-${sectionIndex}`} className="text-sm font-normal">
+            Requerir indicador de producción
+          </Label>
+          <Switch
+            id={`production-flag-${sectionIndex}`}
+            checked={config.require_production_flag}
+            onCheckedChange={(checked) =>
+              updatePunctualityConfig(sectionIndex, { require_production_flag: checked })
+            }
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const renderBonusClosureSection = (section: ChecklistSection, sectionIndex: number) => {
+    const config = section.bonus_closure_config || { ...DEFAULT_BONUS_CLOSURE_CONFIG }
+
+    return (
+      <div className="space-y-4 border-l-4 border-violet-500 pl-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Award className="h-5 w-5 text-violet-600" />
+          <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">
+            Cierre de bono mensual
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Cierre mensual de elegibilidad de bono de limpieza. Use frecuencia <strong>mensual</strong> y modelo PLANTA.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor={`deadline-day-${sectionIndex}`}>Día límite del mes</Label>
+            <Input
+              id={`deadline-day-${sectionIndex}`}
+              type="number"
+              min={1}
+              max={28}
+              value={config.deadline_day}
+              onChange={(e) =>
+                updateBonusClosureConfig(sectionIndex, {
+                  deadline_day: Math.min(28, Math.max(1, parseInt(e.target.value) || 24)),
+                })
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`threshold-${sectionIndex}`}>Umbral sugerido (0–1)</Label>
+            <Input
+              id={`threshold-${sectionIndex}`}
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={config.suggest_eligibility_threshold}
+              onChange={(e) =>
+                updateBonusClosureConfig(sectionIndex, {
+                  suggest_eligibility_threshold: Math.min(
+                    1,
+                    Math.max(0, parseFloat(e.target.value) || 0.8)
+                  ),
+                })
+              }
+            />
           </div>
         </div>
       </div>
@@ -2271,13 +2531,51 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
         modelId={template.model_id}
         frequency={template.frequency}
         hoursInterval={template.hours_interval}
+        executorRoles={template.executor_roles ?? DEFAULT_EXECUTOR_ROLES}
         models={models}
         onNameChange={updateTemplateNameLocal}
         onDescriptionChange={updateTemplateDescriptionLocal}
         onModelChange={onModelChange}
         onFrequencyChange={onFrequencyChange}
         onHoursIntervalChange={onHoursIntervalChange}
+        onExecutorRolesChange={onExecutorRolesChange}
       />
+
+      {isPlantaModelId(template.model_id) && (
+        <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-sky-900">
+            <Factory className="h-4 w-4" />
+            Inicio rápido — Operaciones de Planta
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Plantillas preconfiguradas para modelo PLANTA (dosificador / jefe de planta).
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Card
+              className="cursor-pointer border-sky-200 transition-colors hover:border-sky-400 hover:bg-sky-50/80"
+              onClick={() => applyPlantaPreset('daily')}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Operaciones de Planta — Diario</CardTitle>
+                <CardDescription className="text-sm">
+                  Puntualidad, charla de seguridad y evidencia opcional. Frecuencia diaria.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            <Card
+              className="cursor-pointer border-violet-200 transition-colors hover:border-violet-400 hover:bg-violet-50/80"
+              onClick={() => applyPlantaPreset('monthly')}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Operaciones de Planta — Mensual</CardTitle>
+                <CardDescription className="text-sm">
+                  Cierre de bono de limpieza. Frecuencia mensual.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -2313,6 +2611,14 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     <CircleDot className="h-4 w-4 mr-2" />
                     Lecturas de Llantas
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addPunctualitySection}>
+                    <Clock className="h-4 w-4 mr-2" />
+                    Puntualidad
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={addBonusClosureSection}>
+                    <Award className="h-4 w-4 mr-2" />
+                    Cierre de bono
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -2337,6 +2643,14 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                 <CircleDot className="h-4 w-4 mr-2" />
                 Llantas
               </Button>
+              <Button variant="outline" size="sm" onClick={addPunctualitySection} className="bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100">
+                <Clock className="h-4 w-4 mr-2" />
+                Puntualidad
+              </Button>
+              <Button variant="outline" size="sm" onClick={addBonusClosureSection} className="bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100">
+                <Award className="h-4 w-4 mr-2" />
+                Cierre de bono
+              </Button>
             </div>
           </div>
         </div>
@@ -2346,7 +2660,9 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
             section.section_type === 'evidence' ? 'border-blue-200 bg-blue-50/50' : 
             section.section_type === 'cleanliness_bonus' ? 'border-green-200 bg-green-50/50' :
             section.section_type === 'security_talk' ? 'border-orange-200 bg-orange-50/50' :
-            section.section_type === 'tire_readings' ? 'border-purple-200 bg-purple-50/50' : ''
+            section.section_type === 'tire_readings' ? 'border-purple-200 bg-purple-50/50' :
+            section.section_type === 'operator_punctuality' ? 'border-sky-200 bg-sky-50/50' :
+            section.section_type === 'bonus_closure' ? 'border-violet-200 bg-violet-50/50' : ''
           }`}>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
@@ -2354,7 +2670,7 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                   <div className="flex items-center gap-3">
                     <Select
                       value={section.section_type || 'checklist'}
-                      onValueChange={(value: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings') => handleSectionTypeChange(sectionIndex, value)}
+                      onValueChange={(value: SectionType) => handleSectionTypeChange(sectionIndex, value)}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue />
@@ -2390,6 +2706,18 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                             Lecturas de Llantas
                           </div>
                         </SelectItem>
+                        <SelectItem value="operator_punctuality">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4" />
+                            Puntualidad
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="bonus_closure">
+                          <div className="flex items-center gap-2">
+                            <Award className="h-4 w-4" />
+                            Cierre de bono
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -2399,6 +2727,37 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     className="font-semibold"
                     placeholder="Título de la sección"
                   />
+                  {(section.section_type === 'checklist' || !section.section_type) && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Embudo al completar</Label>
+                      <Select
+                        value={section.funnel_config?.lane || 'maintenance'}
+                        onValueChange={(value: 'maintenance' | 'operations_evaluation') => {
+                          setTemplate(prev => {
+                            const updatedSections = [...prev.sections]
+                            updatedSections[sectionIndex] = {
+                              ...updatedSections[sectionIndex],
+                              funnel_config: { lane: value },
+                            }
+                            return { ...prev, sections: updatedSections }
+                          })
+                          setHasChanges(true)
+                        }}
+                      >
+                        <SelectTrigger className="w-full max-w-md">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="maintenance">
+                            Mantenimiento (OT / incidencias)
+                          </SelectItem>
+                          <SelectItem value="operations_evaluation">
+                            Operaciones / RH (sin OT ni incidencias)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 ml-4">
                   <Button
@@ -2447,6 +2806,10 @@ export function TemplateEditor({ templateId, preSelectedModelId, onSave, onCance
                     }
                   />
                 </div>
+              ) : section.section_type === 'operator_punctuality' ? (
+                renderPunctualitySection(section, sectionIndex)
+              ) : section.section_type === 'bonus_closure' ? (
+                renderBonusClosureSection(section, sectionIndex)
               ) : section.section_type === 'cleanliness_bonus' ? (
                 // Render cleanliness section - hybrid of checklist items + evidence photos
                 <div className="space-y-4">

@@ -1,3 +1,5 @@
+import type { PlantControlDueSummary } from "@/types/plant-operations-schedule"
+
 export type PlantDailyReadinessRow = {
   assetId: string
   assetCode: string | null
@@ -6,6 +8,8 @@ export type PlantDailyReadinessRow = {
   readiness: "listo" | "pendiente"
   pendingScheduleId: string | null
   checklistName: string | null
+  /** Synthetic row for PLANTA control checklist (not tied to a truck asset). */
+  rowKind?: "asset" | "plant_control"
 }
 
 export type PlantAssetOption = {
@@ -21,4 +25,6 @@ export type PlantDailyReadinessPayload = {
   pendingCount: number
   readyCount: number
   assetsForIncidents: PlantAssetOption[]
+  /** Plant control checklist due status for dosificador dashboard. */
+  plantControlDue?: PlantControlDueSummary | null
 }

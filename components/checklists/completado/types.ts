@@ -8,6 +8,7 @@ export type CompletedItem = {
   notes?: string
   photo_url?: string
   description?: string
+  section_title?: string
 }
 
 export type ChecklistIssue = {
@@ -35,13 +36,26 @@ export type ChecklistSectionDefinition = {
   id: string
   title: string
   order_index: number
-  section_type?: 'checklist' | 'evidence' | 'cleanliness_bonus' | 'security_talk' | 'tire_readings'
+  section_type?:
+    | 'checklist'
+    | 'evidence'
+    | 'cleanliness_bonus'
+    | 'security_talk'
+    | 'tire_readings'
+    | 'operator_punctuality'
+    | 'bonus_closure'
   security_config?: {
     mode: 'plant_manager' | 'operator'
     require_attendance: boolean
     require_topic: boolean
     require_reflection: boolean
     allow_evidence: boolean
+  }
+  punctuality_config?: { require_production_flag?: boolean }
+  bonus_closure_config?: {
+    bonus_type?: string
+    deadline_day?: number
+    suggest_eligibility_threshold?: number
   }
   tire_readings_config?: TireReadingsSectionConfig
   checklist_items?: ChecklistItemDefinition[]
@@ -59,6 +73,7 @@ export type CompletedChecklistData = {
   signature_data: string | null
   created_by: string | null
   security_data?: Record<string, any> | null
+  plant_operations_data?: Record<string, any> | null
   tire_readings_snapshot?: ChecklistTireReadingInput[] | null
   checklists: {
     id: string

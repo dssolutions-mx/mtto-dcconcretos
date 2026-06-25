@@ -1,4 +1,13 @@
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext } from '@/lib/auth/server-authorization'
+import {
+  filterSchedulesForActor,
+  isAssetVisibleToActor,
+  isPlantaListReadOnlyRole,
+  loadOperatorAssignedAssetIds,
+  type ScheduleVisibilityAsset,
+} from '@/lib/checklist/schedule-visibility'
+import { isPlantaAsset } from '@/lib/checklist/executor-roles'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -6,6 +15,24 @@ export async function GET() {
     console.log('📊 Fetching asset checklist dashboard data...')
     
     const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json(
+        { error: 'Perfil no encontrado o inactivo' },
+        { status: 403 }
+      )
+    }
+
+    const assignedAssetIds =
+      actor.profile.role === 'OPERADOR'
+        ? await loadOperatorAssignedAssetIds(supabase, user.id)
+        : undefined
     
     // Test connection with a simple query first
     const connectionTest = await supabase.from('assets').select('count').limit(1).single()
@@ -59,7 +86,8 @@ export async function GET() {
           equipment_models (
             id,
             name,
-            manufacturer
+            manufacturer,
+            maintenance_unit
           )
         `)
         .in('status', ['operational', 'maintenance']),
@@ -80,7 +108,8 @@ export async function GET() {
           checklists!template_id (
             name,
             description,
-            frequency
+            frequency,
+            executor_roles
           )
         `)
         .eq('status', 'pendiente'),
@@ -118,9 +147,29 @@ export async function GET() {
       return NextResponse.json({ error: completedResult.error.message }, { status: 500 })
     }
 
-    const assets = assetsResult.data || []
-    const pendingSchedules = pendingResult.data || []
-    const completedSchedules = completedResult.data || []
+    const allAssets = assetsResult.data || []
+    const assets = allAssets.filter((asset) =>
+      isAssetVisibleToActor(
+        asset as ScheduleVisibilityAsset,
+        actor,
+        assignedAssetIds
+      )
+    )
+    const assetById = new Map<string, ScheduleVisibilityAsset>(
+      assets.map((asset) => [asset.id, asset as ScheduleVisibilityAsset])
+    )
+    const pendingSchedules = filterSchedulesForActor(
+      pendingResult.data || [],
+      actor,
+      assetById,
+      assignedAssetIds
+    )
+    const completedSchedules = filterSchedulesForActor(
+      completedResult.data || [],
+      actor,
+      assetById,
+      assignedAssetIds
+    )
 
     // Assets that have ever had a completed checklist (for "never executed" filter)
     const { data: assetsWithCompleted } = await supabase
@@ -247,6 +296,16 @@ export async function GET() {
     }
     const models = Array.from(modelsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
 
+    const plantaAssetsCount = assets.filter((asset) =>
+      isPlantaAsset({
+        modelId: asset.model_id,
+        maintenanceUnit: (asset as ScheduleVisibilityAsset).equipment_models?.maintenance_unit,
+      })
+    ).length
+
+    const role = actor.profile.role
+    const canExecutePlanta = role === 'DOSIFICADOR' || role === 'JEFE_PLANTA'
+
     // Calculate comprehensive statistics
     const totalOverdue = assetSummaries.reduce((sum, { asset }) => sum + asset.overdue_checklists, 0)
     const totalPending = assetSummaries.reduce((sum, { asset }) => sum + asset.pending_checklists, 0)
@@ -287,7 +346,12 @@ export async function GET() {
           assets_with_overdue: assetsWithOverdue,
           assets_up_to_date: assetsUpToDate,
           plant_stats: plantStats
-        }
+        },
+        meta: {
+          planta_assets_count: plantaAssetsCount,
+          can_execute_planta: canExecutePlanta,
+          planta_read_only: isPlantaListReadOnlyRole(role),
+        },
       }
     })
   } catch (error: any) {

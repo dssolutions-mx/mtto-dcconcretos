@@ -14,6 +14,7 @@ import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-st
 import { DashboardModuleLinks } from "@/components/dashboard/dashboard-module-links"
 import { OperatorReportProblemDialog } from "@/components/operator/operator-report-problem-dialog"
 import { PlantDailyReadinessTable } from "@/components/dashboard/plant-daily-readiness-table"
+import { PlantControlDueCard } from "@/components/dashboard/plant-control-due-card"
 import type { PlantDailyReadinessPayload } from "@/types/plant-daily-readiness"
 
 export default function DosificadorDashboard() {
@@ -178,6 +179,11 @@ export default function DosificadorDashboard() {
               label="activos con inspección diaria pendiente"
               href="#inspeccion-diaria"
               ctaLabel="Ver listado"
+            />
+
+            <PlantControlDueCard
+              loading={dataLoading}
+              due={payload?.plantControlDue}
             />
 
             <div className="flex flex-wrap gap-3">

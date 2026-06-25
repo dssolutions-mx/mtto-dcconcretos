@@ -40,11 +40,25 @@ import type { PlantDailyReadinessPayload } from "@/types/plant-daily-readiness"
 interface ChecklistSchedule {
   id: string
   status: string | null
+  scheduled_day?: string | null
+  scheduled_date?: string | null
   asset?: { name?: string; asset_id?: string } | null
+  assets?: { name?: string; asset_id?: string; model_id?: string | null } | null
   assigned_to?: string | null
   assigned_profile?: { nombre?: string; apellido?: string } | null
-  scheduled_date?: string | null
-  checklist?: { title?: string } | null
+  checklist?: { title?: string; name?: string } | null
+  checklists?: { name?: string; executor_roles?: string[] | null } | null
+}
+
+function scheduleDay(schedule: ChecklistSchedule): string | null {
+  if (schedule.scheduled_day) return schedule.scheduled_day
+  if (schedule.scheduled_date) return schedule.scheduled_date.split('T')[0]
+  return null
+}
+
+function isTodaySchedule(schedule: ChecklistSchedule, todayKey: string): boolean {
+  const day = scheduleDay(schedule)
+  return day === todayKey
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -192,7 +206,12 @@ function ChecklistQueue({
             const operatorName = sched.assigned_profile
               ? `${sched.assigned_profile.nombre ?? ""} ${sched.assigned_profile.apellido ?? ""}`.trim()
               : "Sin asignar"
-            const assetName = sched.asset?.name ?? sched.checklist?.title ?? "—"
+            const assetName =
+              sched.asset?.name ??
+              sched.assets?.name ??
+              sched.checklist?.title ??
+              sched.checklists?.name ??
+              "Sin activo"
             const statusDisplay = getStatusDisplay(sched.status)
 
             return (
@@ -246,6 +265,7 @@ export default function JefePlantaDashboard() {
 
   const [schedules, setSchedules] = useState<ChecklistSchedule[]>([])
   const [dataLoading, setDataLoading] = useState(true)
+  const [dataError, setDataError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const [readinessPayload, setReadinessPayload] = useState<PlantDailyReadinessPayload | null>(null)
@@ -267,17 +287,28 @@ export default function JefePlantaDashboard() {
   const loadData = useCallback(async () => {
     try {
       setDataLoading(true)
-      const res = await fetch("/api/checklists/schedules", {
-        credentials: "include",
-        cache: "no-store",
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const list = Array.isArray(data) ? data : (data.schedules ?? data.data ?? [])
-        setSchedules(list)
+      setDataError(null)
+      const todayKey = new Date().toISOString().slice(0, 10)
+      const res = await fetch(
+        `/api/checklists/schedules?status=pendiente`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        }
+      )
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
       }
+      const list = Array.isArray(json) ? json : (json.schedules ?? json.data ?? [])
+      const todaySchedules = (list as ChecklistSchedule[]).filter((schedule) =>
+        isTodaySchedule(schedule, todayKey)
+      )
+      setSchedules(todaySchedules)
     } catch (err) {
       console.error("[JefePlantaDashboard] Error loading data:", err)
+      setDataError(err instanceof Error ? err.message : "Error al cargar checklists")
+      setSchedules([])
     } finally {
       setDataLoading(false)
     }
@@ -462,6 +493,11 @@ export default function JefePlantaDashboard() {
             )}
 
             {/* Checklist queue */}
+            {dataError && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {dataError}
+              </div>
+            )}
             <ChecklistQueue
               schedules={sortedSchedules.slice(0, 8)}
               totalCount={total}

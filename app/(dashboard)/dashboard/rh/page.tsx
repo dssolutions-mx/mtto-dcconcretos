@@ -6,6 +6,8 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardActionStrip } from "@/components/dashboard/dashboard-action-strip"
 import {
   ClipboardCheck,
+  Clock,
+  DollarSign,
   FileText,
   KeyRound,
   Shield,
@@ -43,6 +45,18 @@ const hubLinks: {
     icon: KeyRound,
   },
   {
+    href: "/rh/bonos",
+    title: "Decisión de bonos",
+    sub: "Nómina y cierre mensual",
+    icon: DollarSign,
+  },
+  {
+    href: "/rh/puntualidad",
+    title: "Reportes de puntualidad",
+    sub: "Señales diarias por operador",
+    icon: Clock,
+  },
+  {
     href: "/rh/cumplimiento-checklists",
     title: "Cumplimiento checklists",
     sub: "Seguimiento RH",
@@ -53,6 +67,12 @@ const hubLinks: {
     title: "Reportes de limpieza",
     sub: "Cumplimiento operativo",
     icon: Sparkles,
+  },
+  {
+    href: "/rh/charlas",
+    title: "Charlas de seguridad",
+    sub: "Asistencia y temas por planta",
+    icon: Shield,
   },
   {
     href: "/compliance/incidentes",

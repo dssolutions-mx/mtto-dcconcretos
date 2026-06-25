@@ -1,7 +1,9 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { MapPin, Users, Play, Truck, AlertTriangle, CheckCircle, Clock, Calendar } from "lucide-react"
+import { PlantaAssetBadge } from "@/components/checklists/planta-asset-badge"
+import { isPlantaAsset } from "@/lib/checklist/executor-roles"
+import { MapPin, Users, Play, Truck, Factory, AlertTriangle, CheckCircle, Clock, Calendar } from "lucide-react"
 import Link from "next/link"
 import type { AssetChecklistCardData, ChecklistStatus } from "./asset-checklist-card"
 
@@ -47,6 +49,11 @@ export function AssetChecklistListRow({ asset, formatDate }: AssetChecklistListR
   const plantName = asset.plants?.name || asset.location || "Sin planta"
   const departmentName = asset.departments?.name || asset.department || "Sin departamento"
   const modelName = asset.equipment_models?.name || asset.name
+  const planta = isPlantaAsset({
+    modelId: asset.model_id,
+    maintenanceUnit: asset.equipment_models?.maintenance_unit,
+  })
+  const AssetIcon = planta ? Factory : Truck
 
   return (
     <Link
@@ -56,10 +63,11 @@ export function AssetChecklistListRow({ asset, formatDate }: AssetChecklistListR
       <div className="p-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0 flex-1">
-            <Truck className="h-8 w-8 text-muted-foreground flex-shrink-0" />
+            <AssetIcon className="h-8 w-8 text-muted-foreground flex-shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-semibold truncate font-mono tabular-nums">{asset.asset_id}</h3>
+                <PlantaAssetBadge asset={asset} />
                 <span className="text-sm text-muted-foreground">Modelo: {modelName}</span>
               </div>
               <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">

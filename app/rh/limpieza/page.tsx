@@ -1,22 +1,22 @@
 import { Suspense } from 'react'
-import CleanlinessReportsView from '@/components/hr/cleanliness-reports-view'
 import { RHReportingGuard } from '@/components/auth/rh-reporting-guard'
+import { CleanlinessReportsView } from '@/components/hr/reports/cleanliness-reports-view'
+import { RhReportLoading } from '@/components/hr/reports/rh-report-states'
 
 export default function CleanlinessReportsPage() {
   return (
     <RHReportingGuard>
-    <div className="container mx-auto py-6 px-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Reportes de Limpieza</h1>
-        <p className="text-muted-foreground">
-          Revisa las evaluaciones de limpieza de los operadores para determinar bonos
-        </p>
+      <div className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <Suspense
+          fallback={
+            <div className="py-8">
+              <RhReportLoading rows={4} />
+            </div>
+          }
+        >
+          <CleanlinessReportsView />
+        </Suspense>
       </div>
-      
-      <Suspense fallback={<div className="text-center py-8">Cargando reportes...</div>}>
-        <CleanlinessReportsView />
-      </Suspense>
-    </div>
     </RHReportingGuard>
   )
-} 
+}

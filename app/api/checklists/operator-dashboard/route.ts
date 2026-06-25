@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext } from '@/lib/auth/server-authorization'
+import {
+  filterSchedulesForActor,
+  loadOperatorAssignedAssetIds,
+  type ScheduleVisibilityAsset,
+} from '@/lib/checklist/schedule-visibility'
 import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
 import {
   expandPerAssignmentAssetScopes,
@@ -19,12 +25,17 @@ export async function GET(request: NextRequest) {
     // Get user profile to verify they are an operator
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, role, plant_id, nombre, apellido')
+      .select('id, role, plant_id, nombre, apellido, business_unit_id, managed_plant_ids, is_active')
       .eq('id', user.id)
       .single()
 
     if (profileError || !profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json({ error: 'Profile not found or inactive' }, { status: 403 })
     }
 
     // Only allow OPERADOR and DOSIFICADOR roles
@@ -98,13 +109,17 @@ export async function GET(request: NextRequest) {
           id,
           name,
           description,
-          frequency
+          frequency,
+          executor_roles
         ),
         assets (
           id,
           name,
           asset_id,
-          location
+          location,
+          plant_id,
+          model_id,
+          equipment_models ( maintenance_unit )
         )
       `)
       .in('asset_id', scheduleAssetFilter)
@@ -116,9 +131,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching schedules' }, { status: 500 })
     }
 
+    const assignedAssetIdSet = await loadOperatorAssignedAssetIds(supabase, user.id)
+
+    const assetById = new Map<string, ScheduleVisibilityAsset>()
+    for (const row of allSchedules ?? []) {
+      const asset = row.assets as ScheduleVisibilityAsset | null
+      if (asset?.id) assetById.set(row.asset_id, asset)
+    }
+
+    const visibleSchedules = filterSchedulesForActor(
+      allSchedules || [],
+      actor,
+      assetById,
+      assignedAssetIdSet
+    )
+
     // Process schedules by date categories using UTC-based date comparison
-    // This ensures consistency with the asset detail pages
-    const categorizedSchedules = categorizeSchedulesByDate(allSchedules || [])
+    const categorizedSchedules = categorizeSchedulesByDate(visibleSchedules)
     
     const todayChecklists = categorizedSchedules.today
     const overdueChecklists = categorizedSchedules.overdue  
@@ -177,7 +206,7 @@ export async function GET(request: NextRequest) {
         today_checklists: todayChecklists.length,
         overdue_checklists: overdueChecklists.length,
         upcoming_checklists: upcomingChecklists.length,
-        total_checklists: allSchedules?.length || 0
+        total_checklists: visibleSchedules.length
       }
     }
 

@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase-server"
+import { createAdminClient } from "@/lib/supabase-admin"
 import { getUTCToday } from "@/lib/utils/date-utils"
+import {
+  ensureMonthlyBonusClosureSchedules,
+  getPlantOperationsSchedules,
+  getMonthlyBonusClosureSchedules,
+  summarizePlantControlReadiness,
+  summarizePlantControlDue,
+} from "@/lib/checklist/plant-operations-schedule"
+import { isPlantaAsset } from "@/lib/checklist/executor-roles"
 import type { PlantAssetOption, PlantDailyReadinessPayload, PlantDailyReadinessRow } from "@/types/plant-daily-readiness"
 
 function formatUTCDateKey(d: Date): string {
@@ -67,9 +76,16 @@ export async function GET() {
     const plantId = plantIds[0]
     const todayKey = formatUTCDateKey(getUTCToday())
 
+    try {
+      const admin = createAdminClient()
+      await ensureMonthlyBonusClosureSchedules(admin, plantIds, todayKey)
+    } catch (ensureError) {
+      console.error("[plant-daily-readiness] ensure monthly schedules", ensureError)
+    }
+
     const { data: plantAssets, error: assetsError } = await supabase
       .from("assets")
-      .select("id, name, asset_id, plant_id")
+      .select("id, name, asset_id, plant_id, model_id, equipment_models ( maintenance_unit )")
       .in("plant_id", plantIds)
       .eq("status", "operational")
 
@@ -78,24 +94,68 @@ export async function GET() {
       return NextResponse.json({ error: assetsError.message }, { status: 500 })
     }
 
-    const assetsList = plantAssets ?? []
+    const assetsList = (plantAssets ?? []).filter((a) => {
+      const em = Array.isArray(a.equipment_models)
+        ? a.equipment_models[0]
+        : a.equipment_models
+      return !isPlantaAsset({
+        modelId: a.model_id,
+        maintenanceUnit: (em as { maintenance_unit?: string | null } | null)
+          ?.maintenance_unit,
+      })
+    })
     const assetIds = assetsList.map((a) => a.id)
     const assetById = new Map(assetsList.map((a) => [a.id, a]))
 
-    const assetsForIncidents: PlantAssetOption[] = assetsList.map((a) => ({
+    const assetsForIncidents: PlantAssetOption[] = (plantAssets ?? []).map((a) => ({
       id: a.id,
       name: a.name,
       asset_id: a.asset_id,
     }))
 
     if (assetIds.length === 0) {
+      const plantControlSchedules = await getPlantOperationsSchedules(
+        supabase,
+        plantIds,
+        profile.role,
+        todayKey
+      )
+      const monthlyBonusSchedules = await getMonthlyBonusClosureSchedules(
+        supabase,
+        plantIds,
+        profile.role,
+        todayKey
+      )
+      const plantControlSummary = summarizePlantControlReadiness(plantControlSchedules)
+      const plantControlDue = summarizePlantControlDue(
+        plantControlSchedules,
+        { todayKey },
+        monthlyBonusSchedules
+      )
+      const rows: PlantDailyReadinessRow[] =
+        plantControlSchedules.length > 0
+          ? [
+              {
+                assetId: plantControlSchedules[0].assetId,
+                assetCode: null,
+                assetName: "Control de planta",
+                operatorName: null,
+                readiness: plantControlSummary.readiness,
+                pendingScheduleId: plantControlSummary.pendingScheduleId,
+                checklistName: plantControlSummary.checklistName,
+                rowKind: "plant_control",
+              },
+            ]
+          : []
+
       const empty: PlantDailyReadinessPayload = {
         todayKey,
         plantId,
-        rows: [],
-        pendingCount: 0,
-        readyCount: 0,
+        rows,
+        pendingCount: rows.filter((r) => r.readiness === "pendiente").length,
+        readyCount: rows.filter((r) => r.readiness === "listo").length,
         assetsForIncidents,
+        plantControlDue,
       }
       return NextResponse.json({ data: empty })
     }
@@ -189,6 +249,37 @@ export async function GET() {
 
     resultRows.sort((a, b) => (a.assetCode ?? "").localeCompare(b.assetCode ?? "", "es"))
 
+    const plantControlSchedules = await getPlantOperationsSchedules(
+      supabase,
+      plantIds,
+      profile.role,
+      todayKey
+    )
+    const monthlyBonusSchedules = await getMonthlyBonusClosureSchedules(
+      supabase,
+      plantIds,
+      profile.role,
+      todayKey
+    )
+    const plantControlSummary = summarizePlantControlReadiness(plantControlSchedules)
+    const plantControlDue = summarizePlantControlDue(
+      plantControlSchedules,
+      { todayKey },
+      monthlyBonusSchedules
+    )
+    if (plantControlSchedules.length > 0) {
+      resultRows.unshift({
+        assetId: plantControlSchedules[0].assetId,
+        assetCode: null,
+        assetName: "Control de planta",
+        operatorName: null,
+        readiness: plantControlSummary.readiness,
+        pendingScheduleId: plantControlSummary.pendingScheduleId,
+        checklistName: plantControlSummary.checklistName,
+        rowKind: "plant_control",
+      })
+    }
+
     const pendingCount = resultRows.filter((r) => r.readiness === "pendiente").length
     const readyCount = resultRows.filter((r) => r.readiness === "listo").length
 
@@ -200,6 +291,7 @@ export async function GET() {
         pendingCount,
         readyCount,
         assetsForIncidents,
+        plantControlDue,
       },
     })
   } catch (e) {

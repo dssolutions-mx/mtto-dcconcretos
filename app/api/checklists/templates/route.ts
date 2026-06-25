@@ -126,6 +126,14 @@ export async function POST(request: Request) {
             { status: 400 }
           )
         }
+      } else if (
+        section.section_type === 'security_talk' ||
+        section.section_type === 'tire_readings' ||
+        section.section_type === 'operator_punctuality' ||
+        section.section_type === 'bonus_closure'
+      ) {
+        // Lane B / special sections — no checklist items required
+        continue
       } else {
         // Para secciones normales de checklist, verificar items
         if (!section.items || section.items.length === 0) {
@@ -160,6 +168,7 @@ export async function POST(request: Request) {
         model_id: template.model_id,
         frequency: template.frequency,
         interval_id: template.interval_id || null,
+        executor_roles: template.executor_roles || null,
         created_by: userId
       })
       .select('id')
@@ -190,6 +199,9 @@ export async function POST(request: Request) {
           cleanliness_config: section.cleanliness_config || null,
           security_config: section.security_config || null,
           tire_readings_config: section.tire_readings_config || null,
+          punctuality_config: section.punctuality_config || null,
+          bonus_closure_config: section.bonus_closure_config || null,
+          funnel_config: section.funnel_config || null,
         })
         .select('id')
         .single()
@@ -202,7 +214,7 @@ export async function POST(request: Request) {
       const sectionId = sectionData.id
       
       // Solo crear items para secciones normales de checklist
-      if (section.section_type === 'checklist' || !section.section_type) {
+      if (section.section_type === 'checklist' || section.section_type === 'cleanliness_bonus' || !section.section_type) {
         // Crear los items para la sección
         for (let j = 0; j < section.items.length; j++) {
           const item = section.items[j]

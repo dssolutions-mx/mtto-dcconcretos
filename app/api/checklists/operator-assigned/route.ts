@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadActorContext } from '@/lib/auth/server-authorization'
+import {
+  filterSchedulesForActor,
+  loadOperatorAssignedAssetIds,
+  type ScheduleVisibilityAsset,
+} from '@/lib/checklist/schedule-visibility'
 import {
   expandPerAssignmentAssetScopes,
   findAssignmentForScheduleAsset,
@@ -21,12 +27,17 @@ export async function GET(request: NextRequest) {
     // Get user profile to verify they are an operator
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id, role, plant_id')
+      .select('id, role, plant_id, business_unit_id, managed_plant_ids, is_active')
       .eq('id', user.id)
       .single()
 
     if (profileError || !profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json({ error: 'Profile not found or inactive' }, { status: 403 })
     }
 
     // Only allow OPERADOR and DOSIFICADOR roles
@@ -83,6 +94,7 @@ export async function GET(request: NextRequest) {
           name,
           description,
           frequency,
+          executor_roles,
           equipment_models (name, manufacturer)
         ),
         assets (
@@ -90,7 +102,10 @@ export async function GET(request: NextRequest) {
           name,
           asset_id,
           location,
-          status
+          status,
+          plant_id,
+          model_id,
+          equipment_models ( maintenance_unit )
         )
       `)
       .in('asset_id', scheduleAssetFilter)
@@ -113,8 +128,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching checklists' }, { status: 500 })
     }
 
-    // Filter by type/frequency if specified
-    let filteredSchedules = schedules || []
+    const assignedAssetIdSet = await loadOperatorAssignedAssetIds(supabase, user.id)
+
+    const assetById = new Map<string, ScheduleVisibilityAsset>()
+    for (const row of schedules ?? []) {
+      const asset = row.assets as ScheduleVisibilityAsset | null
+      if (asset?.id) assetById.set(row.asset_id, asset)
+    }
+
+    let filteredSchedules = filterSchedulesForActor(
+      schedules || [],
+      actor,
+      assetById,
+      assignedAssetIdSet
+    )
     if (type && filteredSchedules.length > 0) {
       filteredSchedules = filteredSchedules.filter(schedule => 
         schedule.checklists?.frequency === type

@@ -1,7 +1,7 @@
-/**
- * Shared template state utilities for the checklist template editor and creation wizard.
- * Minimal extraction to avoid massive refactor - provides validation and initial state factory.
- */
+import {
+  DEFAULT_EXECUTOR_ROLES,
+  type ChecklistExecutorRole,
+} from '@/lib/checklist/executor-roles'
 
 export interface ChecklistItem {
   id?: string
@@ -13,14 +13,39 @@ export interface ChecklistItem {
   tolerance?: string
 }
 
+export interface PunctualityConfig {
+  require_production_flag: boolean
+}
+
+export interface BonusClosureConfig {
+  bonus_type: "cleanliness"
+  deadline_day: number
+  suggest_eligibility_threshold: number
+}
+
+export interface SectionFunnelConfig {
+  lane: "maintenance" | "operations_evaluation"
+}
+
 export interface ChecklistSection {
   id?: string
   title: string
   order_index: number
-  section_type?: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk"
+  section_type?:
+    | "checklist"
+    | "evidence"
+    | "cleanliness_bonus"
+    | "security_talk"
+    | "tire_readings"
+    | "operator_punctuality"
+    | "bonus_closure"
   evidence_config?: { categories?: string[]; [k: string]: unknown }
   cleanliness_config?: unknown
   security_config?: unknown
+  punctuality_config?: PunctualityConfig
+  bonus_closure_config?: BonusClosureConfig
+  tire_readings_config?: unknown
+  funnel_config?: SectionFunnelConfig
   items: ChecklistItem[]
 }
 
@@ -31,6 +56,7 @@ export interface ChecklistTemplate {
   model_id: string
   frequency: string
   hours_interval?: number
+  executor_roles?: ChecklistExecutorRole[]
   sections: ChecklistSection[]
 }
 
@@ -45,6 +71,7 @@ export function createInitialTemplate(
     description: "",
     model_id: preSelectedModelId || "",
     frequency: "mensual",
+    executor_roles: [...DEFAULT_EXECUTOR_ROLES],
     sections: [
       {
         title: "Nueva Sección 1",
@@ -69,13 +96,15 @@ export function createInitialTemplate(
 export function validateTemplate(
   template: Pick<
     ChecklistTemplate,
-    "name" | "model_id" | "frequency" | "hours_interval" | "sections"
+    "name" | "model_id" | "frequency" | "hours_interval" | "sections" | "executor_roles"
   >
 ): string[] {
   const errors: string[] = []
   const name = (template.name || "").trim()
   if (!name) errors.push("El nombre de la plantilla es requerido")
   if (!template.model_id) errors.push("Selecciona un modelo de equipo")
+  if (!template.executor_roles?.length)
+    errors.push("Selecciona al menos un rol que pueda ejecutar la plantilla")
   if (!template.sections?.length)
     errors.push("La plantilla debe tener al menos una sección")
   if (
@@ -97,6 +126,12 @@ export function validateTemplate(
       }
     } else if (section.section_type === "security_talk") {
       // Security talk sections have no items - skip item validation
+    } else if (
+      section.section_type === "tire_readings" ||
+      section.section_type === "operator_punctuality" ||
+      section.section_type === "bonus_closure"
+    ) {
+      // Special sections without checklist items
     } else if (
       (section.section_type === "checklist" ||
         section.section_type === "cleanliness_bonus" ||

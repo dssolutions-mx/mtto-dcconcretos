@@ -10,9 +10,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckSquare, Camera, Sparkles, Shield, Plus, CircleDot } from "lucide-react"
+import { CheckSquare, Camera, Sparkles, Shield, Plus, CircleDot, Clock, Award, Factory } from "lucide-react"
 import { CollapsibleSectionCard } from "./collapsible-section-card"
 import { SectionEditorBody } from "./section-editor-body"
+import { DEFAULT_TIRE_READINGS_CONFIG } from "@/lib/tires/tire-readings-validation"
+import { isPlantaModelId } from "@/lib/checklist/executor-roles"
+import {
+  buildPlantaDailyPreset,
+  buildPlantaMonthlyPreset,
+} from "@/lib/checklist/planta-template-presets"
 import type { ChecklistTemplate, ChecklistSection, ChecklistItem } from "./types"
 
 const SECTION_TYPES = [
@@ -51,10 +57,24 @@ const SECTION_TYPES = [
     icon: CircleDot,
     className: "border-violet-200 bg-violet-50/50 hover:bg-violet-100/50",
   },
+  {
+    type: "operator_punctuality" as const,
+    label: "Puntualidad",
+    description: "Registro diario de puntualidad de operadores",
+    icon: Clock,
+    className: "border-sky-200 bg-sky-50/50 hover:bg-sky-100/50",
+  },
+  {
+    type: "bonus_closure" as const,
+    label: "Cierre de bono",
+    description: "Cierre mensual de elegibilidad de bono de limpieza",
+    icon: Award,
+    className: "border-violet-200 bg-violet-50/50 hover:bg-violet-100/50",
+  },
 ]
 
 function createSectionForType(
-  type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings",
+  type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings" | "operator_punctuality" | "bonus_closure",
   orderIndex: number,
   existingSections: ChecklistSection[]
 ): ChecklistSection {
@@ -68,6 +88,10 @@ function createSectionForType(
           ? `Charla de Seguridad ${count + 1}`
           : type === "tire_readings"
             ? `Inspección de llantas ${count + 1}`
+            : type === "operator_punctuality"
+              ? `Puntualidad ${count + 1}`
+              : type === "bonus_closure"
+                ? `Cierre de bono ${count + 1}`
           : `Verificación de Limpieza ${count + 1}`
 
   if (type === "checklist") {
@@ -126,6 +150,30 @@ function createSectionForType(
       items: [],
     }
   }
+  if (type === "operator_punctuality") {
+    return {
+      title: baseTitle,
+      order_index: orderIndex,
+      section_type: "operator_punctuality",
+      punctuality_config: {
+        require_production_flag: true,
+      },
+      items: [],
+    }
+  }
+  if (type === "bonus_closure") {
+    return {
+      title: baseTitle,
+      order_index: orderIndex,
+      section_type: "bonus_closure",
+      bonus_closure_config: {
+        bonus_type: "cleanliness",
+        deadline_day: 24,
+        suggest_eligibility_threshold: 0.8,
+      },
+      items: [],
+    }
+  }
   return {
     title: baseTitle,
     order_index: orderIndex,
@@ -172,7 +220,22 @@ export function SectionsStep({
   const [showAddDialog, setShowAddDialog] = useState(false)
   const sections = template.sections || []
 
-  const addSection = (type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings") => {
+  const isPlantaModel = isPlantaModelId(template.model_id)
+
+  const applyPlantaPreset = (preset: "daily" | "monthly") => {
+    const built =
+      preset === "daily" ? buildPlantaDailyPreset() : buildPlantaMonthlyPreset()
+    setTemplate((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : built.name,
+      frequency: built.frequency,
+      executor_roles: built.executor_roles,
+      sections: built.sections,
+    }))
+    onExpandedChange(0)
+  }
+
+  const addSection = (type: "checklist" | "evidence" | "cleanliness_bonus" | "security_talk" | "tire_readings" | "operator_punctuality" | "bonus_closure") => {
     const newSection = createSectionForType(type, sections.length, sections)
     setTemplate((prev) => ({
       ...prev,
@@ -270,6 +333,42 @@ export function SectionsStep({
       <p className="text-sm text-muted-foreground">
         Agrega secciones para organizar los ítems de tu checklist. Puedes elegir entre Checklist, Evidencia, Limpieza o Seguridad.
       </p>
+
+      {isPlantaModel && (
+        <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-sky-900">
+            <Factory className="h-4 w-4" />
+            Inicio rápido — Operaciones de Planta
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Plantillas preconfiguradas para modelo PLANTA (dosificador / jefe de planta).
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Card
+              className="cursor-pointer border-sky-200 transition-colors hover:border-sky-400 hover:bg-sky-50/80"
+              onClick={() => applyPlantaPreset("daily")}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Operaciones de Planta — Diario</CardTitle>
+                <CardDescription className="text-sm">
+                  Puntualidad, charla de seguridad y evidencia opcional. Frecuencia diaria.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+            <Card
+              className="cursor-pointer border-violet-200 transition-colors hover:border-violet-400 hover:bg-violet-50/80"
+              onClick={() => applyPlantaPreset("monthly")}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Operaciones de Planta — Mensual</CardTitle>
+                <CardDescription className="text-sm">
+                  Cierre de bono de limpieza. Frecuencia mensual.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {sections.map((section, sectionIndex) => (

@@ -10,18 +10,24 @@ import {
 } from "@/components/ui/collapsible"
 import { ChevronDown, ChevronUp, Trash2, ArrowUp, ArrowDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SectionFunnelLaneBadge } from "@/components/checklists/section-funnel-lane-badge"
+import { getSectionFunnelLane } from "@/lib/checklist/section-funnel"
 
 const SECTION_TYPE_LABELS: Record<string, string> = {
   checklist: "Checklist",
   evidence: "Evidencia",
   cleanliness_bonus: "Limpieza",
   security_talk: "Seguridad",
+  tire_readings: "Llantas",
+  operator_punctuality: "Puntualidad",
+  bonus_closure: "Cierre de bono",
 }
 
 interface CollapsibleSectionCardProps {
   section: {
     title: string
     section_type?: string
+    funnel_config?: { lane?: string }
     items: unknown[]
   }
   sectionIndex: number
@@ -48,6 +54,8 @@ export function CollapsibleSectionCard({
   const sectionType = section.section_type || "checklist"
   const itemCount = section.items?.length ?? 0
   const typeLabel = SECTION_TYPE_LABELS[sectionType] ?? "Checklist"
+  const showFunnelBadge =
+    sectionType === "checklist" || sectionType === "cleanliness_bonus"
 
   const cardBorderClass =
     sectionType === "evidence"
@@ -56,6 +64,10 @@ export function CollapsibleSectionCard({
         ? "border-green-200/60 bg-green-50/30"
         : sectionType === "security_talk"
           ? "border-orange-200/60 bg-orange-50/30"
+          : sectionType === "operator_punctuality"
+            ? "border-sky-200/60 bg-sky-50/30"
+            : sectionType === "bonus_closure"
+              ? "border-violet-200/60 bg-violet-50/30"
           : "border-border/40"
 
   return (
@@ -90,6 +102,11 @@ export function CollapsibleSectionCard({
                 >
                   {typeLabel}
                 </Badge>
+                {showFunnelBadge ? (
+                  <SectionFunnelLaneBadge section={section} />
+                ) : getSectionFunnelLane(section) === "operations_evaluation" ? (
+                  <SectionFunnelLaneBadge section={section} />
+                ) : null}
               </button>
             </CollapsibleTrigger>
             <div className="flex gap-1 shrink-0">

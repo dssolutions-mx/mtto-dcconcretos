@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -12,6 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  CHECKLIST_EXECUTOR_ROLE_OPTIONS,
+  EXECUTOR_ROLE_LABELS,
+  type ChecklistExecutorRole,
+} from "@/lib/checklist/executor-roles"
 
 interface BasicInfoCardProps {
   templateName: string
@@ -21,12 +27,19 @@ interface BasicInfoCardProps {
   modelId: string
   frequency: string
   hoursInterval?: number
-  models: Array<{ id: string; name: string; manufacturer?: string }>
+  executorRoles: ChecklistExecutorRole[]
+  models: Array<{
+    id: string
+    name: string
+    manufacturer?: string
+    maintenance_unit?: string | null
+  }>
   onNameChange: (value: string) => void
   onDescriptionChange: (value: string) => void
   onModelChange: (value: string) => void
   onFrequencyChange: (value: string) => void
   onHoursIntervalChange: (value: number | undefined) => void
+  onExecutorRolesChange: (roles: ChecklistExecutorRole[]) => void
 }
 
 export const BasicInfoCard = memo(function BasicInfoCard({
@@ -37,13 +50,26 @@ export const BasicInfoCard = memo(function BasicInfoCard({
   modelId,
   frequency,
   hoursInterval,
+  executorRoles,
   models,
   onNameChange,
   onDescriptionChange,
   onModelChange,
   onFrequencyChange,
   onHoursIntervalChange,
+  onExecutorRolesChange,
 }: BasicInfoCardProps) {
+  const toggleRole = (role: ChecklistExecutorRole, checked: boolean) => {
+    if (checked) {
+      if (!executorRoles.includes(role)) {
+        onExecutorRolesChange([...executorRoles, role])
+      }
+      return
+    }
+    if (executorRoles.length <= 1) return
+    onExecutorRolesChange(executorRoles.filter((r) => r !== role))
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -117,6 +143,29 @@ export const BasicInfoCard = memo(function BasicInfoCard({
               />
             </div>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Roles que pueden ejecutar</Label>
+          <p className="text-xs text-muted-foreground">
+            Define quién puede completar checklists generados con esta plantilla.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {CHECKLIST_EXECUTOR_ROLE_OPTIONS.map((role) => (
+              <label
+                key={role}
+                className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm cursor-pointer"
+              >
+                <Checkbox
+                  checked={executorRoles.includes(role)}
+                  onCheckedChange={(checked) =>
+                    toggleRole(role, checked === true)
+                  }
+                />
+                <span>{EXECUTOR_ROLE_LABELS[role]}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>

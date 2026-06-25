@@ -159,6 +159,62 @@ export interface SecurityTalkSectionData {
   [sectionId: string]: SecurityTalkData;
 }
 
+// Operator punctuality (Lane B — plant operations)
+export interface PunctualityConfig {
+  require_production_flag: boolean;
+}
+
+export type PunctualityStatus = 'on_time' | 'late' | 'absent';
+
+export interface OperatorPunctualityEntry {
+  operator_id: string;
+  status: PunctualityStatus;
+  notes?: string;
+}
+
+export interface PunctualitySectionData {
+  had_production: boolean | null;
+  entries: OperatorPunctualityEntry[];
+  /** Set by UI when operators are loaded — used for progress calculation. */
+  operator_count?: number;
+}
+
+// Monthly bonus closure (Lane B — plant operations)
+export interface BonusClosureConfig {
+  bonus_type: 'cleanliness';
+  deadline_day: number;
+  suggest_eligibility_threshold: number;
+}
+
+export interface BonusClosureDecision {
+  operator_id: string;
+  operator_name?: string;
+  employee_code?: string;
+  weekly_pass_rate: number;
+  evaluation_ids: string[];
+  system_suggested_eligible: boolean;
+  eligible: boolean;
+  ineligible_reason?: string;
+  evidence?: Array<{
+    photo_url: string;
+    category: string;
+    description?: string;
+    photoId?: string;
+  }>;
+}
+
+export interface BonusClosureSectionData {
+  period_year: number;
+  period_month: number;
+  decisions: BonusClosureDecision[];
+}
+
+export type PlantOperationsSectionData =
+  | PunctualitySectionData
+  | BonusClosureSectionData;
+
+export type PlantOperationsData = Record<string, PlantOperationsSectionData>;
+
 // Tipos para órdenes de trabajo
 export type WorkOrder = DbTables['work_orders']['Row'];
 export type InsertWorkOrder = DbTables['work_orders']['Insert'];

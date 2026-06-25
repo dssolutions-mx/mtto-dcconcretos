@@ -1170,6 +1170,28 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-1 mt-2 transition-all duration-200 ease-in-out motion-reduce:transition-none">
               <Button
+                variant={isPathActive("/rh/bonos") ? "secondary" : "ghost"}
+                className={cn("w-full justify-start pl-8", navItemClasses)}
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/rh/bonos">
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Decisión de Bonos
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/rh/puntualidad") ? "secondary" : "ghost"}
+                className={cn("w-full justify-start pl-8", navItemClasses)}
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/rh/puntualidad">
+                  <Clock className="mr-2 h-4 w-4" />
+                  Reportes de Puntualidad
+                </Link>
+              </Button>
+              <Button
                 variant={isPathActive("/rh/limpieza") ? "secondary" : "ghost"}
                 className={cn("w-full justify-start pl-8", navItemClasses)}
                 asChild
@@ -1178,6 +1200,17 @@ export function Sidebar({ className, onLinkClick }: SidebarProps) {
                 <Link href="/rh/limpieza">
                   <Sparkles className="mr-2 h-4 w-4" />
                   Reportes de Limpieza
+                </Link>
+              </Button>
+              <Button
+                variant={isPathActive("/rh/charlas") ? "secondary" : "ghost"}
+                className={cn("w-full justify-start pl-8", navItemClasses)}
+                asChild
+                onClick={handleLinkClick}
+              >
+                <Link href="/rh/charlas">
+                  <Shield className="mr-2 h-4 w-4" />
+                  Charlas de Seguridad
                 </Link>
               </Button>
               <Button
@@ -1493,9 +1526,12 @@ function buildNavigationSections(
       id: "hr",
       icon: Users,
       label: "Recursos Humanos",
-      active: isSectionActive(["/rh/limpieza", "/rh/cumplimiento-checklists"]),
+      active: isSectionActive(["/rh/bonos", "/rh/puntualidad", "/rh/limpieza", "/rh/charlas", "/rh/cumplimiento-checklists"]),
       items: [
+        { href: "/rh/bonos", icon: DollarSign, label: "Decisión de Bonos", active: isPathActive("/rh/bonos") },
+        { href: "/rh/puntualidad", icon: Clock, label: "Reportes de Puntualidad", active: isPathActive("/rh/puntualidad") },
         { href: "/rh/limpieza", icon: Sparkles, label: "Reportes de Limpieza", active: isPathActive("/rh/limpieza") },
+        { href: "/rh/charlas", icon: Shield, label: "Charlas de Seguridad", active: isPathActive("/rh/charlas") },
         { href: "/rh/cumplimiento-checklists", icon: ClipboardCheck, label: "Cumplimiento de Checklists", active: isPathActive("/rh/cumplimiento-checklists") },
       ],
     })

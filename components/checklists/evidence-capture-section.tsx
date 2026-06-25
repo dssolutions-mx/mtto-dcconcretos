@@ -117,6 +117,33 @@ interface EvidenceCaptureProps {
   onEvidenceChange: (sectionId: string, evidences: SmartEvidence[]) => void
   disabled?: boolean
   checklistId?: string
+  /** Restored from draft/server — shown when localStorage has no fresher data. */
+  initialEvidences?: Array<{
+    photo_url: string
+    category: string
+    description?: string
+  }>
+}
+
+function mapInitialEvidences(
+  sectionId: string,
+  items: EvidenceCaptureProps['initialEvidences']
+): SmartEvidence[] {
+  if (!items?.length) return []
+  return items.map((item, index) => {
+    const isRemoteUrl =
+      typeof item.photo_url === 'string' &&
+      (item.photo_url.startsWith('http://') || item.photo_url.startsWith('https://'))
+    return {
+      id: `restored-${sectionId}-${index}`,
+      section_id: sectionId,
+      category: item.category,
+      description: item.description ?? '',
+      photo_url: item.photo_url,
+      sequence_order: index,
+      status: isRemoteUrl ? 'uploaded' : 'stored',
+    }
+  })
 }
 
 export function EvidenceCaptureSection({
@@ -125,7 +152,8 @@ export function EvidenceCaptureSection({
   config,
   onEvidenceChange,
   disabled = false,
-  checklistId = 'evidence'
+  checklistId = 'evidence',
+  initialEvidences,
 }: EvidenceCaptureProps) {
   const [evidences, setEvidences] = useState<SmartEvidence[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>(config.categories[0] || '')
@@ -253,38 +281,56 @@ export function EvidenceCaptureSection({
     }
   }, [evidences, storageKey])
 
-  // Load evidences from localStorage on mount
+  // Load evidences from draft/server or localStorage on mount / restore
   useEffect(() => {
+    let fromStorage: SmartEvidence[] = []
     try {
       const saved = localStorage.getItem(storageKey)
       if (saved) {
         const data = JSON.parse(saved)
-        // Only load if less than 24 hours old
         if (Date.now() - (data.timestamp || 0) < 24 * 60 * 60 * 1000) {
-          setEvidences(data.evidences || [])
-          console.log(`📂 Loaded ${data.evidences?.length || 0} evidences from localStorage`)
+          fromStorage = data.evidences || []
         }
       }
     } catch (error) {
       console.error('Failed to load evidences from localStorage:', error)
     }
-  }, [storageKey])
+
+    const fromDraft = mapInitialEvidences(sectionId, initialEvidences)
+    const draftHasRemoteUrls = (initialEvidences ?? []).some(
+      (item) =>
+        item.photo_url?.startsWith('http://') || item.photo_url?.startsWith('https://')
+    )
+
+    if (fromDraft.length > 0 && (draftHasRemoteUrls || fromStorage.length === 0)) {
+      setEvidences(fromDraft)
+      return
+    }
+
+    if (fromStorage.length > 0) {
+      setEvidences(fromStorage)
+    }
+  }, [storageKey, sectionId, initialEvidences])
 
   // Update parent when evidences change (use a ref to track if we should call on mount)
   const hasInitialized = useRef(false)
+  const onEvidenceChangeRef = useRef(onEvidenceChange)
+  useEffect(() => {
+    onEvidenceChangeRef.current = onEvidenceChange
+  }, [onEvidenceChange])
   
   useEffect(() => {
     if (!hasInitialized.current) {
       // On mount, only call if we have initial evidences
       if (evidences.length > 0) {
-        onEvidenceChange(sectionId, evidences)
+        onEvidenceChangeRef.current(sectionId, evidences)
       }
       hasInitialized.current = true
     } else {
       // After mount, always call when evidences change
-      onEvidenceChange(sectionId, evidences)
+      onEvidenceChangeRef.current(sectionId, evidences)
     }
-  }, [evidences, sectionId, onEvidenceChange])
+  }, [evidences, sectionId])
 
   // Validar requisitos
   const validateRequirements = useCallback(() => {

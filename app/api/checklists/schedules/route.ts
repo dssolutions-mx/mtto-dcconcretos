@@ -1,6 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { loadActorContext } from '@/lib/auth/server-authorization'
+import {
+  filterSchedulesForActor,
+  loadOperatorAssignedAssetIds,
+  type ScheduleVisibilityAsset,
+} from '@/lib/checklist/schedule-visibility'
 import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
 
 export async function GET(request: Request) {
@@ -83,6 +89,24 @@ export async function GET(request: Request) {
       }
     }
 
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const actor = await loadActorContext(supabase, user.id)
+    if (!actor) {
+      return NextResponse.json(
+        { error: 'Perfil no encontrado o inactivo' },
+        { status: 403 }
+      )
+    }
+
+    const assignedAssetIds =
+      actor.profile.role === 'OPERADOR'
+        ? await loadOperatorAssignedAssetIds(supabase, user.id)
+        : undefined
+
     let query = supabase
       .from('checklist_schedules')
       .select(`
@@ -91,7 +115,15 @@ export async function GET(request: Request) {
           *,
           equipment_models (name, manufacturer)
         ),
-        assets (name, asset_id, location)
+        assets (
+          id,
+          name,
+          asset_id,
+          location,
+          plant_id,
+          model_id,
+          equipment_models ( maintenance_unit )
+        )
       `)
 
     if (status) {
@@ -117,11 +149,22 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filter by type/frequency on the server side after getting the data
-    let filteredData = data || []
+    const assetById = new Map<string, ScheduleVisibilityAsset>()
+    for (const row of data ?? []) {
+      const asset = row.assets as ScheduleVisibilityAsset | null
+      if (asset?.id) assetById.set(row.asset_id, asset)
+    }
+
+    // Filter by actor visibility and type/frequency
+    let filteredData = filterSchedulesForActor(
+      data || [],
+      actor,
+      assetById,
+      assignedAssetIds
+    )
     if (type && filteredData.length > 0) {
-      filteredData = filteredData.filter(schedule => 
-        schedule.checklists?.frequency === type
+      filteredData = filteredData.filter(
+        (schedule) => schedule.checklists?.frequency === type
       )
     }
 

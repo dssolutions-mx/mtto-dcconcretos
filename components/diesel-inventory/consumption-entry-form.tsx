@@ -37,7 +37,6 @@ import { describeDieselSaveError } from "@/lib/diesel/diesel-save-error-message"
 import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 import {
-  buildConsumptionTransactionData,
   submitDurableDieselConsumption,
 } from "@/lib/diesel/durable-diesel-submit"
 import {
@@ -120,6 +119,8 @@ export function ConsumptionEntryForm({
   const draftRestoredRef = useRef(false)
   const previewObjectUrlRef = useRef<string | null>(null)
   const formSnapshotRef = useRef<Record<string, unknown>>({})
+  const wipIdRef = useRef<string | null>(null)
+  const enqueueLockRef = useRef<Promise<string | null> | null>(null)
   const [machineEvidenceMetadata, setMachineEvidenceMetadata] =
     useState<DieselEvidenceImageMetadata | null>(null)
 
@@ -171,6 +172,23 @@ export function ConsumptionEntryForm({
     }
   }
 
+  const seedWipId = (id: string) => {
+    wipIdRef.current = id
+    setWipOutboxId(id)
+  }
+
+  const getOrCreateWipId = (): string => {
+    if (!wipIdRef.current) {
+      seedWipId(crypto.randomUUID())
+    }
+    return wipIdRef.current!
+  }
+
+  const resetWipId = () => {
+    wipIdRef.current = null
+    setWipOutboxId(null)
+  }
+
   const buildWipContext = () => ({
     productType,
     productId: productId ?? "",
@@ -192,7 +210,7 @@ export function ConsumptionEntryForm({
     notes,
     machinePhotoDraftId,
     machineEvidenceMetadata,
-    wipOutboxId,
+    wipId: wipIdRef.current ?? "",
   })
 
   const flushDraftNow = async () => {
@@ -201,7 +219,7 @@ export function ConsumptionEntryForm({
       ...buildWipContext(),
       selectedBusinessUnit,
       cuentaLitrosManuallyEdited,
-      wipOutboxId,
+      wipOutboxId: wipIdRef.current,
     })
     if (!dieselConsumptionDraftHasContent(draft)) return
     try {
@@ -211,17 +229,36 @@ export function ConsumptionEntryForm({
     }
   }
 
-  const flushWipNow = async () => {
-    if (!userId || !productId || !selectedWarehouse || loading) return
-    const ctx = buildWipContext()
-    if (!isConsumptionFormSubmittable(ctx)) return
-    try {
+  const enqueueConsumptionWip = async (
+    overrides?: Partial<ReturnType<typeof buildWipContext>>
+  ): Promise<string | null> => {
+    const run = async (): Promise<string | null> => {
+      if (!userId || !productId || !selectedWarehouse || loading) return null
+      const ctx = {
+        ...buildWipContext(),
+        ...overrides,
+        wipId: getOrCreateWipId(),
+      }
+      if (!isConsumptionFormSubmittable(ctx)) return null
       const id = await ensureConsumptionWipQueued(ctx)
       if (id) {
-        setWipOutboxId(id)
         await flushDraftNow()
         void refreshPendingDieselCount()
       }
+      return id
+    }
+
+    const previous = enqueueLockRef.current
+    const next = previous ? previous.then(() => run()) : run()
+    enqueueLockRef.current = next.finally(() => {
+      if (enqueueLockRef.current === next) enqueueLockRef.current = null
+    })
+    return next
+  }
+
+  const flushWipNow = async () => {
+    try {
+      await enqueueConsumptionWip()
     } catch (error) {
       console.warn("Could not flush diesel WIP queue:", error)
     }
@@ -300,7 +337,7 @@ export function ConsumptionEntryForm({
           setReadings(draft.readings)
           setNotes(draft.notes)
           setMachinePhotoDraftId(draft.machinePhotoDraftId)
-          if (draft.wipOutboxId) setWipOutboxId(draft.wipOutboxId)
+          if (draft.wipOutboxId) seedWipId(draft.wipOutboxId)
 
           const staging = await offlineClient.getDieselConsumptionStagingPhoto()
           if (staging?.blob) {
@@ -393,15 +430,9 @@ export function ConsumptionEntryForm({
       if (entries.some((e) => e.id === wipOutboxId)) {
         void requestSync()
         void refreshPendingDieselCount()
-        return
-      }
-      if (selectedWarehouse && isConsumptionFormSubmittable(buildWipContext())) {
-        const id = await ensureConsumptionWipQueued(buildWipContext())
-        if (id) setWipOutboxId(id)
-        void refreshPendingDieselCount()
       }
     })()
-  }, [wipOutboxId, userId, productId, selectedWarehouse, machinePhotoDraftId, quantityLiters])
+  }, [wipOutboxId, userId, productId])
 
   // If the OS killed the browser after the form was complete, the WIP is already in
   // IndexedDB — push it to the server automatically when the app reopens online.
@@ -443,7 +474,7 @@ export function ConsumptionEntryForm({
           setCuentaLitrosManuallyEdited(false)
           setMachinePhoto(null)
           setMachinePhotoDraftId(null)
-          setWipOutboxId(null)
+          resetWipId()
           setDraftRecovered(false)
           setRecoveredWasComplete(false)
           if (previewObjectUrlRef.current) {
@@ -978,57 +1009,29 @@ export function ConsumptionEntryForm({
       return
     }
 
-    const transactionData = buildConsumptionTransactionData({
-      plantIdForTx,
-      selectedWarehouse,
-      productId,
-      assetType,
-      selectedAsset,
-      exceptionAssetName,
-      quantityLiters,
-      cuentaLitros,
-      previousCuentaLitros,
-      cuentaLitrosVariance,
-      readings,
-      transactionDate,
-      transactionTime,
-      notes,
-      userId: user.id,
-    })
-
     const assetName = assetType === "formal" ? selectedAsset?.name : exceptionAssetName
 
-    let activeWipId = wipOutboxId
-    const queuedId = await ensureConsumptionWipQueued({
-      ...buildWipContext(),
+    const activeWipId = await enqueueConsumptionWip({
       userId: user.id,
       productId,
       selectedWarehouse,
     })
 
-    if (queuedId) {
-      activeWipId = queuedId
-      setWipOutboxId(queuedId)
+    if (!activeWipId) {
+      toast.error("No se pudo preparar el consumo para sincronizar", {
+        description: "Verifica que la foto y todos los campos estén completos.",
+        duration: 8000,
+      })
+      return
     }
 
-    const submitResult = await submitDurableDieselConsumption(
-      activeWipId
-        ? {
-            transactionData: {},
-            quantityLiters,
-            cuentaLitros,
-            isOnline,
-            existingOutboxId: activeWipId,
-          }
-        : {
-            transactionData,
-            quantityLiters,
-            cuentaLitros,
-            photoPreviewUrl: machinePhoto,
-            evidenceMetadata: machineEvidenceMetadata,
-            isOnline,
-          }
-    )
+    const submitResult = await submitDurableDieselConsumption({
+      transactionData: {},
+      quantityLiters,
+      cuentaLitros,
+      isOnline,
+      existingOutboxId: activeWipId,
+    })
 
     if (submitResult.status === "error") {
       toast.error("No se pudo guardar el consumo", {
@@ -1046,8 +1049,9 @@ export function ConsumptionEntryForm({
       setCuentaLitrosManuallyEdited(false)
       setMachinePhoto(null)
       setMachinePhotoDraftId(null)
-      setWipOutboxId(null)
+      resetWipId()
       setDraftRecovered(false)
+      setRecoveredWasComplete(false)
       if (previewObjectUrlRef.current) {
         URL.revokeObjectURL(previewObjectUrlRef.current)
         previewObjectUrlRef.current = null

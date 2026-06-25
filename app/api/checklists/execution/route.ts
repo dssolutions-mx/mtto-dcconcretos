@@ -1,6 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import {
+  completedItemsHaveMaintenanceIssues,
+  shouldCreateChecklistIssue,
+} from '@/lib/checklist/section-funnel'
+import {
+  assertCanCompleteChecklistSchedule,
+  evaluateCompletionEligibilitySync,
+  getAllowedExecutorRolesForCompletion,
+  resolveScheduleAuthContext,
+} from '@/lib/checklist/executor-authorization'
+import { loadActorContext } from '@/lib/auth/server-authorization'
 
 // Crear un cliente de servicio que use la service_role key para bypass RLS
 const createServiceClient = () => {
@@ -67,6 +78,19 @@ export async function GET(request: Request) {
     }
   )
 
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  const actor = await loadActorContext(supabase, user.id)
+  if (!actor) {
+    return NextResponse.json(
+      { error: 'Perfil no encontrado o inactivo' },
+      { status: 403 }
+    )
+  }
+
   console.log(`[${requestId}] 🔍 Querying checklist_schedules for ID: ${id}`)
   
   const { data, error } = await supabase
@@ -89,7 +113,10 @@ export async function GET(request: Request) {
         id,
         name,
         asset_id,
-        location
+        location,
+        plant_id,
+        model_id,
+        equipment_models ( maintenance_unit )
       )
     `)
     .eq('id', id)
@@ -105,6 +132,29 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Error al obtener checklist' }, { status: 500 })
   }
 
+  if (!data) {
+    return NextResponse.json({ error: 'Checklist no encontrado' }, { status: 404 })
+  }
+
+  const { executorRoles, asset: authAsset } = resolveScheduleAuthContext(data)
+
+  const syncEligibility = evaluateCompletionEligibilitySync(
+    actor,
+    executorRoles,
+    authAsset
+  )
+  const authResult = await assertCanCompleteChecklistSchedule(
+    supabase,
+    actor,
+    executorRoles,
+    authAsset
+  )
+
+  const allowedExecutorRoles = getAllowedExecutorRolesForCompletion(
+    executorRoles,
+    authAsset
+  )
+
   const executionTime = Date.now() - startTime
   
   console.log(`[${requestId}] ✅ Successfully retrieved checklist data:`, {
@@ -117,17 +167,30 @@ export async function GET(request: Request) {
     sectionsCount: data?.checklists?.checklist_sections?.length || 0,
     totalItems: data?.checklists?.checklist_sections?.reduce((acc: number, section: any) => 
       acc + (section.checklist_items?.length || 0), 0) || 0,
+    canComplete: authResult.allowed,
     executionTime: `${executionTime}ms`
   })
 
-  return NextResponse.json({ data })
+  return NextResponse.json({
+    data,
+    can_complete: authResult.allowed,
+    allowed_executor_roles: allowedExecutorRoles,
+    completion_denied_reason: authResult.allowed
+      ? null
+      : authResult.reason ?? syncEligibility.reason ?? null,
+  })
 }
 
+/**
+ * @deprecated Legacy checklist completion path. Prefer
+ * POST /api/checklists/schedules/[id]/complete (uses complete_checklist_with_readings RPC).
+ * Auto work-order and incident creation are disabled here (Lane B funnel parity).
+ */
 export async function POST(request: Request) {
   const startTime = Date.now()
   const requestId = Math.random().toString(36).substring(7)
   
-  console.log(`[${requestId}] 🚀 Starting checklist completion POST request`)
+  console.log(`[${requestId}] 🚀 Starting checklist completion POST request (legacy)`)
   
   const requestBody = await request.json()
   
@@ -341,10 +404,8 @@ async function processChecklistCompletion(
     }
   }
   
-  // 3. Verificar si hay ítems con problemas
-  const hasIssues = completed_items.some((item: any) => 
-    item.status === 'flag' || item.status === 'fail'
-  )
+  // 3. Verificar si hay ítems con problemas (solo carril mantenimiento)
+  const hasIssues = completedItemsHaveMaintenanceIssues(completed_items)
   
   // 4. Get technician name - use the provided value or default
   let technicianName = 'Técnico'
@@ -458,12 +519,11 @@ async function processChecklistCompletion(
   
   if (updateError) throw updateError
   
-  // 7. Si hay problemas, registrarlos (excluding cleanliness and security sections)
+  // 7. Registrar problemas de mantenimiento (Lane A). Sin OT ni incidentes automáticos.
   if (hasIssues) {
     for (const item of completed_items) {
       if (item.status === 'flag' || item.status === 'fail') {
-        // Skip cleanliness and security sections
-        if (item.section_type === 'cleanliness_bonus' || item.section_type === 'security_talk') {
+        if (!shouldCreateChecklistIssue(item)) {
           continue
         }
 
@@ -481,49 +541,6 @@ async function processChecklistCompletion(
 
         if (issueError) throw issueError
       }
-    }
-    
-    // Generar orden de trabajo correctiva automáticamente
-    try {
-      const { data: workOrderData, error: workOrderError } = await supabase.rpc('generate_corrective_work_order_enhanced', {
-        p_completed_checklist_id: completedData.id
-      })
-      
-      if (workOrderError) {
-        console.error('Error generando orden de trabajo:', workOrderError)
-      } else {
-        console.log('Orden de trabajo generada:', workOrderData)
-      }
-    } catch (workOrderError) {
-      console.error('Error llamando función de orden de trabajo:', workOrderError)
-    }
-    
-    // Crear incidentes automáticamente para cada issue
-    try {
-      const { data: issues } = await supabase
-        .from('checklist_issues')
-        .select('id')
-        .eq('checklist_id', completedData.id)
-      
-      for (const issue of issues || []) {
-        try {
-          const { data: issueRow } = await supabase
-            .from('checklist_issues')
-            .select('incident_id')
-            .eq('id', issue.id)
-            .maybeSingle()
-
-          if (issueRow?.incident_id) continue
-
-          await supabase.rpc('create_incident_from_checklist_issue', {
-            p_checklist_issue_id: issue.id
-          })
-        } catch (incidentError) {
-          console.error('Error creando incidente:', incidentError)
-        }
-      }
-    } catch (incidentError) {
-      console.error('Error en creación de incidentes:', incidentError)
     }
   }
   

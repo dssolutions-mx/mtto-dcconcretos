@@ -89,6 +89,46 @@ export function SectionEditorBody({
       </div>
     )
   }
+  if (sectionType === "operator_punctuality") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Título de la sección</Label>
+          <Input
+            value={section.title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder="Puntualidad de operadores"
+          />
+        </div>
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p>
+            Sección de puntualidad diaria. El dosificador registrará producción y
+            asistencia al ejecutar el checklist.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  if (sectionType === "bonus_closure") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label>Título de la sección</Label>
+          <Input
+            value={section.title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder="Cierre de bono mensual"
+          />
+        </div>
+        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p>
+            Cierre mensual de elegibilidad de bono de limpieza. Use plantilla con
+            frecuencia <strong>mensual</strong> y modelo PLANTA.
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (sectionType === "tire_readings") {
     return (
       <div className="space-y-4">
@@ -184,6 +224,31 @@ export function SectionEditorBody({
           onChange={(e) => onTitleChange(e.target.value)}
           placeholder="Título de la sección"
         />
+      </div>
+      <div className="space-y-2">
+        <Label>Embudo al completar</Label>
+        <Select
+          value={section.funnel_config?.lane || "maintenance"}
+          onValueChange={(value: "maintenance" | "operations_evaluation") =>
+            onConfigChange?.({
+              funnel_config: { lane: value },
+            })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="maintenance">Mantenimiento (OT / incidencias)</SelectItem>
+            <SelectItem value="operations_evaluation">
+              Operaciones / RH (sin OT ni incidencias)
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Use Operaciones para evaluaciones como limpieza de barcos o revisiones
+          generales de planta que no deben generar órdenes de trabajo.
+        </p>
       </div>
       <div className="space-y-3">
         <h4 className="text-sm font-medium">Items</h4>

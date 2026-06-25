@@ -8,6 +8,10 @@ import { SectionsStep } from "@/components/checklists/template-creation/sections
 import { ReviewStep } from "@/components/checklists/template-creation/review-step"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import {
+  DEFAULT_EXECUTOR_ROLES,
+  executorRolesForModel,
+} from "@/lib/checklist/executor-roles"
+import {
   createInitialTemplate,
   type ChecklistTemplate,
 } from "@/components/checklists/template-editor/use-template-editor-state"
@@ -95,14 +99,26 @@ export function TemplateCreationStepper({
               onDescriptionChange={(value) =>
                 setTemplate((prev) => ({ ...prev, description: value }))
               }
-              onModelChange={(value) =>
-                setTemplate((prev) => ({ ...prev, model_id: value }))
-              }
+              onModelChange={(value) => {
+                const selected = models.find((m) => m.id === value)
+                setTemplate((prev) => ({
+                  ...prev,
+                  model_id: value,
+                  executor_roles: executorRolesForModel(
+                    value,
+                    selected?.maintenance_unit ?? null
+                  ),
+                }))
+              }}
               onFrequencyChange={(value) =>
                 setTemplate((prev) => ({ ...prev, frequency: value }))
               }
               onHoursIntervalChange={(value) =>
                 setTemplate((prev) => ({ ...prev, hours_interval: value }))
+              }
+              executorRoles={template.executor_roles ?? DEFAULT_EXECUTOR_ROLES}
+              onExecutorRolesChange={(roles) =>
+                setTemplate((prev) => ({ ...prev, executor_roles: roles }))
               }
             />
           </div>

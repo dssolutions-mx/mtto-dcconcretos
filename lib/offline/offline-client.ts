@@ -1,4 +1,10 @@
 import { createBrowserClient } from "@supabase/ssr"
+import {
+  hasLaneBDraftData,
+  localDraftToServerPayload,
+  patchServerDraftWithMerge,
+  type LocalChecklistDraftData,
+} from "@/lib/checklist/schedule-draft"
 import { db } from "./db"
 import { migrateLegacyIdbIfNeeded } from "./migrate-legacy-idb"
 import { collectSyncStats, MAX_FILE_RETRIES } from "./stats"
@@ -474,6 +480,7 @@ class OfflineClient {
           name,
           asset_id,
           location,
+          plant_id,
           current_hours,
           current_kilometers
         )
@@ -562,7 +569,61 @@ class OfflineClient {
       updatedAt: Date.now(),
     }
     await db.drafts.put(draft)
+
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      void this.syncServerDraftFromLocal(scheduleId, data)
+    }
+
     return draftId
+  }
+
+  /** Push Lane B fields from a local Dexie draft to the server when online. */
+  private async syncServerDraftFromLocal(
+    scheduleId: string,
+    data: unknown
+  ): Promise<void> {
+    const draftPayload = localDraftToServerPayload(data)
+    if (!hasLaneBDraftData(draftPayload)) return
+
+    const local = data as LocalChecklistDraftData
+    const clientUpdatedAt =
+      local.serverDraftUpdatedAt ?? undefined
+
+    try {
+      const result = await patchServerDraftWithMerge(scheduleId, data, {
+        clientUpdatedAt,
+      })
+
+      if (result.ok) {
+        const existing = await db.drafts.get(scheduleId)
+        if (existing?.data && typeof existing.data === "object") {
+          await db.drafts.put({
+            ...existing,
+            data: {
+              ...(existing.data as LocalChecklistDraftData),
+              serverDraftUpdatedAt: result.draft_updated_at,
+              securityData:
+                result.draft_payload.security_data ??
+                (existing.data as LocalChecklistDraftData).securityData,
+              plantOperationsData:
+                result.draft_payload.plant_operations_data ??
+                (existing.data as LocalChecklistDraftData).plantOperationsData,
+            },
+            updatedAt: Date.now(),
+          })
+        }
+        return
+      }
+
+      if (result.status !== 409) {
+        console.warn(
+          "[offline-client] server draft sync failed:",
+          result.status
+        )
+      }
+    } catch (error) {
+      console.warn("[offline-client] server draft sync error:", error)
+    }
   }
 
   async getDraft(scheduleId: string): Promise<DraftEntry | undefined> {
@@ -842,6 +903,10 @@ class OfflineClient {
     await this.ensureReady()
     const entryId = options?.id ?? crypto.randomUUID()
     const photoIds: string[] = []
+
+    if (!transactionData.client_transaction_id) {
+      transactionData.client_transaction_id = entryId
+    }
 
     await db.transaction("rw", [db.outbox, db.diesel_photos], async () => {
       const existingEntry = await db.outbox.get(entryId)

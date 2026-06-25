@@ -41,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     console.log('Trying to fetch from completed_checklists...')
     let { data: completedChecklist, error: mainError } = await supabase
       .from('completed_checklists')
-      .select('*, security_data')
+      .select('*, security_data, plant_operations_data')
       .eq('id', id)
       .maybeSingle()
 
@@ -64,7 +64,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         console.log('Found schedule, looking for completed checklist...')
         const { data: foundCompleted, error: completedError } = await supabase
           .from('completed_checklists')
-          .select('*, security_data')
+          .select('*, security_data, plant_operations_data')
           .eq('checklist_id', scheduleData.template_id)
           .eq('asset_id', scheduleData.asset_id)
           .order('completion_date', { ascending: false })
@@ -111,8 +111,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         // Use nullish coalescing (??) to preserve 'security_talk' and other types
         const transformedSections = (data.sections || []).map((section: any) => ({
           ...section,
-          section_type: section.section_type ?? 'checklist', // Only default if null/undefined
+          section_type: section.section_type ?? 'checklist',
           security_config: section.security_config || null,
+          punctuality_config: section.punctuality_config || null,
+          bonus_closure_config: section.bonus_closure_config || null,
           tire_readings_config: section.tire_readings_config || null,
           checklist_items: section.items || [] // Convert 'items' to 'checklist_items'
         }))
@@ -140,6 +142,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             security_config,
             evidence_config,
             cleanliness_config,
+            punctuality_config,
+            bonus_closure_config,
             tire_readings_config,
             checklist_items (*)
           )
@@ -159,6 +163,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             // Only set default if section_type is null/undefined, not if it's already set
             section_type: section.section_type ?? 'checklist',
             security_config: section.security_config || null,
+            punctuality_config: section.punctuality_config || null,
+            bonus_closure_config: section.bonus_closure_config || null,
             tire_readings_config: section.tire_readings_config || null
           }))
           console.log('🔍 Processed checklist sections:', data.checklist_sections.map((s: any) => ({
@@ -241,7 +247,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Construir la respuesta
     const response = {
       ...completedChecklist,
-      security_data: completedChecklist.security_data || null, // Ensure security_data is included
+      security_data: completedChecklist.security_data || null,
+      plant_operations_data: completedChecklist.plant_operations_data || null,
       checklists: checklistData,
       assets: assetData,
       profile: profileData,
