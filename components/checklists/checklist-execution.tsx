@@ -115,7 +115,9 @@ import { DraftRestoreBanner } from "@/components/checklists/draft-restore-banner
 import { DraftStatusChip } from "@/components/checklists/draft-status-chip"
 import {
   isBonusClosureSectionComplete,
+  validateBonusClosureSectionPayload,
 } from "@/lib/checklist/bonus-closure-validation"
+import { serializeBonusClosureSectionData } from "@/lib/checklist/bonus-closure-section-load"
 import {
   evaluateCompletionEligibilitySync,
   resolveScheduleAuthContext,
@@ -1278,10 +1280,35 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const handlePlantOperationsDataChange = useCallback((sectionId: string, data: any) => {
     if (draftRestorePromptRef.current) return
-    setPlantOperationsData(prev => ({
-      ...prev,
-      [sectionId]: data
-    }))
+    setPlantOperationsData((prev) => {
+      const existing = prev[sectionId]
+      if (existing && data) {
+        if (
+          validateBonusClosureSectionPayload(data) &&
+          validateBonusClosureSectionPayload(existing)
+        ) {
+          if (
+            serializeBonusClosureSectionData(data) ===
+            serializeBonusClosureSectionData(existing)
+          ) {
+            return prev
+          }
+        } else if (
+          typeof data === "object" &&
+          typeof existing === "object" &&
+          "had_production" in data &&
+          "had_production" in existing
+        ) {
+          if (JSON.stringify(data) === JSON.stringify(existing)) {
+            return prev
+          }
+        }
+      }
+      return {
+        ...prev,
+        [sectionId]: data,
+      }
+    })
     setLaneBDraftDirty(true)
     markAsUnsaved()
   }, [markAsUnsaved])

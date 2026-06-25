@@ -63,3 +63,17 @@ export function serializeBonusClosureSectionData(
 ): string {
   return JSON.stringify(normalizeBonusClosureSectionForEmit(data))
 }
+
+/** Coerce draft/API rows to stable local state (explicit boolean eligible). */
+export function normalizeBonusClosureDecisionsForState(
+  periodYear: number,
+  periodMonth: number,
+  decisions: BonusClosureDecision[]
+): BonusClosureDecision[] {
+  if (!decisions.length) return []
+  return normalizeBonusClosureSectionForEmit({
+    period_year: periodYear,
+    period_month: periodMonth,
+    decisions,
+  }).decisions
+}

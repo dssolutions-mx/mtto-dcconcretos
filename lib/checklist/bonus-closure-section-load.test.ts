@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   bonusClosureResourceKey,
+  normalizeBonusClosureDecisionsForState,
   normalizeBonusClosureSectionForEmit,
   serializeBonusClosureSectionData,
 } from './bonus-closure-section-load'
@@ -56,5 +57,22 @@ describe('bonus-closure-section-load', () => {
     })
     assert.equal(normalized.decisions[0].eligible, false)
     assert.equal(normalized.decisions[0].ineligible_reason, '')
+  })
+
+  it('normalizeBonusClosureDecisionsForState is idempotent', () => {
+    const decisions = [
+      {
+        operator_id: 'op-1',
+        operator_name: 'Juan Pérez',
+        weekly_pass_rate: 0.8,
+        evaluation_ids: ['e1'],
+        system_suggested_eligible: true,
+        eligible: undefined as unknown as boolean,
+      },
+    ]
+    const once = normalizeBonusClosureDecisionsForState(2026, 7, decisions)
+    const twice = normalizeBonusClosureDecisionsForState(2026, 7, once)
+    assert.deepEqual(once, twice)
+    assert.equal(once[0].eligible, false)
   })
 })
