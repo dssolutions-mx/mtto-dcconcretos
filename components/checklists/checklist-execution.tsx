@@ -2400,7 +2400,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   const draftSyncStatus = resolveDraftSyncStatus({
     saving: savingDraft,
     isOnline,
-    hasPendingSync,
+    hasPendingSync: hasPendingSyncs,
     laneBDraftDirty,
     hasUnsavedChanges,
     serverDraftUpdatedAt,
