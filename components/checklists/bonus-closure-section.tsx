@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -30,7 +30,6 @@ import {
   bonusClosureResourceKey,
   normalizeBonusClosureDecisionsForState,
   normalizeBonusClosureSectionForEmit,
-  serializeBonusClosureSectionData,
 } from "@/lib/checklist/bonus-closure-section-load"
 import { monthlyClosureCountdown } from "@/lib/checklist/plant-operations-schedule"
 import type {
@@ -126,126 +125,42 @@ export function BonusClosureSection({
   const resourceKey = bonusClosureResourceKey(plantId, period.year, period.month)
 
   const [operators, setOperators] = useState<Operator[]>([])
-  const [decisions, setDecisions] = useState<BonusClosureDecision[]>(() =>
-    normalizeBonusClosureDecisionsForState(
-      period.year,
-      period.month,
-      initialData?.decisions ?? []
-    )
-  )
   const [loading, setLoading] = useState(false)
   const [prefillUnavailable, setPrefillUnavailable] = useState(false)
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
 
-  const onDataChangeRef = useRef(onDataChange)
-  useEffect(() => {
-    onDataChangeRef.current = onDataChange
-  }, [onDataChange])
-
-  const savedDecisionsRef = useRef(
-    initialData?.decisions?.length
-      ? normalizeBonusClosureDecisionsForState(
-          period.year,
-          period.month,
-          initialData.decisions
-        )
-      : undefined
-  )
   const loadedResourceKeyRef = useRef<string | null>(null)
+  const prefillEmittedRef = useRef(false)
 
-  const initialParentSerialized = useMemo(() => {
-    if (!initialData?.decisions?.length) return null
-    return serializeBonusClosureSectionData(
-      normalizeBonusClosureSectionForEmit({
-        period_year: period.year,
-        period_month: period.month,
-        decisions: initialData.decisions,
-      })
-    )
-  }, [initialData, period.year, period.month])
-
-  const lastEmittedSerializedRef = useRef<string>(initialParentSerialized ?? "")
-  const lastAppliedFromParentSerializedRef = useRef<string>(
-    initialParentSerialized ?? ""
+  /** Parent-owned decisions — no local mirror, no emit/sync useEffects. */
+  const decisions = useMemo(
+    () =>
+      normalizeBonusClosureDecisionsForState(
+        period.year,
+        period.month,
+        initialData?.decisions ?? []
+      ),
+    [initialData?.decisions, period.year, period.month]
   )
 
-  const localSerialized = useMemo(() => {
-    if (!decisions.length) return null
-    return serializeBonusClosureSectionData(
-      normalizeBonusClosureSectionForEmit({
-        period_year: period.year,
-        period_month: period.month,
-        decisions,
-      })
-    )
-  }, [decisions, period.year, period.month])
-
-  const applyDecisions = useCallback(
+  const emitSectionData = useCallback(
     (nextDecisions: BonusClosureDecision[]) => {
       const normalized = normalizeBonusClosureDecisionsForState(
         period.year,
         period.month,
         nextDecisions
       )
-      savedDecisionsRef.current = normalized
-      setDecisions(normalized)
-      return normalized
+      onDataChange(
+        sectionId,
+        normalizeBonusClosureSectionForEmit({
+          period_year: period.year,
+          period_month: period.month,
+          decisions: normalized,
+        })
+      )
     },
-    [period.year, period.month]
+    [onDataChange, sectionId, period.year, period.month]
   )
-
-  useEffect(() => {
-    if (!initialParentSerialized || !initialData?.decisions?.length) return
-    if (initialParentSerialized === lastAppliedFromParentSerializedRef.current) {
-      return
-    }
-    if (initialParentSerialized === localSerialized) {
-      lastAppliedFromParentSerializedRef.current = initialParentSerialized
-      return
-    }
-    if (initialParentSerialized === lastEmittedSerializedRef.current) {
-      lastAppliedFromParentSerializedRef.current = initialParentSerialized
-      return
-    }
-
-    const normalized = applyDecisions(initialData.decisions)
-    const appliedSerialized = serializeBonusClosureSectionData(
-      normalizeBonusClosureSectionForEmit({
-        period_year: period.year,
-        period_month: period.month,
-        decisions: normalized,
-      })
-    )
-    lastAppliedFromParentSerializedRef.current = appliedSerialized
-    lastEmittedSerializedRef.current = appliedSerialized
-  }, [
-    applyDecisions,
-    initialData?.decisions,
-    initialParentSerialized,
-    localSerialized,
-    period.month,
-    period.year,
-  ])
-
-  useEffect(() => {
-    if (!localSerialized) return
-    if (localSerialized === lastEmittedSerializedRef.current) return
-    lastEmittedSerializedRef.current = localSerialized
-    onDataChangeRef.current(
-      sectionId,
-      normalizeBonusClosureSectionForEmit({
-        period_year: period.year,
-        period_month: period.month,
-        decisions,
-      })
-    )
-  }, [localSerialized, sectionId, period.year, period.month])
-
-  useEffect(() => {
-    if (decisions.length) {
-      savedDecisionsRef.current = decisions
-    }
-  }, [decisions])
 
   const countdown = monthlyClosureCountdown(scheduledMonthKey, {
     deadlineDay: config.deadline_day,
@@ -257,7 +172,13 @@ export function BonusClosureSection({
 
     const abortController = new AbortController()
     const fetchKey = resourceKey
-    const draftDecisions = savedDecisionsRef.current
+    const savedFromParent = initialData?.decisions?.length
+      ? normalizeBonusClosureDecisionsForState(
+          period.year,
+          period.month,
+          initialData.decisions
+        )
+      : null
 
     async function loadData() {
       setLoading(true)
@@ -282,9 +203,6 @@ export function BonusClosureSection({
               : "No se pudo cargar el roster de operadores."
           toast.error(message)
           setOperators([])
-          if (draftDecisions?.length) {
-            applyDecisions(draftDecisions)
-          }
           return
         }
 
@@ -309,18 +227,21 @@ export function BonusClosureSection({
         loadedResourceKeyRef.current = fetchKey
         setOperators(ops)
 
-        const latestDraftDecisions = savedDecisionsRef.current
-        const nextDecisions = latestDraftDecisions?.length
-          ? latestDraftDecisions
-          : ops.map((operator) =>
-              buildInitialBonusClosureDecision(
-                operator,
-                prefillMap.get(operator.id),
-                config
-              )
-            )
+        if (savedFromParent?.length) {
+          return
+        }
 
-        applyDecisions(nextDecisions)
+        if (!prefillEmittedRef.current && ops.length > 0) {
+          prefillEmittedRef.current = true
+          const nextDecisions = ops.map((operator) =>
+            buildInitialBonusClosureDecision(
+              operator,
+              prefillMap.get(operator.id),
+              config
+            )
+          )
+          emitSectionData(nextDecisions)
+        }
       } catch (error) {
         if (abortController.signal.aborted) return
         console.error("Error loading bonus closure data:", error)
@@ -345,54 +266,42 @@ export function BonusClosureSection({
     config.bonus_type,
     config.deadline_day,
     config.suggest_eligibility_threshold,
-    applyDecisions,
+    emitSectionData,
+    initialData?.decisions,
   ])
 
   const updateDecision = useCallback(
     (operatorId: string, patch: Partial<BonusClosureDecision>) => {
-      setDecisions((prev) => {
-        const next = prev.map((row) =>
-          row.operator_id === operatorId ? { ...row, ...patch } : row
-        )
-        return normalizeBonusClosureDecisionsForState(
-          period.year,
-          period.month,
-          next
-        )
-      })
+      const next = decisions.map((row) =>
+        row.operator_id === operatorId ? { ...row, ...patch } : row
+      )
+      emitSectionData(next)
     },
-    [period.year, period.month]
+    [decisions, emitSectionData]
   )
 
   const handleEligibleChange = useCallback(
     (operatorId: string, checked: boolean) => {
       const nextEligible = checked === true
-      setDecisions((prev) => {
-        const current = prev.find((row) => row.operator_id === operatorId)
-        const currentEligible = current?.eligible === true
-        if (currentEligible === nextEligible) {
-          return prev
-        }
+      const current = decisions.find((row) => row.operator_id === operatorId)
+      if ((current?.eligible === true) === nextEligible) {
+        return
+      }
 
-        const next = prev.map((row) =>
-          row.operator_id === operatorId
-            ? {
-                ...row,
-                eligible: nextEligible,
-                ineligible_reason: nextEligible
-                  ? undefined
-                  : row.ineligible_reason?.trim() || "",
-              }
-            : row
-        )
-        return normalizeBonusClosureDecisionsForState(
-          period.year,
-          period.month,
-          next
-        )
-      })
+      const next = decisions.map((row) =>
+        row.operator_id === operatorId
+          ? {
+              ...row,
+              eligible: nextEligible,
+              ineligible_reason: nextEligible
+                ? undefined
+                : row.ineligible_reason?.trim() || "",
+            }
+          : row
+      )
+      emitSectionData(next)
     },
-    [period.year, period.month]
+    [decisions, emitSectionData]
   )
 
   const handleEvidenceChange = useCallback(
@@ -594,9 +503,8 @@ export function BonusClosureSection({
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-2">
-                            <Switch
-                              key={`eligible-${decision.operator_id}`}
-                              checked={decision.eligible === true}
+                            <Checkbox
+                              checked={isEligible}
                               onCheckedChange={(checked) =>
                                 handleEligibleChange(
                                   decision.operator_id,

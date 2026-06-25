@@ -284,6 +284,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     localData: Record<string, any> | null
   } | null>(null)
   const [serverDraftUpdatedAt, setServerDraftUpdatedAt] = useState<string | null>(null)
+  /** Bumps on draft restore/discard to remount Lane B sections with clean parent state. */
+  const [laneBMountVersion, setLaneBMountVersion] = useState(0)
   const hasUnsavedChangesRef = useRef(false)
   const serverDraftUpdatedAtRef = useRef<string | null>(null)
   const draftRestorePromptRef = useRef(draftRestorePrompt)
@@ -791,6 +793,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       serverUpdatedAt: string | null
       localData: Record<string, any> | null
     }) => {
+      // Unblock Lane B handlers and defer child mount until payload is applied.
+      setDraftRestorePromptSynced(null)
+
       const serverAt = prompt.serverUpdatedAt
         ? new Date(prompt.serverUpdatedAt).getTime()
         : 0
@@ -812,7 +817,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
 
       setLastSaved(prompt.savedAt)
-      setDraftRestorePromptSynced(null)
+      setLaneBMountVersion((version) => version + 1)
     },
     [applyServerDraftPayload, restoreDraftData, setDraftRestorePromptSynced]
   )
@@ -838,6 +843,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       setServerDraftUpdatedAt(null)
       setLaneBDraftDirty(false)
       setDraftRestorePromptSynced(null)
+      setLaneBMountVersion((version) => version + 1)
 
       if (!serverCleared && navigator.onLine) {
         toast.warning(
@@ -2940,15 +2946,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="mt-2">
-                          <SecurityTalkSection
-                            sectionId={section.id}
-                            sectionTitle={section.title}
-                            config={config}
-                            plantId={plantId}
-                            onDataChange={handleSecurityDataChange}
-                            initialData={sectionSecurityData}
-                            disabled={submitting}
-                          />
+                          {draftRestorePrompt ? (
+                            <p className="px-4 py-6 text-sm text-muted-foreground">
+                              Continúe o descarte el borrador para editar esta sección.
+                            </p>
+                          ) : (
+                            <SecurityTalkSection
+                              key={`security-${section.id}-v${laneBMountVersion}`}
+                              sectionId={section.id}
+                              sectionTitle={section.title}
+                              config={config}
+                              plantId={plantId}
+                              onDataChange={handleSecurityDataChange}
+                              initialData={sectionSecurityData}
+                              disabled={submitting}
+                            />
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -3006,15 +3019,22 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="mt-2">
-                          <OperatorPunctualitySection
-                            sectionId={section.id}
-                            sectionTitle={section.title}
-                            config={config}
-                            plantId={plantId}
-                            onDataChange={handlePlantOperationsDataChange}
-                            initialData={sectionPunctualityData}
-                            disabled={submitting}
-                          />
+                          {draftRestorePrompt ? (
+                            <p className="px-4 py-6 text-sm text-muted-foreground">
+                              Continúe o descarte el borrador para editar esta sección.
+                            </p>
+                          ) : (
+                            <OperatorPunctualitySection
+                              key={`punctuality-${section.id}-v${laneBMountVersion}`}
+                              sectionId={section.id}
+                              sectionTitle={section.title}
+                              config={config}
+                              plantId={plantId}
+                              onDataChange={handlePlantOperationsDataChange}
+                              initialData={sectionPunctualityData}
+                              disabled={submitting}
+                            />
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -3073,16 +3093,23 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="mt-2">
-                          <BonusClosureSection
-                            sectionId={section.id}
-                            sectionTitle={section.title}
-                            config={config}
-                            plantId={plantId}
-                            scheduledDay={scheduledDay}
-                            onDataChange={handlePlantOperationsDataChange}
-                            initialData={sectionBonusData}
-                            disabled={submitting}
-                          />
+                          {draftRestorePrompt ? (
+                            <p className="px-4 py-6 text-sm text-muted-foreground">
+                              Continúe o descarte el borrador para editar esta sección.
+                            </p>
+                          ) : (
+                            <BonusClosureSection
+                              key={`bonus-${section.id}-v${laneBMountVersion}`}
+                              sectionId={section.id}
+                              sectionTitle={section.title}
+                              config={config}
+                              plantId={plantId}
+                              scheduledDay={scheduledDay}
+                              onDataChange={handlePlantOperationsDataChange}
+                              initialData={sectionBonusData}
+                              disabled={submitting}
+                            />
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
