@@ -139,40 +139,65 @@ export function BonusClosureSection({
 
   const savedDecisionsRef = useRef(initialData?.decisions)
   const loadedResourceKeyRef = useRef<string | null>(null)
-  const lastEmittedRef = useRef<string>("")
+  const lastEmittedRef = useRef<string>(
+    initialData?.decisions?.length
+      ? serializeBonusClosureSectionData(
+          normalizeBonusClosureSectionForEmit({
+            period_year: period.year,
+            period_month: period.month,
+            decisions: initialData.decisions,
+          })
+        )
+      : ""
+  )
+
+  const initialDataSerialized = useMemo(() => {
+    if (!initialData?.decisions?.length) return null
+    return serializeBonusClosureSectionData(
+      normalizeBonusClosureSectionForEmit({
+        period_year: period.year,
+        period_month: period.month,
+        decisions: initialData.decisions,
+      })
+    )
+  }, [initialData, period.year, period.month])
 
   useEffect(() => {
-    if (!initialData?.decisions?.length) return
-    const payload = normalizeBonusClosureSectionForEmit({
-      period_year: period.year,
-      period_month: period.month,
-      decisions: initialData.decisions,
-    })
-    const serialized = serializeBonusClosureSectionData(payload)
-    if (serialized === lastEmittedRef.current) return
+    if (!initialDataSerialized || !initialData?.decisions?.length) return
+    if (initialDataSerialized === lastEmittedRef.current) return
     savedDecisionsRef.current = initialData.decisions
+    lastEmittedRef.current = initialDataSerialized
     setDecisions(initialData.decisions)
-    lastEmittedRef.current = serialized
-  }, [initialData, period.year, period.month])
+  }, [initialDataSerialized, initialData?.decisions])
+
+  const decisionsSerialized = useMemo(() => {
+    if (!decisions.length) return null
+    return serializeBonusClosureSectionData(
+      normalizeBonusClosureSectionForEmit({
+        period_year: period.year,
+        period_month: period.month,
+        decisions,
+      })
+    )
+  }, [decisions, period.year, period.month])
+
+  useEffect(() => {
+    if (!decisionsSerialized) return
+    if (decisionsSerialized === lastEmittedRef.current) return
+    lastEmittedRef.current = decisionsSerialized
+    onDataChangeRef.current(
+      sectionId,
+      normalizeBonusClosureSectionForEmit({
+        period_year: period.year,
+        period_month: period.month,
+        decisions,
+      })
+    )
+  }, [decisionsSerialized, sectionId, period.year, period.month, decisions])
 
   const countdown = monthlyClosureCountdown(scheduledMonthKey, {
     deadlineDay: config.deadline_day,
   })
-
-  const emitToParent = useCallback(
-    (nextDecisions: BonusClosureDecision[]) => {
-      const payload = normalizeBonusClosureSectionForEmit({
-        period_year: period.year,
-        period_month: period.month,
-        decisions: nextDecisions,
-      })
-      const serialized = serializeBonusClosureSectionData(payload)
-      if (serialized === lastEmittedRef.current) return
-      lastEmittedRef.current = serialized
-      onDataChangeRef.current(sectionId, payload)
-    },
-    [sectionId, period.year, period.month]
-  )
 
   useEffect(() => {
     if (!plantId || !resourceKey) return
@@ -207,7 +232,6 @@ export function BonusClosureSection({
           setOperators([])
           if (draftDecisions?.length) {
             setDecisions(draftDecisions)
-            emitToParent(draftDecisions)
           }
           return
         }
@@ -245,7 +269,6 @@ export function BonusClosureSection({
             )
 
         setDecisions(nextDecisions)
-        emitToParent(nextDecisions)
       } catch (error) {
         if (abortController.signal.aborted) return
         console.error("Error loading bonus closure data:", error)
@@ -270,32 +293,30 @@ export function BonusClosureSection({
     config.bonus_type,
     config.deadline_day,
     config.suggest_eligibility_threshold,
-    emitToParent,
   ])
 
   const updateDecision = useCallback(
     (operatorId: string, patch: Partial<BonusClosureDecision>) => {
-      setDecisions((prev) => {
-        const next = prev.map((row) =>
+      setDecisions((prev) =>
+        prev.map((row) =>
           row.operator_id === operatorId ? { ...row, ...patch } : row
         )
-        emitToParent(next)
-        return next
-      })
+      )
     },
-    [emitToParent]
+    []
   )
 
   const handleEligibleChange = useCallback(
     (operatorId: string, checked: boolean, currentReason?: string) => {
+      const nextEligible = checked === true
       setDecisions((prev) => {
         const current = prev.find((row) => row.operator_id === operatorId)
-        const nextEligible = checked === true
-        if (current?.eligible === nextEligible) {
+        const currentEligible = current?.eligible === true
+        if (currentEligible === nextEligible) {
           return prev
         }
 
-        const next = prev.map((row) =>
+        return prev.map((row) =>
           row.operator_id === operatorId
             ? {
                 ...row,
@@ -304,11 +325,9 @@ export function BonusClosureSection({
               }
             : row
         )
-        emitToParent(next)
-        return next
       })
     },
-    [emitToParent]
+    []
   )
 
   const handleEvidenceChange = useCallback(
