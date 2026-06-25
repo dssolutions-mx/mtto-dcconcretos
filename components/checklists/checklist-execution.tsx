@@ -106,6 +106,7 @@ import {
 import {
   detectDraftRestorePrompt,
   formatDraftSavedAt,
+  fetchDraftUpdaterProfile,
   formatDraftSavedBy,
   resolveDraftSyncStatus,
   type DraftRestoreSource,
@@ -1004,10 +1005,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               draft_payload,
               draft_updated_at,
               draft_updated_by,
-              draft_updater:profiles!draft_updated_by (
-                nombre,
-                apellido
-              ),
               checklists (
                 *,
                 checklist_sections (
@@ -1036,6 +1033,11 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             .single()
           
           if (error) throw error
+
+          const draftUpdaterProfile = await fetchDraftUpdaterProfile(
+            supabase,
+            data.draft_updated_by
+          )
           
           // Estructurar los datos con secciones e items ordenados
           const sectionsData = data.checklists?.checklist_sections || []
@@ -1096,13 +1098,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               : null
           setHasLocalDraft(localDraftHasRestorableData(localData))
 
-          const draftUpdaterRaw = (data as { draft_updater?: unknown }).draft_updater
-          const draftUpdater = Array.isArray(draftUpdaterRaw)
-            ? draftUpdaterRaw[0]
-            : draftUpdaterRaw
-          const authorName = formatDraftSavedBy(
-            draftUpdater as { nombre?: string | null; apellido?: string | null } | null
-          )
+          const authorName = formatDraftSavedBy(draftUpdaterProfile)
 
           const promptMeta = detectDraftRestorePrompt({
             serverPayload: data.draft_payload,

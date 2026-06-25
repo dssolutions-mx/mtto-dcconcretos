@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   hasLaneBDraftData,
   isChecklistScheduleDraftPayload,
@@ -5,6 +6,28 @@ import {
   type ChecklistScheduleDraftPayload,
   type LocalChecklistDraftData,
 } from '@/lib/checklist/schedule-draft'
+
+export type DraftUpdaterProfile = {
+  nombre?: string | null
+  apellido?: string | null
+}
+
+/** Load draft author profile without PostgREST FK embed (works before migration). */
+export async function fetchDraftUpdaterProfile(
+  supabase: SupabaseClient,
+  draftUpdatedBy: string | null | undefined
+): Promise<DraftUpdaterProfile | null> {
+  if (!draftUpdatedBy) return null
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('nombre, apellido')
+    .eq('id', draftUpdatedBy)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return data
+}
 
 export type DraftSyncStatus =
   | 'none'
