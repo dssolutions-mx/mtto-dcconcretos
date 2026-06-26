@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { loadActorContext } from '@/lib/auth/server-authorization'
-import {
-  filterSchedulesForActor,
-  loadOperatorExpandedAssignedAssetIds,
-  type ScheduleVisibilityAsset,
-} from '@/lib/checklist/schedule-visibility'
 import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
 import {
   expandPerAssignmentAssetScopes,
@@ -16,28 +10,25 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // Get current user
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const actor = await loadActorContext(supabase, user.id)
-    if (!actor) {
-      return NextResponse.json({ error: 'Perfil no encontrado' }, { status: 404 })
-    }
-
-    if (!['OPERADOR', 'DOSIFICADOR'].includes(actor.profile.role)) {
-      return NextResponse.json({ error: 'Access denied. Only operators can use this endpoint.' }, { status: 403 })
-    }
-
-    const { data: profileDetails } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('nombre, apellido')
+      .select('id, role, plant_id, nombre, apellido')
       .eq('id', user.id)
       .single()
 
-    // Get assets assigned to this operator
+    if (profileError || !profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    if (!['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+      return NextResponse.json({ error: 'Access denied. Only operators can use this endpoint.' }, { status: 403 })
+    }
+
     const { data: assignedAssets, error: assignmentsError } = await supabase
       .from('asset_operators')
       .select(`
@@ -67,15 +58,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (!assignedAssets || assignedAssets.length === 0) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         data: {
-          operator: {
-            id: actor.profile.id,
-            nombre: profileDetails?.nombre ?? null,
-            apellido: profileDetails?.apellido ?? null,
-            role: actor.profile.role,
-            plant_id: actor.profile.plant_id,
-          },
+          operator: profile,
           assigned_assets: [],
           today_checklists: [],
           overdue_checklists: [],
@@ -84,23 +69,19 @@ export async function GET(request: NextRequest) {
             total_assets: 0,
             today_checklists: 0,
             overdue_checklists: 0,
-            upcoming_checklists: 0
-          }
+            upcoming_checklists: 0,
+          },
         },
-        message: 'No assets assigned to this operator'
+        message: 'No assets assigned to this operator',
       })
     }
 
-    // Extract asset IDs from assignments (expand composite → components for schedules)
-    const assignedAssetIds = assignedAssets.map(assignment => assignment.asset_id)
+    const assignedAssetIds = assignedAssets.map((assignment) => assignment.asset_id)
     const assignmentScopes = await expandPerAssignmentAssetScopes(supabase, assignedAssetIds)
-    const scheduleAssetIds = [
-      ...new Set([].concat(...[...assignmentScopes.values()])),
-    ]
+    const scheduleAssetIds = [...new Set([].concat(...[...assignmentScopes.values()]))]
     const scheduleAssetFilter =
       scheduleAssetIds.length > 0 ? scheduleAssetIds : assignedAssetIds
 
-    // Get all checklist schedules for assigned assets
     const { data: allSchedules, error: schedulesError } = await supabase
       .from('checklist_schedules')
       .select(`
@@ -109,17 +90,13 @@ export async function GET(request: NextRequest) {
           id,
           name,
           description,
-          frequency,
-          executor_roles
+          frequency
         ),
         assets (
           id,
           name,
           asset_id,
-          location,
-          plant_id,
-          model_id,
-          equipment_models ( maintenance_unit )
+          location
         )
       `)
       .in('asset_id', scheduleAssetFilter)
@@ -131,27 +108,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching schedules' }, { status: 500 })
     }
 
-    const assignedAssetIdSet = await loadOperatorExpandedAssignedAssetIds(supabase, user.id)
-
-    const assetById = new Map<string, ScheduleVisibilityAsset>()
-    for (const row of allSchedules ?? []) {
-      const asset = row.assets as ScheduleVisibilityAsset | null
-      if (asset?.id) assetById.set(row.asset_id, asset)
-    }
-
-    const visibleSchedules = filterSchedulesForActor(
-      allSchedules || [],
-      actor,
-      assetById,
-      assignedAssetIdSet
-    )
-
-    // Process schedules by date categories using UTC-based date comparison
-    const categorizedSchedules = categorizeSchedulesByDate(visibleSchedules)
-    
+    const categorizedSchedules = categorizeSchedulesByDate(allSchedules || [])
     const todayChecklists = categorizedSchedules.today
-    const overdueChecklists = categorizedSchedules.overdue  
-    const upcomingChecklists = [...categorizedSchedules.upcoming, ...categorizedSchedules.future]
+    const overdueChecklists = categorizedSchedules.overdue
+    const upcomingChecklists = [
+      ...categorizedSchedules.upcoming,
+      ...categorizedSchedules.future,
+    ]
 
     const normalizeNestedAsset = (row: unknown) => {
       if (!row || typeof row !== 'object') return null
@@ -159,7 +122,6 @@ export async function GET(request: NextRequest) {
       return a.id ? a : null
     }
 
-    // Match component schedules to composite assignment; expose part (schedule.assets) vs unit (assignment.assets)
     const addAssignmentInfo = (schedules: any[]) => {
       return schedules.map((schedule) => {
         const assignment = findAssignmentForScheduleAsset(
@@ -185,35 +147,34 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const processedData = {
-      operator: {
-        id: actor.profile.id,
-        nombre: profileDetails?.nombre ?? null,
-        apellido: profileDetails?.apellido ?? null,
-        role: actor.profile.role,
-        plant_id: actor.profile.plant_id,
+    return NextResponse.json({
+      data: {
+        operator: {
+          id: profile.id,
+          nombre: profile.nombre,
+          apellido: profile.apellido,
+          role: profile.role,
+          plant_id: profile.plant_id,
+        },
+        assigned_assets: assignedAssets.map((a) => ({
+          ...a.assets,
+          assignment_type: a.assignment_type,
+          assignment_start_date: a.start_date,
+        })),
+        today_checklists: addAssignmentInfo(todayChecklists),
+        overdue_checklists: addAssignmentInfo(overdueChecklists),
+        upcoming_checklists: addAssignmentInfo(upcomingChecklists),
+        stats: {
+          total_assets: assignedAssets.length,
+          today_checklists: todayChecklists.length,
+          overdue_checklists: overdueChecklists.length,
+          upcoming_checklists: upcomingChecklists.length,
+          total_checklists: allSchedules?.length || 0,
+        },
       },
-      assigned_assets: assignedAssets.map(a => ({
-        ...a.assets,
-        assignment_type: a.assignment_type,
-        assignment_start_date: a.start_date
-      })),
-      today_checklists: addAssignmentInfo(todayChecklists),
-      overdue_checklists: addAssignmentInfo(overdueChecklists),
-      upcoming_checklists: addAssignmentInfo(upcomingChecklists),
-      stats: {
-        total_assets: assignedAssets.length,
-        today_checklists: todayChecklists.length,
-        overdue_checklists: overdueChecklists.length,
-        upcoming_checklists: upcomingChecklists.length,
-        total_checklists: visibleSchedules.length
-      }
-    }
-
-    return NextResponse.json({ data: processedData })
-
+    })
   } catch (error) {
     console.error('Error in operator-dashboard GET:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-} 
+}
