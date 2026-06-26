@@ -104,6 +104,14 @@ export function SecurityTalkSection({
   const previewUrlsRef = useRef<string[]>([])
 
   useEffect(() => {
+    if (!initialData) return
+    setAttendance(initialData.attendance ?? false)
+    setAttendees(initialData.attendees ?? [])
+    setTopic(initialData.topic ?? "")
+    setReflection(initialData.reflection ?? "")
+  }, [initialData?.attendance, initialData?.attendees, initialData?.topic, initialData?.reflection])
+
+  useEffect(() => {
     void initOfflineClient().then(() => setOfflineReady(true))
     return () => {
       for (const url of previewUrlsRef.current) {
@@ -225,16 +233,29 @@ export function SecurityTalkSection({
     [config.mode, onDataChange, sectionId]
   )
 
-  useEffect(() => {
-    emitChange(attendance, attendees, topic, reflection, evidenceItems)
-  }, [attendance, attendees, topic, reflection, evidenceItems, emitChange])
+  const emitIfDirty = useCallback(
+    (
+      nextAttendance: boolean,
+      nextAttendees: string[],
+      nextTopic: string,
+      nextReflection: string,
+      nextEvidence: SecurityEvidenceItem[]
+    ) => {
+      emitChange(nextAttendance, nextAttendees, nextTopic, nextReflection, nextEvidence)
+    },
+    [emitChange]
+  )
 
   const handleAttendeeToggle = (operatorId: string) => {
-    setAttendees((prev) =>
-      prev.includes(operatorId)
+    setAttendees((prev) => {
+      const next = prev.includes(operatorId)
         ? prev.filter((id) => id !== operatorId)
         : [...prev, operatorId]
-    )
+      queueMicrotask(() =>
+        emitIfDirty(attendance, next, topic, reflection, evidenceItems)
+      )
+      return next
+    })
   }
 
   const handleAddEvidencePhoto = async (file: File) => {
@@ -265,16 +286,20 @@ export function SecurityTalkSection({
       const previewUrl = URL.createObjectURL(blob)
       previewUrlsRef.current.push(previewUrl)
 
-      setEvidenceItems((prev) => [
-        ...prev,
-        {
-          id: photoId,
-          photo_id: photoId,
-          previewUrl,
-          category: "Charla de Seguridad",
-          description: "Fotografía de la charla de seguridad realizada",
-        },
-      ])
+      setEvidenceItems((prev) => {
+        const next = [
+          ...prev,
+          {
+            id: photoId,
+            photo_id: photoId,
+            previewUrl,
+            category: "Charla de Seguridad",
+            description: "Fotografía de la charla de seguridad realizada",
+          },
+        ]
+        emitIfDirty(attendance, attendees, topic, reflection, next)
+        return next
+      })
       toast.success("Foto guardada en el dispositivo")
     } catch (error) {
       console.error("Security talk evidence save failed:", error)
@@ -299,7 +324,11 @@ export function SecurityTalkSection({
       URL.revokeObjectURL(item.previewUrl)
       previewUrlsRef.current = previewUrlsRef.current.filter((u) => u !== item.previewUrl)
     }
-    setEvidenceItems((prev) => prev.filter((e) => e.id !== item.id))
+    setEvidenceItems((prev) => {
+      const next = prev.filter((e) => e.id !== item.id)
+      emitIfDirty(attendance, attendees, topic, reflection, next)
+      return next
+    })
   }
 
   const isPlantManagerMode = config.mode === "plant_manager"
@@ -384,10 +413,14 @@ export function SecurityTalkSection({
               id={`attendance-${sectionId}`}
               checked={attendance}
               onCheckedChange={(checked) => {
-                setAttendance(checked === true)
-                if (!checked) {
+                const nextAttendance = checked === true
+                setAttendance(nextAttendance)
+                if (!nextAttendance) {
                   setTopic("")
                   setReflection("")
+                  emitIfDirty(false, attendees, "", "", evidenceItems)
+                } else {
+                  emitIfDirty(true, attendees, topic, reflection, evidenceItems)
                 }
               }}
               disabled={disabled}
@@ -420,7 +453,11 @@ export function SecurityTalkSection({
           <Input
             id={`topic-${sectionId}`}
             value={topic}
-            onChange={(e) => setTopic(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setTopic(next)
+              emitIfDirty(attendance, attendees, next, reflection, evidenceItems)
+            }}
             placeholder="Ej: Uso correcto de EPP, Procedimientos de seguridad en altura..."
             disabled={disabled || detailsLocked}
           />
@@ -435,7 +472,11 @@ export function SecurityTalkSection({
           <Textarea
             id={`reflection-${sectionId}`}
             value={reflection}
-            onChange={(e) => setReflection(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value
+              setReflection(next)
+              emitIfDirty(attendance, attendees, topic, next, evidenceItems)
+            }}
             placeholder="Escriba su reflexión sobre la charla de seguridad..."
             rows={4}
             disabled={disabled || detailsLocked}

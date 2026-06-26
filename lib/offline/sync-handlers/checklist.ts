@@ -6,6 +6,10 @@ import {
   type LocalChecklistDraftData,
 } from "@/lib/checklist/schedule-draft"
 import { db } from "../db"
+import {
+  cloneForIndexedDb,
+  sanitizeLocalChecklistDraft,
+} from "../sanitize-draft"
 import type { OutboxEntry } from "../types"
 
 export interface ChecklistCompletePayload {
@@ -63,9 +67,8 @@ async function pushServerDraftIfNeeded(
     if (result.ok) {
       const existing = await db.drafts.get(scheduleId)
       if (existing?.data && typeof existing.data === "object") {
-        await db.drafts.put({
-          ...existing,
-          data: {
+        const mergedData = cloneForIndexedDb(
+          sanitizeLocalChecklistDraft({
             ...(existing.data as LocalChecklistDraftData),
             serverDraftUpdatedAt: result.draft_updated_at,
             plantOperationsData:
@@ -74,7 +77,11 @@ async function pushServerDraftIfNeeded(
             securityData:
               result.draft_payload.security_data ??
               (existing.data as LocalChecklistDraftData).securityData,
-          },
+          })
+        )
+        await db.drafts.put({
+          ...existing,
+          data: mergedData,
           updatedAt: Date.now(),
         })
       }

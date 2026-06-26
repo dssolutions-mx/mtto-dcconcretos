@@ -33,7 +33,10 @@ function isNonEmptyRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
 }
 
-import { sanitizeSecurityTalkDataForStorage } from '@/lib/offline/sanitize-draft'
+import {
+  sanitizePlantOperationsDataForStorage,
+  sanitizeSecurityTalkDataForStorage,
+} from '@/lib/offline/sanitize-draft'
 
 /** Map local Dexie draft Lane B fields to server draft_payload shape. */
 export function localDraftToServerPayload(
@@ -48,8 +51,11 @@ export function localDraftToServerPayload(
   if (isNonEmptyRecord(sanitizedSecurity)) {
     payload.security_data = sanitizedSecurity
   }
-  if (isNonEmptyRecord(local.plantOperationsData)) {
-    payload.plant_operations_data = local.plantOperationsData
+  const sanitizedPlantOps = sanitizePlantOperationsDataForStorage(
+    local.plantOperationsData
+  )
+  if (isNonEmptyRecord(sanitizedPlantOps)) {
+    payload.plant_operations_data = sanitizedPlantOps
   }
 
   return payload

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   isPersistablePhotoUrl,
+  sanitizeChecklistCompletePayload,
   sanitizeLocalChecklistDraft,
+  sanitizePlantOperationsDataForStorage,
   sanitizeSecurityTalkDataForStorage,
   stripEphemeralEvidenceFields,
 } from './sanitize-draft'
@@ -44,6 +46,48 @@ describe('sanitize-draft', () => {
     assert.equal(
       (evidence[1] as { photo_url: string }).photo_url,
       'https://cdn.example.com/x.jpg'
+    )
+  })
+
+  it('sanitizePlantOperationsDataForStorage strips data URLs from bonus evidence', () => {
+    const out = sanitizePlantOperationsDataForStorage({
+      bonus: {
+        decisions: [
+          {
+            operator_id: 'op1',
+            evidence: [
+              { photo_url: 'data:image/jpeg;base64,abc', photoId: 'p1' },
+              { photo_url: 'blob:http://x', category: 'x' },
+            ],
+          },
+        ],
+      },
+    })
+    const evidence = (
+      (out.bonus as { decisions: Array<{ evidence: unknown[] }> }).decisions[0]
+        .evidence
+    )
+    assert.equal(evidence.length, 1)
+    assert.equal((evidence[0] as { photoId: string }).photoId, 'p1')
+  })
+
+  it('sanitizeChecklistCompletePayload strips non-cloneable evidence', () => {
+    const out = sanitizeChecklistCompletePayload({
+      evidence_data: {
+        sec: [{ photo_url: 'data:x', photoId: 'pid' }],
+      },
+      plant_operations_data: {
+        bonus: { decisions: [{ evidence: [{ photoId: 'p2' }] }] },
+      },
+      completed_items: [{ item_id: 'a', photo_url: 'data:image/png;base64,zz' }],
+    })
+    const ev = (out.evidence_data as Record<string, unknown[]>).sec[0] as {
+      photoId: string
+    }
+    assert.equal(ev.photoId, 'pid')
+    assert.equal(
+      'photo_url' in ((out.completed_items as unknown[])[0] as object),
+      false
     )
   })
 

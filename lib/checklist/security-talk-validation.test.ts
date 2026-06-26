@@ -28,6 +28,13 @@ describe('security-talk-validation', () => {
       }),
       'security_talk'
     )
+    assert.equal(
+      resolveExecutionSectionType({
+        title: 'Charla',
+        security_config: JSON.stringify({ mode: 'plant_manager' }),
+      }),
+      'security_talk'
+    )
   })
 
   it('resolveExecutionSectionType keeps explicit special types', () => {

@@ -312,15 +312,33 @@ export function BonusClosureSection({
         category: string
         description?: string
         photoId?: string
+        photo_id?: string
       }>
     ) => {
       updateDecision(operatorId, {
-        evidence: evidences.map((item) => ({
-          photo_url: item.photo_url,
-          category: item.category,
-          description: item.description,
-          ...(item.photoId ? { photoId: item.photoId } : {}),
-        })),
+        evidence: evidences
+          .map((item) => {
+            const row: {
+              photo_url?: string
+              photoId?: string
+              category: string
+              description?: string
+            } = {
+              category: item.category,
+              description: item.description,
+            }
+            const photoId = item.photoId ?? item.photo_id
+            if (photoId) row.photoId = photoId
+            if (
+              typeof item.photo_url === 'string' &&
+              (item.photo_url.startsWith('http://') ||
+                item.photo_url.startsWith('https://'))
+            ) {
+              row.photo_url = item.photo_url
+            }
+            return row
+          })
+          .filter((row) => row.photoId || row.photo_url),
       })
     },
     [updateDecision]

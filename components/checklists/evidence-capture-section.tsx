@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 import { db } from "@/lib/offline/db"
+import { stripEphemeralEvidenceFields } from "@/lib/offline/sanitize-draft"
 
 async function compressEvidencePhoto(
   file: File,
@@ -333,14 +334,18 @@ export function EvidenceCaptureSection({
   
   useEffect(() => {
     if (!hasInitialized.current) {
-      // On mount, only call if we have initial evidences
       if (evidences.length > 0) {
-        onEvidenceChangeRef.current(sectionId, evidences)
+        const persistable = evidences.map((item) =>
+          stripEphemeralEvidenceFields(item as unknown as Record<string, unknown>)
+        )
+        onEvidenceChangeRef.current(sectionId, persistable as SmartEvidence[])
       }
       hasInitialized.current = true
     } else {
-      // After mount, always call when evidences change
-      onEvidenceChangeRef.current(sectionId, evidences)
+      const persistable = evidences.map((item) =>
+        stripEphemeralEvidenceFields(item as unknown as Record<string, unknown>)
+      )
+      onEvidenceChangeRef.current(sectionId, persistable as SmartEvidence[])
     }
   }, [evidences, sectionId])
 
@@ -423,7 +428,7 @@ export function EvidenceCaptureSection({
         section_id: sectionId,
         category: selectedCategory,
         description: currentDescription || config.descriptions?.[selectedCategory] || '',
-        photo_url: result.url || result.preview,
+        photo_url: '',
         preview: result.preview,
         sequence_order: evidences.filter(e => e.category === selectedCategory).length + 1,
         status: result.status,

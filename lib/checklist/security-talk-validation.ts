@@ -9,10 +9,21 @@ export const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
 }
 
 export function normalizeSecurityConfig(
-  config: Partial<SecurityConfig> | Record<string, unknown> | null | undefined
+  config: Partial<SecurityConfig> | Record<string, unknown> | string | null | undefined
 ): SecurityConfig {
-  const input =
-    config && typeof config === 'object' ? (config as Partial<SecurityConfig>) : {}
+  let parsed: Partial<SecurityConfig> | Record<string, unknown> = {}
+  if (typeof config === 'string') {
+    try {
+      const json = JSON.parse(config) as Partial<SecurityConfig>
+      if (json && typeof json === 'object') parsed = json
+    } catch {
+      parsed = {}
+    }
+  } else if (config && typeof config === 'object') {
+    parsed = config as Partial<SecurityConfig>
+  }
+
+  const input = parsed
 
   return {
     mode: input.mode === 'plant_manager' ? 'plant_manager' : 'operator',
@@ -45,8 +56,17 @@ export function resolveExecutionSectionType(
     return explicit
   }
 
-  if (section?.security_config && typeof section.security_config === 'object') {
-    return 'security_talk'
+  const securityConfig = section?.security_config
+  if (securityConfig) {
+    if (typeof securityConfig === 'object') return 'security_talk'
+    if (typeof securityConfig === 'string' && securityConfig.trim()) {
+      try {
+        const parsed = JSON.parse(securityConfig)
+        if (parsed && typeof parsed === 'object') return 'security_talk'
+      } catch {
+        // ignore malformed JSON
+      }
+    }
   }
   if (section?.punctuality_config && typeof section.punctuality_config === 'object') {
     return 'operator_punctuality'

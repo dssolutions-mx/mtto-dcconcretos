@@ -5,6 +5,11 @@ import {
   patchServerDraftWithMerge,
   type LocalChecklistDraftData,
 } from "@/lib/checklist/schedule-draft"
+import {
+  cloneForIndexedDb,
+  sanitizeChecklistCompletePayload,
+  sanitizeLocalChecklistDraft,
+} from './sanitize-draft'
 import { db } from "./db"
 import { migrateLegacyIdbIfNeeded } from "./migrate-legacy-idb"
 import { collectSyncStats, MAX_FILE_RETRIES } from "./stats"
@@ -529,11 +534,18 @@ class OfflineClient {
   async enqueueChecklistComplete(payload: unknown, id?: string): Promise<string> {
     await this.ensureReady()
     const entryId = id ?? crypto.randomUUID()
+    const rawPayload =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {}
+    const safePayload = cloneForIndexedDb(
+      sanitizeChecklistCompletePayload(rawPayload)
+    )
     const entry: OutboxEntry = {
       id: entryId,
       domain: "checklist",
       operation: "complete",
-      payload,
+      payload: safePayload,
       status: "pending",
       attemptCount: 0,
       nextAttemptAt: Date.now(),
@@ -546,10 +558,7 @@ class OfflineClient {
     // second time (which would enqueue a duplicate completion with a different
     // idempotency key). The submission itself lives safely in the outbox.
     const scheduleId =
-      payload && typeof payload === "object"
-        ? (payload as { schedule_id?: string; scheduleId?: string }).schedule_id ??
-          (payload as { scheduleId?: string }).scheduleId
-        : undefined
+      safePayload.schedule_id ?? safePayload.scheduleId
     if (scheduleId) {
       await db.cache_templates.delete(scheduleId)
       await db.drafts.delete(scheduleId)
@@ -562,17 +571,29 @@ class OfflineClient {
   async saveDraft(scheduleId: string, data: unknown, id?: string): Promise<string> {
     await this.ensureReady()
     const draftId = id ?? scheduleId
-    const { sanitizeLocalChecklistDraft } = await import('./sanitize-draft')
-    const sanitizedData = JSON.parse(
-      JSON.stringify(sanitizeLocalChecklistDraft(data))
-    ) as Record<string, unknown>
+    const sanitizedData = cloneForIndexedDb(sanitizeLocalChecklistDraft(data))
     const draft: DraftEntry = {
       id: draftId,
       scheduleId,
       data: sanitizedData,
       updatedAt: Date.now(),
     }
-    await db.drafts.put(draft)
+    try {
+      await db.drafts.put(draft)
+    } catch (error) {
+      console.error('[offline] draft put failed, retrying with minimal payload:', error)
+      const minimal = cloneForIndexedDb(
+        sanitizeLocalChecklistDraft({
+          ...(typeof data === 'object' && data ? data : {}),
+          evidenceData: {},
+          plantOperationsData: {},
+        })
+      )
+      await db.drafts.put({
+        ...draft,
+        data: minimal,
+      })
+    }
 
     if (typeof navigator !== "undefined" && navigator.onLine) {
       void this.syncServerDraftFromLocal(scheduleId, sanitizedData)
@@ -601,9 +622,8 @@ class OfflineClient {
       if (result.ok) {
         const existing = await db.drafts.get(scheduleId)
         if (existing?.data && typeof existing.data === "object") {
-          await db.drafts.put({
-            ...existing,
-            data: {
+          const mergedData = cloneForIndexedDb(
+            sanitizeLocalChecklistDraft({
               ...(existing.data as LocalChecklistDraftData),
               serverDraftUpdatedAt: result.draft_updated_at,
               securityData:
@@ -612,7 +632,11 @@ class OfflineClient {
               plantOperationsData:
                 result.draft_payload.plant_operations_data ??
                 (existing.data as LocalChecklistDraftData).plantOperationsData,
-            },
+            })
+          )
+          await db.drafts.put({
+            ...existing,
+            data: mergedData,
             updatedAt: Date.now(),
           })
         }

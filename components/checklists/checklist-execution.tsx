@@ -99,8 +99,10 @@ import {
   resolveExecutionSectionType,
 } from "@/lib/checklist/security-talk-validation"
 import {
+  sanitizeChecklistCompletePayload,
   sanitizeEvidenceMapForStorage,
   sanitizeLocalChecklistDraft,
+  sanitizePlantOperationsDataForStorage,
   sanitizeSecurityTalkDataForStorage,
 } from "@/lib/offline/sanitize-draft"
 import {
@@ -1273,9 +1275,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   // Manejar cambios en evidencias - wrapped in useCallback to prevent infinite loops
   const handleEvidenceChange = useCallback((sectionId: string, evidences: any[]) => {
+    const sanitized = sanitizeEvidenceMapForStorage({ [sectionId]: evidences })[sectionId] ?? []
     setEvidenceData(prev => ({
       ...prev,
-      [sectionId]: evidences
+      [sectionId]: sanitized
     }))
     markAsUnsaved()
   }, [markAsUnsaved])
@@ -1294,33 +1297,38 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   }, [markAsUnsaved])
 
   const handlePlantOperationsDataChange = useCallback((sectionId: string, data: any) => {
+    const sanitizedSection = sanitizePlantOperationsDataForStorage({
+      [sectionId]: data,
+    })[sectionId] as typeof data
+    const nextData = sanitizedSection ?? data
+
     setPlantOperationsData((prev) => {
       const existing = prev[sectionId]
-      if (existing && data) {
+      if (existing && nextData) {
         if (
-          validateBonusClosureSectionPayload(data) &&
+          validateBonusClosureSectionPayload(nextData) &&
           validateBonusClosureSectionPayload(existing)
         ) {
           if (
-            serializeBonusClosureSectionData(data) ===
+            serializeBonusClosureSectionData(nextData) ===
             serializeBonusClosureSectionData(existing)
           ) {
             return prev
           }
         } else if (
-          typeof data === "object" &&
+          typeof nextData === "object" &&
           typeof existing === "object" &&
-          "had_production" in data &&
+          "had_production" in nextData &&
           "had_production" in existing
         ) {
-          if (JSON.stringify(data) === JSON.stringify(existing)) {
+          if (JSON.stringify(nextData) === JSON.stringify(existing)) {
             return prev
           }
         }
       }
       return {
         ...prev,
-        [sectionId]: data,
+        [sectionId]: nextData,
       }
     })
     setLaneBDraftDirty(true)
@@ -1998,7 +2006,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     try {
       const completedItems = prepareCompletedItems()
 
-      const submissionData = {
+      const submissionData = sanitizeChecklistCompletePayload({
         completed_items: completedItems,
         technician: technician || 'Técnico',
         notes,
@@ -2012,7 +2020,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
             ? plantOperationsData
             : undefined,
         tire_readings: Object.values(tireReadingsData).flat(),
-      }
+      })
       
       if (isOnline) {
         // Create a new endpoint that doesn't auto-create work orders
@@ -2154,7 +2162,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       if (isOnline) {
         try {
           const completedChecklistId = `checklist-offline-fallback-${id}-${Date.now()}`
-          const fallbackSubmissionData = {
+          const fallbackSubmissionData = sanitizeChecklistCompletePayload({
             schedule_id: id,
             scheduleId: id,
             completed_checklist_id: completedChecklistId,
@@ -2176,7 +2184,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 ? plantOperationsData
                 : undefined,
             tire_readings: Object.values(tireReadingsData).flat(),
-          }
+          })
 
           const offlineId = `checklist-${id}-${Date.now()}`
           await offlineClient.enqueueChecklistComplete(fallbackSubmissionData, offlineId)
@@ -2891,86 +2899,27 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
               }
 
               if (resolvedSectionType === 'security_talk') {
-                // Security Talk Section with Collapsible Wrapper
                 const config = normalizeSecurityConfig(section.security_config)
                 const sectionSecurityData = securityData[section.id] || {}
-                // Get plant_id from asset
                 const plantId = checklist?.plantId
-                
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('🔍 Rendering SecurityTalkSection:', {
-                    sectionId: section.id,
-                    sectionTitle: section.title,
-                    config,
-                    plantId,
-                    checklistData: {
-                      id: checklist?.id,
-                      plantId: checklist?.plantId,
-                      assetId: checklist?.assetId
-                    }
-                  })
-                }
-                
+
                 return (
-                  <div 
+                  <div
                     key={`security-${section.id}`}
                     id={`section-${section.id}`}
                     className="scroll-mt-20"
                   >
-                    <Collapsible
-                      open={!isCollapsed}
-                      onOpenChange={() => toggleSectionCollapse(section.id)}
-                    >
-                      <CollapsibleTrigger asChild>
-                        <Card className="cursor-pointer hover:shadow-md transition-shadow border-orange-200 bg-orange-50/50">
-                          <CardHeader className="pb-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Shield className="h-5 w-5 text-orange-600" />
-                                <div>
-                                  <CardTitle className="text-lg">{section.title}</CardTitle>
-                                  <CardDescription>
-                                    Sección de charla de seguridad
-                                  </CardDescription>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge 
-                                  variant={sectionStatus.isComplete ? "default" : "secondary"}
-                                  className={sectionStatus.isComplete ? "bg-green-500" : ""}
-                                >
-                                  {sectionStatus.completed}/{sectionStatus.total}
-                                </Badge>
-                                {sectionStatus.isComplete && (
-                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                )}
-                                {isCollapsed ? (
-                                  <ChevronRight className="h-4 w-4 text-gray-400" />
-                                ) : (
-                                  <ChevronDown className="h-4 w-4 text-gray-400" />
-                                )}
-                              </div>
-                            </div>
-                          </CardHeader>
-                        </Card>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="data-[state=open]:animate-none">
-                        <div className="mt-2">
-                            <SecurityTalkSection
-                              key={`security-${section.id}-v${laneBMountVersion}`}
-                              sectionId={section.id}
-                              sectionTitle={section.title}
-                              config={config}
-                              plantId={plantId}
-                              checklistScheduleId={id}
-                              onDataChange={handleSecurityDataChange}
-                              initialData={sectionSecurityData}
-                              disabled={submitting}
-                              embedded
-                            />
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                    <SecurityTalkSection
+                      key={`security-${section.id}-v${laneBMountVersion}`}
+                      sectionId={section.id}
+                      sectionTitle={section.title}
+                      config={config}
+                      plantId={plantId}
+                      checklistScheduleId={id}
+                      onDataChange={handleSecurityDataChange}
+                      initialData={sectionSecurityData}
+                      disabled={submitting}
+                    />
                   </div>
                 )
               }
