@@ -5,6 +5,7 @@ import { sanitizeValueForPostgresJsonb } from "@/lib/json/sanitize-for-postgres-
 import {
   shouldRequireValidationForCuentaLitrosVariance,
 } from "@/lib/diesel/cuenta-litros-variance"
+import { localDateTimeToUtcIso } from "@/lib/diesel/date-utils"
 
 export type DurableDieselSubmitResult =
   | { status: "synced"; outboxId: string }
@@ -153,9 +154,10 @@ export function buildConsumptionTransactionData(params: {
     quantity_liters: quantity,
     cuenta_litros: cuenta,
     operator_id: params.userId,
-    transaction_date: new Date(
-      `${params.transactionDate}T${params.transactionTime}:00`
-    ).toISOString(),
+    transaction_date: localDateTimeToUtcIso(
+      params.transactionDate,
+      params.transactionTime
+    ),
     notes: params.notes || null,
     requires_validation: requiresValidation,
     validation_notes: requiresValidation

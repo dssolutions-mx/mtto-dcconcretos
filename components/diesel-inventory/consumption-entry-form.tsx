@@ -31,7 +31,7 @@ import {
   resolveDieselTransactionPlantId,
   validateDieselTransactionScope
 } from "@/lib/diesel/submit-scope-validation"
-import { getLocalDateString, getLocalTimeString } from "@/lib/diesel/date-utils"
+import { getLocalDateString, getLocalTimeString, localDateTimeToUtcIso } from "@/lib/diesel/date-utils"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
 import { describeDieselSaveError } from "@/lib/diesel/diesel-save-error-message"
 import { loadDieselOrganizationalScope } from "@/lib/diesel/load-organizational-scope"
@@ -121,6 +121,7 @@ export function ConsumptionEntryForm({
   const [userId, setUserId] = useState<string | null>(null)
   const [pendingDieselSync, setPendingDieselSync] = useState(0)
   const draftRestoredRef = useRef(false)
+  const [draftRestoreSettled, setDraftRestoreSettled] = useState(false)
   const previewObjectUrlRef = useRef<string | null>(null)
 
   const setMachinePhotoPreview = (url: string | null) => {
@@ -261,6 +262,8 @@ export function ConsumptionEntryForm({
   const enqueueConsumptionWip = async (
     overrides?: Partial<ReturnType<typeof buildWipContext>>
   ): Promise<string | null> => {
+    if (!draftRestoreSettled) return null
+
     const run = async (): Promise<string | null> => {
       if (!userId || !productId || !selectedWarehouse || loading) return null
       const ctx = {
@@ -396,6 +399,8 @@ export function ConsumptionEntryForm({
         }
       } catch (error) {
         console.warn("Could not restore diesel consumption draft:", error)
+      } finally {
+        setDraftRestoreSettled(true)
       }
     })()
   }, [productType])
@@ -428,7 +433,7 @@ export function ConsumptionEntryForm({
   ])
 
   useEffect(() => {
-    if (!userId || !productId || loading) return
+    if (!userId || !productId || loading || !draftRestoreSettled) return
     const timer = setTimeout(() => {
       void flushWipNow()
       if (isOnline) void requestSync()
@@ -456,6 +461,7 @@ export function ConsumptionEntryForm({
     loading,
     warehouses,
     allBuWarehouses,
+    draftRestoreSettled,
   ])
 
   useEffect(() => {
@@ -952,7 +958,9 @@ export function ConsumptionEntryForm({
     if (isOnline) {
       try {
         if (selectedWarehouse) {
-          const selectedIso = new Date(transactionDate + "T" + transactionTime + ":00")
+          const selectedIso = new Date(
+            localDateTimeToUtcIso(transactionDate, transactionTime)
+          )
           const { data: latestTx } = await supabase
             .from("diesel_transactions")
             .select("transaction_date")
@@ -1126,7 +1134,7 @@ export function ConsumptionEntryForm({
     }
 
     // Queued locally — data is safe on device; server sync pending or failed.
-    clearForm()
+    // Keep form state (especially fecha/hora) so the operator sees what will sync.
     void refreshPendingDieselCount()
 
     if (!isOnline) {

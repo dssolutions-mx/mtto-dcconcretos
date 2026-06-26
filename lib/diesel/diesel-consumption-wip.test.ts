@@ -2,8 +2,10 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   isConsumptionFormSubmittable,
+  preserveOutboxTransactionDateIfNeeded,
   type ConsumptionWipContext,
 } from "./diesel-consumption-wip"
+import { getLocalDateString, localDateTimeToUtcIso } from "./date-utils"
 
 const WIP_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -43,4 +45,29 @@ test("isConsumptionFormSubmittable requires explicit wipId context fields", () =
 test("wipId is caller-owned and not derived inside ensureConsumptionWipQueued", () => {
   const ctx = baseCtx({ wipId: WIP_ID })
   assert.equal(ctx.wipId, WIP_ID)
+})
+
+test("preserveOutboxTransactionDateIfNeeded keeps prior date when form reopens on today", () => {
+  const today = getLocalDateString()
+  const [year, month, day] = today.split("-").map(Number)
+  const yesterdayIso = new Date(year, month - 1, day - 1, 15, 30, 0).toISOString()
+  const todayIso = localDateTimeToUtcIso(today, "09:00")
+
+  const preserved = preserveOutboxTransactionDateIfNeeded(
+    { transaction_date: todayIso },
+    {
+      id: WIP_ID,
+      domain: "diesel",
+      operation: "transaction",
+      payload: {
+        transactionData: { transaction_date: yesterdayIso },
+      },
+      status: "failed",
+      attemptCount: 2,
+      nextAttemptAt: Date.now(),
+      createdAt: Date.now(),
+    }
+  )
+
+  assert.equal(preserved.transaction_date, yesterdayIso)
 })

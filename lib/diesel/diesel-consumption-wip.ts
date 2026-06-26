@@ -3,10 +3,15 @@ import {
   submitDurableDieselConsumption,
 } from "@/lib/diesel/durable-diesel-submit"
 import type { DieselConsumptionDraftData } from "@/lib/diesel/diesel-consumption-draft"
+import {
+  getLocalDateString,
+  utcIsoToLocalDateTimeFields,
+} from "@/lib/diesel/date-utils"
 import { initOfflineClient, offlineClient } from "@/lib/offline/offline-client"
 import { requestSync } from "@/lib/offline/sync-bridge"
 import { sanitizeValueForPostgresJsonb } from "@/lib/json/sanitize-for-postgres-jsonb"
 import type { DieselEvidenceImageMetadata } from "@/lib/photos/diesel-evidence-image-metadata"
+import type { DieselTransactionPayload, OutboxEntry } from "@/lib/offline/types"
 
 export interface ConsumptionWipContext {
   productType: "diesel" | "urea"
@@ -41,6 +46,46 @@ export function isConsumptionFormSubmittable(ctx: ConsumptionWipContext): boolea
   if (ctx.previousCuentaLitros !== null && !ctx.cuentaLitros) return false
   if (!ctx.machinePhotoDraftId) return false
   return true
+}
+
+/**
+ * After a failed sync, avoid overwriting a captured transaction_date when the form
+ * still shows today's default but the outbox already holds another calendar day
+ * (common when draft restore races with WIP re-flush).
+ */
+export function preserveOutboxTransactionDateIfNeeded(
+  transactionData: Record<string, unknown>,
+  existingEntry: OutboxEntry | undefined
+): Record<string, unknown> {
+  if (!existingEntry || existingEntry.attemptCount === 0) {
+    return transactionData
+  }
+
+  const payload = existingEntry.payload as DieselTransactionPayload | undefined
+  const existingIso = payload?.transactionData?.transaction_date
+  const builtIso = transactionData.transaction_date
+
+  if (
+    typeof existingIso !== "string" ||
+    typeof builtIso !== "string" ||
+    existingIso === builtIso
+  ) {
+    return transactionData
+  }
+
+  const builtLocal = utcIsoToLocalDateTimeFields(builtIso)
+  const existingLocal = utcIsoToLocalDateTimeFields(existingIso)
+  const today = getLocalDateString()
+
+  if (
+    builtLocal?.date === today &&
+    existingLocal &&
+    existingLocal.date !== today
+  ) {
+    return { ...transactionData, transaction_date: existingIso }
+  }
+
+  return transactionData
 }
 
 /**
@@ -86,7 +131,14 @@ export async function ensureConsumptionWipQueued(
     userId: ctx.userId,
   })
 
-  await offlineClient.enqueueDieselTransaction(transactionData, {
+  const existingEntries = await offlineClient.listDieselOutboxEntries()
+  const existingEntry = existingEntries.find((entry) => entry.id === ctx.wipId)
+  const transactionPayload = preserveOutboxTransactionDateIfNeeded(
+    transactionData,
+    existingEntry
+  )
+
+  await offlineClient.enqueueDieselTransaction(transactionPayload, {
     id: ctx.wipId,
     photoBlob: staging.blob,
     evidenceType: "consumption",

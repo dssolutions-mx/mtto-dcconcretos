@@ -17,6 +17,63 @@ export function getLocalTimeString(date: Date = new Date()): string {
   return `${h}:${min}`
 }
 
+export function parseLocalDateTimeFields(
+  date: string,
+  time: string
+): {
+  year: number
+  month: number
+  day: number
+  hours: number
+  minutes: number
+} | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time.trim())
+  if (!dateMatch || !timeMatch) return null
+
+  return {
+    year: Number(dateMatch[1]),
+    month: Number(dateMatch[2]),
+    day: Number(dateMatch[3]),
+    hours: Number(timeMatch[1]),
+    minutes: Number(timeMatch[2]),
+  }
+}
+
+/**
+ * Convert form date/time (device local wall clock) to UTC ISO for diesel_transactions.
+ * Uses the Date(y, m, d, h, min) constructor — same approach as transaction-edit-modal.
+ */
+export function localDateTimeToUtcIso(date: string, time: string): string {
+  const parts = parseLocalDateTimeFields(date, time)
+  if (!parts) {
+    throw new Error(`Invalid local date/time: ${date} ${time}`)
+  }
+
+  return new Date(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hours,
+    parts.minutes,
+    0,
+    0
+  ).toISOString()
+}
+
+/** UTC ISO from DB → local form fields for date/time inputs. */
+export function utcIsoToLocalDateTimeFields(iso: string): {
+  date: string
+  time: string
+} | null {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return null
+  return {
+    date: getLocalDateString(dt),
+    time: getLocalTimeString(dt),
+  }
+}
+
 /**
  * Format an ISO timestamp from the DB for accounting export (dd/mm/yyyy in local calendar).
  */
