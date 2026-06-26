@@ -12,6 +12,7 @@ import {
 } from './sanitize-draft'
 import { db } from "./db"
 import { migrateLegacyIdbIfNeeded } from "./migrate-legacy-idb"
+import { repairCorruptedChecklistDrafts } from "./repair-corrupted-drafts"
 import { collectSyncStats, MAX_FILE_RETRIES } from "./stats"
 import { initSyncBridge, requestSync as bridgeRequestSync } from "./sync-bridge"
 import type {
@@ -109,6 +110,11 @@ export function initOfflineClient(): Promise<void> {
         await migrateLegacyIdbIfNeeded()
       } catch (error) {
         console.warn("[offline-v2] legacy migration failed (continuing):", error)
+      }
+      try {
+        await repairCorruptedChecklistDrafts()
+      } catch (error) {
+        console.warn("[offline-v2] draft repair failed (continuing):", error)
       }
       try {
         initSyncBridge()
@@ -656,7 +662,12 @@ class OfflineClient {
 
   async getDraft(scheduleId: string): Promise<DraftEntry | undefined> {
     await this.ensureReady()
-    return db.drafts.get(scheduleId)
+    const draft = await db.drafts.get(scheduleId)
+    if (!draft?.data) return draft
+    return {
+      ...draft,
+      data: cloneForIndexedDb(sanitizeLocalChecklistDraft(draft.data)),
+    }
   }
 
   async clearDraft(scheduleId: string): Promise<void> {
