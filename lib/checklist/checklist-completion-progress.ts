@@ -19,6 +19,8 @@ import type { BonusClosureSectionData, PunctualitySectionData } from '@/types'
 import {
   DEFAULT_SECURITY_CONFIG,
   normalizeSecurityConfig,
+  resolveSecurityTalkUiMode,
+  type SecurityTalkExecutorContext,
 } from '@/lib/checklist/security-talk-validation'
 
 export type SectionProgressSlice = SectionFunnelInput & {
@@ -79,32 +81,33 @@ export function getEvidenceSectionProgress(
 
 export function getSecurityTalkSectionProgress(
   sectionSecurityData: Record<string, unknown>,
-  configInput: Record<string, unknown> | null | undefined
+  configInput: Record<string, unknown> | null | undefined,
+  executorOrRole?: string | null | SecurityTalkExecutorContext
 ): { total: number; completed: number } {
-  const config = normalizeSecurityConfig(
+  const templateConfig = normalizeSecurityConfig(
     configInput && typeof configInput === 'object'
       ? (configInput as Partial<typeof DEFAULT_SECURITY_CONFIG>)
       : null
   )
-
-  const isPlantManagerMode = config.mode === 'plant_manager'
+  const uiMode = resolveSecurityTalkUiMode(templateConfig, executorOrRole ?? null)
+  const isPlantManagerMode = uiMode === 'plant_manager'
   const attendees = sectionSecurityData.attendees
   const hasAttendance = isPlantManagerMode
     ? Array.isArray(attendees) && attendees.length > 0
     : sectionSecurityData.attendance === true
 
   const shouldRequireDetails =
-    !config.require_attendance || hasAttendance
+    !templateConfig.require_attendance || hasAttendance
 
   let totalFields = 0
   let completedFields = 0
 
-  if (config.require_attendance) {
+  if (templateConfig.require_attendance) {
     totalFields++
     if (hasAttendance) completedFields++
   }
 
-  if (config.require_topic && shouldRequireDetails) {
+  if (templateConfig.require_topic && shouldRequireDetails) {
     totalFields++
     const topic = sectionSecurityData.topic
     if (typeof topic === 'string' && topic.trim().length > 0) {
@@ -112,7 +115,7 @@ export function getSecurityTalkSectionProgress(
     }
   }
 
-  if (config.require_reflection && shouldRequireDetails) {
+  if (templateConfig.require_reflection && shouldRequireDetails) {
     totalFields++
     const reflection = sectionSecurityData.reflection
     if (typeof reflection === 'string' && reflection.trim().length > 0) {
@@ -147,6 +150,9 @@ export interface ComputeSectionProgressInput {
   sectionSecurityData: Record<string, unknown>
   sectionPlantData: PunctualitySectionData | BonusClosureSectionData | undefined
   sectionTireReadings: Array<Record<string, unknown>>
+  /** Executor profile — security talk progress respects operator vs plant-staff UI mode. */
+  executorRole?: string | null
+  executorBusinessRole?: string | null
 }
 
 export function computeSectionProgressCounts(
@@ -196,7 +202,11 @@ export function computeSectionProgressCounts(
   if (section.section_type === 'security_talk') {
     const { total, completed } = getSecurityTalkSectionProgress(
       sectionSecurityData,
-      section.security_config
+      section.security_config,
+      {
+        role: input.executorRole,
+        business_role: input.executorBusinessRole,
+      }
     )
     return {
       total,

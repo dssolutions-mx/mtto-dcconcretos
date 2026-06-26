@@ -67,6 +67,7 @@ describe('checklist-completion-progress', () => {
         },
         sectionPlantData: undefined,
         sectionTireReadings: [],
+        executorRole: 'DOSIFICADOR',
       },
       {
         section: {
@@ -130,10 +131,45 @@ describe('checklist-completion-progress', () => {
         require_attendance: true,
         require_topic: true,
         require_reflection: true,
-      }
+      },
+      'DOSIFICADOR'
     )
     assert.equal(progress.total, 3)
     assert.equal(progress.completed, 3)
+  })
+
+  it('security talk operator mode counts attendance not plant roster', () => {
+    const progress = getSecurityTalkSectionProgress(
+      {
+        attendance: true,
+        topic: 'EPP',
+        reflection: 'Casco',
+      },
+      {
+        mode: 'plant_manager',
+        require_attendance: true,
+        require_topic: true,
+        require_reflection: true,
+      },
+      'OPERADOR'
+    )
+    assert.equal(progress.total, 3)
+    assert.equal(progress.completed, 3)
+  })
+
+  it('security talk operator with only attendance is incomplete when topic required', () => {
+    const progress = getSecurityTalkSectionProgress(
+      { attendance: true },
+      {
+        mode: 'plant_manager',
+        require_attendance: true,
+        require_topic: true,
+        require_reflection: true,
+      },
+      { role: 'OPERADOR' }
+    )
+    assert.equal(progress.total, 3)
+    assert.equal(progress.completed, 1)
   })
 
   it('operations checklist funnel_config does not count as maintenance issues', () => {

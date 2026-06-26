@@ -260,7 +260,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   
   // Usar el nuevo hook para estado offline
   const { isOnline, hasPendingSyncs } = useOfflineSync()
-  const { profile, user } = useAuthZustand()
+  const { profile, user, businessRole, role: authRole } = useAuthZustand()
   const operatorSimpleFlow = isOperatorChecklistRole(profile?.role ?? null)
 
   const resolvedVisibleMeters = useMemo(() => {
@@ -385,6 +385,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     [applyClientCompletionAuth, id]
   )
 
+  const securityTalkExecutor = useMemo(
+    () => ({
+      role: profile?.role ?? authRole,
+      business_role: profile?.business_role ?? businessRole,
+    }),
+    [profile?.role, profile?.business_role, authRole, businessRole]
+  )
+
   const buildSectionProgressInput = useCallback(
     (section: any) => ({
       section: {
@@ -396,8 +404,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       sectionSecurityData: securityData[section.id] || {},
       sectionPlantData: plantOperationsData[section.id],
       sectionTireReadings: tireReadingsData[section.id] ?? [],
+      executorRole: securityTalkExecutor.role,
+      executorBusinessRole: securityTalkExecutor.business_role,
     }),
-    [itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData]
+    [itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData, securityTalkExecutor]
   )
 
   const getAllSectionProgressSlices = useCallback(() => {
@@ -830,6 +840,35 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     },
     [applyServerDraftPayload, restoreDraftData, setDraftRestorePromptSynced]
   )
+
+  // Jun 25 draft-sync: operators should not stare at an empty section waiting on the
+  // restore banner — auto-apply so the security talk form is immediately usable.
+  useEffect(() => {
+    if (!draftRestorePrompt || !checklist) return
+
+    const roleKeys = [
+      profile?.role ?? authRole,
+      profile?.business_role ?? businessRole,
+    ]
+      .filter(Boolean)
+      .map((role) => String(role).toUpperCase())
+
+    const isFieldOperator = roleKeys.some((role) =>
+      role === 'OPERADOR' || role === 'MECANICO'
+    )
+
+    if (isFieldOperator) {
+      applyDraftRestore(draftRestorePrompt)
+    }
+  }, [
+    draftRestorePrompt,
+    checklist,
+    profile?.role,
+    profile?.business_role,
+    authRole,
+    businessRole,
+    applyDraftRestore,
+  ])
 
   const handleContinueDraft = useCallback(() => {
     if (!draftRestorePrompt) return
@@ -1522,19 +1561,24 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     if (!checklist?.sections) return null
     for (const section of checklist.sections) {
       const counts = computeSectionProgressCounts({
-        section,
+        section: {
+          ...section,
+          section_type: resolveExecutionSectionType(section),
+        },
         itemStatus,
         sectionEvidences: evidenceData[section.id] || [],
         sectionSecurityData: securityData[section.id] || {},
         sectionPlantData: plantOperationsData[section.id],
         sectionTireReadings: tireReadingsData[section.id] ?? [],
+        executorRole: securityTalkExecutor.role,
+        executorBusinessRole: securityTalkExecutor.business_role,
       })
       if (!counts.isComplete) {
         return `section-${section.id}`
       }
     }
     return null
-  }, [checklist, itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData])
+  }, [checklist, itemStatus, evidenceData, securityData, plantOperationsData, tireReadingsData, securityTalkExecutor])
 
   const liveBlockingIssues = useMemo(() => {
     if (!checklist) {
@@ -1575,7 +1619,28 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     }
     if (checklist?.sections) {
       for (const section of checklist.sections) {
-        if (section.section_type !== 'tire_readings') continue
+        const resolvedType = resolveExecutionSectionType(section)
+        if (resolvedType === 'security_talk') {
+          const counts = computeSectionProgressCounts({
+            section: { ...section, section_type: resolvedType },
+            itemStatus,
+            sectionEvidences: evidenceData[section.id] || [],
+            sectionSecurityData: securityData[section.id] || {},
+            sectionPlantData: plantOperationsData[section.id],
+            sectionTireReadings: tireReadingsData[section.id] ?? [],
+            executorRole: securityTalkExecutor.role,
+            executorBusinessRole: securityTalkExecutor.business_role,
+          })
+          if (!counts.isComplete) {
+            issues.push({
+              id: `security-${section.id}`,
+              label: 'Charla de seguridad incompleta',
+              targetId: `section-${section.id}`,
+            })
+          }
+        }
+
+        if (resolvedType !== 'tire_readings') continue
         const sectionReadings = tireReadingsData[section.id] ?? []
         const tireValidation = validateTireReadingsSection({
           readings: sectionReadings,
@@ -1607,6 +1672,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
     tireReadingsData,
     plantOperationsData,
     securityData,
+    securityTalkExecutor,
   ])
 
   const handleSubmit = async () => {
@@ -1676,7 +1742,30 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       validationWarnings.push(...readingsValidation.warnings)
     }
 
-    // 3b. Validate tire readings sections
+    // 3b. Validate security talk sections (operator self-attendance vs plant roster)
+    if (checklist?.sections) {
+      for (const section of checklist.sections) {
+        const resolvedType = resolveExecutionSectionType(section)
+        if (resolvedType !== 'security_talk') continue
+        const counts = computeSectionProgressCounts({
+          section: { ...section, section_type: resolvedType },
+          itemStatus,
+          sectionEvidences: evidenceData[section.id] || [],
+          sectionSecurityData: securityData[section.id] || {},
+          sectionPlantData: plantOperationsData[section.id],
+          sectionTireReadings: tireReadingsData[section.id] ?? [],
+          executorRole: securityTalkExecutor.role,
+          executorBusinessRole: securityTalkExecutor.business_role,
+        })
+        if (!counts.isComplete) {
+          validationErrors.push(
+            `🛡️ Charla de seguridad: complete ${section.title || 'la sección de seguridad'}`
+          )
+        }
+      }
+    }
+
+    // 3c. Validate tire readings sections
     if (checklist?.sections) {
       for (const section of checklist.sections) {
         if (section.section_type !== 'tire_readings') continue
@@ -1693,7 +1782,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       }
     }
 
-    // 3c. Validate bonus_closure sections
+    // 3d. Validate bonus_closure sections
     if (checklist?.sections) {
       for (const section of checklist.sections) {
         if (section.section_type !== 'bonus_closure') continue

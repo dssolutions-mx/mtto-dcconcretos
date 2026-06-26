@@ -249,6 +249,34 @@ export function SecurityTalkSection({
     [emitChange]
   )
 
+  const hasEmittedInitialRef = useRef(false)
+  useEffect(() => {
+    if (hasEmittedInitialRef.current) return
+    const hasRestored =
+      initialData?.attendance === true ||
+      (initialData?.attendees?.length ?? 0) > 0 ||
+      Boolean(initialData?.topic?.trim()) ||
+      Boolean(initialData?.reflection?.trim()) ||
+      (initialData?.evidence?.length ?? 0) > 0
+    if (!hasRestored) return
+    hasEmittedInitialRef.current = true
+    emitChange(
+      attendance,
+      attendees,
+      topic,
+      reflection,
+      evidenceItems
+    )
+  }, [
+    initialData,
+    attendance,
+    attendees,
+    topic,
+    reflection,
+    evidenceItems,
+    emitChange,
+  ])
+
   const handleAttendeeToggle = (operatorId: string) => {
     setAttendees((prev) => {
       const next = prev.includes(operatorId)
