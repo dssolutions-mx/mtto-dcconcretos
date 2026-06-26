@@ -4,7 +4,7 @@ import {
   filterSchedulesForActor,
   isAssetVisibleToActor,
   isPlantaListReadOnlyRole,
-  loadOperatorAssignedAssetIds,
+  loadOperatorExpandedAssignedAssetIds,
   type ScheduleVisibilityAsset,
 } from '@/lib/checklist/schedule-visibility'
 import { isPlantaAsset } from '@/lib/checklist/executor-roles'
@@ -31,7 +31,7 @@ export async function GET() {
 
     const assignedAssetIds =
       actor.profile.role === 'OPERADOR'
-        ? await loadOperatorAssignedAssetIds(supabase, user.id)
+        ? await loadOperatorExpandedAssignedAssetIds(supabase, user.id)
         : undefined
     
     // Test connection with a simple query first

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { managedPlantIdsForOperatorActor } from '@/lib/auth/operator-scope'
 import type { ActorContext } from '@/lib/auth/server-authorization'
 import { scheduleVisibleToOperatorAssignment } from '@/lib/checklist/executor-authorization'
+import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
 import {
   CHECKLIST_EXECUTOR_ROLE_OPTIONS,
   isPlantaAsset,
@@ -134,11 +135,13 @@ export function isPlantaListReadOnlyRole(role: string): boolean {
 /**
  * List/dashboard visibility: executor_roles restrict field roles only.
  * Supervisory roles keep the pre-filter overview access they had before.
+ * OPERADOR is gated by asset assignment instead of executor_roles.
  */
 function rolePassesExecutorRolesForListView(
   role: string,
   executorRoles: string[] | null | undefined
 ): boolean {
+  if (role === 'OPERADOR') return true
   if (isMaintenanceOverviewRole(role)) return true
   if (roleInExecutorRoles(role, executorRoles)) return true
   return !isChecklistExecutorRole(role)
@@ -243,6 +246,20 @@ export async function loadOperatorAssignedAssetIds(
   }
 
   return new Set((data ?? []).map((row) => row.asset_id).filter(Boolean))
+}
+
+/**
+ * Operator assignment IDs expanded to composite units and their components.
+ * Use this for checklist visibility and completion checks.
+ */
+export async function loadOperatorExpandedAssignedAssetIds(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<Set<string>> {
+  const direct = await loadOperatorAssignedAssetIds(supabase, userId)
+  if (direct.size === 0) return direct
+  const expanded = await expandAssetIdsForOperatorChecklists(supabase, [...direct])
+  return new Set(expanded)
 }
 
 export function filterSchedulesForActor<T extends ScheduleVisibilityRow>(

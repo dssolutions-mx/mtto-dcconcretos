@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { loadActorContext } from '@/lib/auth/server-authorization'
 import {
   filterSchedulesForActor,
-  loadOperatorAssignedAssetIds,
+  loadOperatorExpandedAssignedAssetIds,
   type ScheduleVisibilityAsset,
 } from '@/lib/checklist/schedule-visibility'
 import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
 
     const assignedAssetIds =
       actor.profile.role === 'OPERADOR'
-        ? await loadOperatorAssignedAssetIds(supabase, user.id)
+        ? await loadOperatorExpandedAssignedAssetIds(supabase, user.id)
         : undefined
 
     let query = supabase

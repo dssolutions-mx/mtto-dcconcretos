@@ -58,13 +58,17 @@ test('scheduleVisibleToOperatorAssignment excludes PLANTA without assignment', (
   )
 })
 
-test('scheduleVisibleToOperatorAssignment requires OPERADOR in executor_roles', () => {
+test('scheduleVisibleToOperatorAssignment shows assigned non-PLANTA schedules regardless of executor_roles', () => {
   const schedule = {
     checklists: { executor_roles: ['DOSIFICADOR', 'JEFE_PLANTA'] },
     assets: { model_id: 'truck', equipment_models: { maintenance_unit: 'hours' } },
   }
   assert.equal(
     scheduleVisibleToOperatorAssignment(schedule, new Set(['a1']), 'a1'),
+    true
+  )
+  assert.equal(
+    scheduleVisibleToOperatorAssignment(schedule, new Set(['other']), 'a1'),
     false
   )
 })

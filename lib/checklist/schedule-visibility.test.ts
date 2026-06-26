@@ -122,7 +122,7 @@ describe('isScheduleVisibleToActor', () => {
     )
   })
 
-  it('hides OPERADOR schedules when OPERADOR not in executor_roles', () => {
+  it('shows OPERADOR schedules on assigned assets regardless of executor_roles', () => {
     const visible = isScheduleVisibleToActor(
       {
         asset_id: unitAsset.id,
@@ -133,7 +133,7 @@ describe('isScheduleVisibleToActor', () => {
       unitAsset,
       new Set([unitAsset.id])
     )
-    assert.equal(visible, false)
+    assert.equal(visible, true)
   })
 
   it('shows unit schedules to GERENCIA_GENERAL (supervisory list access)', () => {
