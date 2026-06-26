@@ -87,6 +87,38 @@ export function resolveExecutionSectionType(
   return explicit || 'checklist'
 }
 
+export type SecurityTalkExecutorContext = {
+  role?: string | null
+  business_role?: string | null
+}
+
+const FIELD_EXECUTOR_ROLES = new Set(['OPERADOR', 'MECANICO'])
+
+const PLANT_STAFF_EXECUTOR_ROLES = new Set([
+  'DOSIFICADOR',
+  'JEFE_PLANTA',
+  'JEFE DE PLANTA',
+  'COORDINADOR',
+  'SUPERVISOR',
+])
+
+function normalizeExecutorRoleKey(role: string | null | undefined): string {
+  return (role ?? '').trim().toUpperCase()
+}
+
+function resolveExecutorRoleKeys(
+  executorOrRole: string | null | undefined | SecurityTalkExecutorContext
+): string[] {
+  const executor: SecurityTalkExecutorContext =
+    typeof executorOrRole === 'object' && executorOrRole !== null
+      ? executorOrRole
+      : { role: executorOrRole }
+
+  return [executor.role, executor.business_role]
+    .map(normalizeExecutorRoleKey)
+    .filter(Boolean)
+}
+
 /**
  * Pick the UI mode for security talk based on template config and executor role.
  * Field operators always get the self-attendance form even if the template
@@ -94,11 +126,22 @@ export function resolveExecutionSectionType(
  */
 export function resolveSecurityTalkUiMode(
   config: SecurityConfig,
-  executorRole: string | null | undefined
+  executorOrRole: string | null | undefined | SecurityTalkExecutorContext
 ): SecurityConfig['mode'] {
-  const role = (executorRole ?? '').toUpperCase()
-  if (role === 'OPERADOR' || role === 'MECANICO') {
+  const roleKeys = resolveExecutorRoleKeys(executorOrRole)
+
+  if (roleKeys.some((role) => FIELD_EXECUTOR_ROLES.has(role))) {
     return 'operator'
   }
+
+  // Profile still loading — default to operator self-service (most checklist executors).
+  if (roleKeys.length === 0) {
+    return 'operator'
+  }
+
+  if (roleKeys.some((role) => PLANT_STAFF_EXECUTOR_ROLES.has(role))) {
+    return 'plant_manager'
+  }
+
   return config.mode
 }

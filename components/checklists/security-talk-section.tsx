@@ -85,9 +85,12 @@ export function SecurityTalkSection({
   disabled = false,
   embedded = false,
 }: SecurityTalkSectionProps) {
-  const { profile } = useAuthZustand()
+  const { profile, businessRole, role: authRole } = useAuthZustand()
   const templateConfig = normalizeSecurityConfig(configProp)
-  const uiMode = resolveSecurityTalkUiMode(templateConfig, profile?.role)
+  const uiMode = resolveSecurityTalkUiMode(templateConfig, {
+    role: profile?.role ?? authRole,
+    business_role: profile?.business_role ?? businessRole,
+  })
   const config: SecurityConfig = { ...templateConfig, mode: uiMode }
 
   const [operators, setOperators] = useState<Operator[]>([])
@@ -334,7 +337,9 @@ export function SecurityTalkSection({
   const isPlantManagerMode = config.mode === "plant_manager"
   const hasAttendance = isPlantManagerMode ? attendees.length > 0 : attendance === true
   const shouldRequireDetails = !config.require_attendance || hasAttendance
-  const detailsLocked = config.require_attendance && !hasAttendance
+  // Operators can fill topic/reflection immediately; plant staff must pick attendees first.
+  const detailsLocked =
+    isPlantManagerMode && config.require_attendance && !hasAttendance
 
   const hasRequiredData =
     (!config.require_attendance || hasAttendance) &&

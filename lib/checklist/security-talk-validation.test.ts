@@ -49,5 +49,14 @@ describe('security-talk-validation', () => {
     assert.equal(resolveSecurityTalkUiMode(config, 'OPERADOR'), 'operator')
     assert.equal(resolveSecurityTalkUiMode(config, 'MECANICO'), 'operator')
     assert.equal(resolveSecurityTalkUiMode(config, 'DOSIFICADOR'), 'plant_manager')
+    assert.equal(
+      resolveSecurityTalkUiMode(config, {
+        role: 'DOSIFICADOR',
+        business_role: 'OPERADOR',
+      }),
+      'operator'
+    )
+    assert.equal(resolveSecurityTalkUiMode(config, null), 'operator')
+    assert.equal(resolveSecurityTalkUiMode(config, {}), 'operator')
   })
 })
