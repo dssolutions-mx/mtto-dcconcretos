@@ -44,6 +44,7 @@ interface SmartPhotoUploadProps {
   /** Persist compressed photo to IndexedDB immediately (diesel consumption). */
   dieselStaging?: boolean
   onStagingPhotoSaved?: (photoDraftId: string) => void
+  onStagingPhotoRemoved?: () => void
 }
 
 export function SmartPhotoUpload({
@@ -56,6 +57,7 @@ export function SmartPhotoUpload({
   className,
   dieselStaging = false,
   onStagingPhotoSaved,
+  onStagingPhotoRemoved,
 }: SmartPhotoUploadProps) {
   const [photo, setPhoto] = useState<PhotoUploadResult | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -266,6 +268,16 @@ export function SmartPhotoUpload({
     
     if (photoService && photo.id.startsWith('photo_')) {
       await photoService.deletePhoto(photo.id)
+    }
+
+    if (dieselStaging) {
+      try {
+        const { offlineClient } = await import("@/lib/offline/offline-client")
+        await offlineClient.clearDieselConsumptionStagingPhoto()
+      } catch (error) {
+        console.warn("Could not clear diesel staging photo:", error)
+      }
+      onStagingPhotoRemoved?.()
     }
     
     setPhoto(null)

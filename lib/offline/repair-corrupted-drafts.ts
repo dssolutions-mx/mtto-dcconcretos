@@ -1,12 +1,13 @@
 /**
- * One-time repair for checklist drafts written before Lane B sanitization (Jun 2026).
- * The draft-sync launch stored blob:/data: URLs in Dexie and caused DataCloneError on
- * subsequent saves — especially for operators filling security talk / evidence sections.
+ * One-time repair for drafts written before Lane B / diesel sanitization (Jun 2026).
+ * blob:/data: URLs and non-cloneable fields in Dexie caused DataCloneError on saves.
  */
+import { DIESEL_CONSUMPTION_DRAFT_ID } from '@/lib/diesel/diesel-consumption-draft'
+import { sanitizeDieselConsumptionDraftForStorage } from '@/lib/diesel/sanitize-diesel-draft'
 import { db } from './db'
 import { cloneForIndexedDb, sanitizeLocalChecklistDraft } from './sanitize-draft'
 
-const REPAIR_FLAG = 'offline_checklist_draft_sanitize_v1'
+const REPAIR_FLAG = 'offline_draft_sanitize_v2'
 
 export async function repairCorruptedChecklistDrafts(): Promise<void> {
   if (typeof window === 'undefined') return
@@ -20,9 +21,12 @@ export async function repairCorruptedChecklistDrafts(): Promise<void> {
     const drafts = await db.drafts.toArray()
     for (const draft of drafts) {
       try {
-        const sanitized = cloneForIndexedDb(
-          sanitizeLocalChecklistDraft(draft.data)
-        )
+        const sanitized =
+          draft.id === DIESEL_CONSUMPTION_DRAFT_ID
+            ? cloneForIndexedDb(
+                sanitizeDieselConsumptionDraftForStorage(draft.data)
+              )
+            : cloneForIndexedDb(sanitizeLocalChecklistDraft(draft.data))
         await db.drafts.put({
           ...draft,
           data: sanitized,

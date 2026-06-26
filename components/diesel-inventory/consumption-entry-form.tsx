@@ -56,6 +56,10 @@ import {
   CUENTA_LITROS_VARIANCE_TOLERANCE_LITERS,
 } from "@/lib/diesel/cuenta-litros-variance"
 import { DieselOfflineStatus } from "@/components/diesel-inventory/diesel-offline-status"
+import {
+  isEphemeralPhotoPreviewUrl,
+} from "@/lib/diesel/sanitize-diesel-draft"
+import { isPersistablePhotoUrl } from "@/lib/offline/sanitize-draft"
 
 interface ConsumptionEntryFormProps {
   productType: 'diesel' | 'urea'
@@ -118,6 +122,31 @@ export function ConsumptionEntryForm({
   const [pendingDieselSync, setPendingDieselSync] = useState(0)
   const draftRestoredRef = useRef(false)
   const previewObjectUrlRef = useRef<string | null>(null)
+
+  const setMachinePhotoPreview = (url: string | null) => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current)
+      previewObjectUrlRef.current = null
+    }
+    if (url?.startsWith("blob:")) {
+      previewObjectUrlRef.current = url
+    }
+    setMachinePhoto(url)
+  }
+
+  const hydrateMachinePhotoFromStaging = async (): Promise<boolean> => {
+    const staging = await offlineClient.getDieselConsumptionStagingPhoto()
+    if (!staging?.blob) return false
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current)
+    }
+    const url = URL.createObjectURL(staging.blob)
+    previewObjectUrlRef.current = url
+    setMachinePhoto(url)
+    setMachinePhotoDraftId(staging.id)
+    return true
+  }
+
   const formSnapshotRef = useRef<Record<string, unknown>>({})
   const wipIdRef = useRef<string | null>(null)
   const enqueueLockRef = useRef<Promise<string | null> | null>(null)
@@ -339,15 +368,21 @@ export function ConsumptionEntryForm({
           setMachinePhotoDraftId(draft.machinePhotoDraftId)
           if (draft.wipOutboxId) seedWipId(draft.wipOutboxId)
 
-          const staging = await offlineClient.getDieselConsumptionStagingPhoto()
-          if (staging?.blob) {
-            if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current)
-            const url = URL.createObjectURL(staging.blob)
-            previewObjectUrlRef.current = url
-            setMachinePhoto(url)
-            setMachinePhotoDraftId(staging.id)
-          } else if (draft.machinePhotoPreview) {
-            setMachinePhoto(draft.machinePhotoPreview)
+          const hydratedFromStaging = await hydrateMachinePhotoFromStaging()
+          if (
+            !hydratedFromStaging &&
+            draft.machinePhotoPreview &&
+            isPersistablePhotoUrl(draft.machinePhotoPreview)
+          ) {
+            setMachinePhotoPreview(draft.machinePhotoPreview)
+          } else if (
+            !hydratedFromStaging &&
+            draft.machinePhotoPreview &&
+            isEphemeralPhotoPreviewUrl(draft.machinePhotoPreview)
+          ) {
+            console.warn(
+              "[diesel] Ignoring ephemeral machinePhotoPreview in draft; retake photo if preview is missing"
+            )
           }
 
           setDraftRecovered(true)
@@ -472,15 +507,11 @@ export function ConsumptionEntryForm({
           setQuantityLiters("")
           setCuentaLitros("")
           setCuentaLitrosManuallyEdited(false)
-          setMachinePhoto(null)
+          setMachinePhotoPreview(null)
           setMachinePhotoDraftId(null)
           resetWipId()
           setDraftRecovered(false)
           setRecoveredWasComplete(false)
-          if (previewObjectUrlRef.current) {
-            URL.revokeObjectURL(previewObjectUrlRef.current)
-            previewObjectUrlRef.current = null
-          }
           setMachineEvidenceMetadata(null)
           setNotes("")
           setReadings({})
@@ -1047,15 +1078,11 @@ export function ConsumptionEntryForm({
       setQuantityLiters("")
       setCuentaLitros("")
       setCuentaLitrosManuallyEdited(false)
-      setMachinePhoto(null)
+      setMachinePhotoPreview(null)
       setMachinePhotoDraftId(null)
       resetWipId()
       setDraftRecovered(false)
       setRecoveredWasComplete(false)
-      if (previewObjectUrlRef.current) {
-        URL.revokeObjectURL(previewObjectUrlRef.current)
-        previewObjectUrlRef.current = null
-      }
       setMachineEvidenceMetadata(null)
       setNotes("")
       setReadings({})
@@ -1673,11 +1700,23 @@ export function ConsumptionEntryForm({
                     itemId="machine-display"
                     currentPhotoUrl={machinePhoto}
                     onPhotoChange={(url, _id, meta) => {
-                      setMachinePhoto(url)
+                      if (url) {
+                        setMachinePhotoPreview(url)
+                      } else {
+                        setMachinePhotoPreview(null)
+                        setMachinePhotoDraftId(null)
+                      }
                       setMachineEvidenceMetadata(meta ?? null)
                     }}
                     onStagingPhotoSaved={(photoDraftId) => {
                       setMachinePhotoDraftId(photoDraftId)
+                      void flushDraftNow()
+                      void flushWipNow()
+                    }}
+                    onStagingPhotoRemoved={() => {
+                      setMachinePhotoDraftId(null)
+                      setMachinePhotoPreview(null)
+                      setMachineEvidenceMetadata(null)
                       void flushDraftNow()
                       void flushWipNow()
                     }}

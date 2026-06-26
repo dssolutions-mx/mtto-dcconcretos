@@ -5,11 +5,13 @@ import {
   patchServerDraftWithMerge,
   type LocalChecklistDraftData,
 } from "@/lib/checklist/schedule-draft"
+import { sanitizeDieselConsumptionDraftForStorage } from "@/lib/diesel/sanitize-diesel-draft"
 import {
   cloneForIndexedDb,
   sanitizeChecklistCompletePayload,
   sanitizeLocalChecklistDraft,
 } from './sanitize-draft'
+import { DIESEL_CONSUMPTION_DRAFT_ID } from "@/lib/diesel/diesel-consumption-draft"
 import { db } from "./db"
 import { migrateLegacyIdbIfNeeded } from "./migrate-legacy-idb"
 import { repairCorruptedChecklistDrafts } from "./repair-corrupted-drafts"
@@ -839,19 +841,44 @@ class OfflineClient {
 
   async saveDieselConsumptionDraft(data: unknown): Promise<void> {
     await this.ensureReady()
-    await this.saveDraft("diesel-consumption", data, "diesel-consumption-draft")
+    const sanitizedData = cloneForIndexedDb(
+      sanitizeDieselConsumptionDraftForStorage(data)
+    )
+    const draft: DraftEntry = {
+      id: DIESEL_CONSUMPTION_DRAFT_ID,
+      scheduleId: "diesel-consumption",
+      data: sanitizedData,
+      updatedAt: Date.now(),
+    }
+    try {
+      await db.drafts.put(draft)
+    } catch (error) {
+      console.error("[offline] diesel draft put failed, retrying minimal:", error)
+      await db.drafts.put({
+        ...draft,
+        data: cloneForIndexedDb(
+          sanitizeDieselConsumptionDraftForStorage({
+            ...(typeof data === "object" && data ? data : {}),
+            machinePhotoPreview: null,
+          })
+        ),
+      })
+    }
     void requestStoragePersistIfNeeded()
   }
 
   async getDieselConsumptionDraft(): Promise<unknown | null> {
     await this.ensureReady()
-    const draft = await db.drafts.get("diesel-consumption-draft")
-    return draft?.data ?? null
+    const draft = await db.drafts.get(DIESEL_CONSUMPTION_DRAFT_ID)
+    if (!draft?.data) return null
+    return cloneForIndexedDb(
+      sanitizeDieselConsumptionDraftForStorage(draft.data)
+    )
   }
 
   async clearDieselConsumptionDraft(): Promise<void> {
     await this.ensureReady()
-    await db.drafts.delete("diesel-consumption-draft")
+    await db.drafts.delete(DIESEL_CONSUMPTION_DRAFT_ID)
   }
 
   async saveDieselConsumptionStagingPhoto(
