@@ -16,6 +16,10 @@ import {
   validateTireReadingsSection,
 } from '@/lib/tires/tire-readings-validation'
 import type { BonusClosureSectionData, PunctualitySectionData } from '@/types'
+import {
+  DEFAULT_SECURITY_CONFIG,
+  normalizeSecurityConfig,
+} from '@/lib/checklist/security-talk-validation'
 
 export type SectionProgressSlice = SectionFunnelInput & {
   total: number
@@ -73,22 +77,15 @@ export function getEvidenceSectionProgress(
   return clampSectionProgress(requiredPhotos, sectionEvidences.length)
 }
 
-const DEFAULT_SECURITY_CONFIG = {
-  mode: 'operator' as const,
-  require_attendance: true,
-  require_topic: true,
-  require_reflection: true,
-  allow_evidence: false,
-}
-
 export function getSecurityTalkSectionProgress(
   sectionSecurityData: Record<string, unknown>,
   configInput: Record<string, unknown> | null | undefined
 ): { total: number; completed: number } {
-  const config =
+  const config = normalizeSecurityConfig(
     configInput && typeof configInput === 'object'
-      ? configInput
-      : DEFAULT_SECURITY_CONFIG
+      ? (configInput as Partial<typeof DEFAULT_SECURITY_CONFIG>)
+      : null
+  )
 
   const isPlantManagerMode = config.mode === 'plant_manager'
   const attendees = sectionSecurityData.attendees

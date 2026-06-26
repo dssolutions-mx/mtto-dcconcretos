@@ -95,6 +95,10 @@ import {
   computeSectionProgressCounts,
 } from "@/lib/checklist/checklist-completion-progress"
 import {
+  normalizeSecurityConfig,
+  resolveExecutionSectionType,
+} from "@/lib/checklist/security-talk-validation"
+import {
   isChecklistScheduleDraftPayload,
   localDraftHasRestorableData,
   mergeSectionRecordMaps,
@@ -376,7 +380,10 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   const buildSectionProgressInput = useCallback(
     (section: any) => ({
-      section,
+      section: {
+        ...section,
+        section_type: resolveExecutionSectionType(section),
+      },
       itemStatus,
       sectionEvidences: evidenceData[section.id] || [],
       sectionSecurityData: securityData[section.id] || {},
@@ -2619,10 +2626,12 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
           {/* Enhanced Collapsible Sections */}
           <div id="checklist-scroll-items-start" className="space-y-4 scroll-mt-28">
             {checklist.sections && checklist.sections.map((section: any, sectionIndex: number) => {
-              const sectionStatus = getSectionStatus(section)
+              const resolvedSectionType = resolveExecutionSectionType(section)
+              const sectionForStatus = { ...section, section_type: resolvedSectionType }
+              const sectionStatus = getSectionStatus(sectionForStatus)
               const isCollapsed = sectionCollapsed[section.id] || false
               
-              if (section.section_type === 'evidence') {
+              if (resolvedSectionType === 'evidence') {
                 // Enhanced Evidence Section with Collapsible Wrapper
                 return (
                   <div 
@@ -2694,7 +2703,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
-              if (section.section_type === 'cleanliness_bonus') {
+              if (resolvedSectionType === 'cleanliness_bonus') {
                 // Enhanced Cleanliness Section with Collapsible Wrapper
                 return (
                   <div 
@@ -2880,9 +2889,9 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
-              if (section.section_type === 'security_talk') {
+              if (resolvedSectionType === 'security_talk') {
                 // Security Talk Section with Collapsible Wrapper
-                const config = section.security_config || {}
+                const config = normalizeSecurityConfig(section.security_config)
                 const sectionSecurityData = securityData[section.id] || {}
                 // Get plant_id from asset
                 const plantId = checklist?.plantId
@@ -2969,7 +2978,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
-              if (section.section_type === 'operator_punctuality') {
+              if (resolvedSectionType === 'operator_punctuality') {
                 const config = section.punctuality_config || {}
                 const sectionPunctualityData = plantOperationsData[section.id]
                 const plantId = checklist?.plantId
@@ -3042,7 +3051,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
-              if (section.section_type === 'bonus_closure') {
+              if (resolvedSectionType === 'bonus_closure') {
                 const config = section.bonus_closure_config
                 const sectionBonusData = plantOperationsData[section.id]
                 const plantId = checklist?.plantId
@@ -3117,7 +3126,7 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                 )
               }
 
-              if (section.section_type === 'tire_readings') {
+              if (resolvedSectionType === 'tire_readings') {
                 return (
                   <div
                     key={`tire-readings-${section.id}`}

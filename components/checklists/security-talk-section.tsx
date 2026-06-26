@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,6 +12,10 @@ import { Shield, Loader2, Users, User, Camera } from "lucide-react"
 import { SecurityConfig, SecurityTalkData } from "@/types"
 import { useAuthZustand } from "@/hooks/use-auth-zustand"
 import { EvidenceCaptureSection } from "@/components/checklists/evidence-capture-section"
+import {
+  normalizeSecurityConfig,
+  resolveSecurityTalkUiMode,
+} from "@/lib/checklist/security-talk-validation"
 
 interface Operator {
   id: string
@@ -24,7 +27,7 @@ interface Operator {
 interface SecurityTalkSectionProps {
   sectionId: string
   sectionTitle: string
-  config: SecurityConfig
+  config: Partial<SecurityConfig> | Record<string, unknown>
   plantId?: string
   onDataChange: (sectionId: string, data: SecurityTalkData) => void
   initialData?: SecurityTalkData
@@ -34,44 +37,69 @@ interface SecurityTalkSectionProps {
 export function SecurityTalkSection({
   sectionId,
   sectionTitle,
-  config,
+  config: configProp,
   plantId,
   onDataChange,
   initialData,
   disabled = false
 }: SecurityTalkSectionProps) {
   const { profile } = useAuthZustand()
+  const templateConfig = normalizeSecurityConfig(configProp)
+  const uiMode = resolveSecurityTalkUiMode(templateConfig, profile?.role)
+  const config: SecurityConfig = { ...templateConfig, mode: uiMode }
+
   const [operators, setOperators] = useState<Operator[]>([])
   const [loadingOperators, setLoadingOperators] = useState(false)
+  const [operatorsError, setOperatorsError] = useState<string | null>(null)
   const [attendance, setAttendance] = useState<boolean>(initialData?.attendance ?? false)
   const [attendees, setAttendees] = useState<string[]>(initialData?.attendees ?? [])
   const [topic, setTopic] = useState<string>(initialData?.topic ?? '')
   const [reflection, setReflection] = useState<string>(initialData?.reflection ?? '')
-  const [evidenceData, setEvidenceData] = useState<any[]>([])
+  const [evidenceData, setEvidenceData] = useState<any[]>(
+    initialData?.evidence?.map((entry, index) => ({
+      id: `restored-${index}`,
+      photo_url: entry.photo_url,
+      category: entry.category,
+      description: entry.description,
+    })) ?? []
+  )
+
+  const fetchOperators = useCallback(async () => {
+    if (!plantId) {
+      setOperators([])
+      setOperatorsError('No se pudo determinar la planta del activo.')
+      return
+    }
+
+    setLoadingOperators(true)
+    setOperatorsError(null)
+    try {
+      const response = await fetch(`/api/hr/plant-operations-roster?plant_id=${plantId}`)
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error || 'No se pudo cargar el roster de operadores')
+      }
+      const data = await response.json()
+      setOperators(data.operators || [])
+    } catch (error) {
+      console.error('Error fetching operators:', error)
+      setOperators([])
+      setOperatorsError(
+        error instanceof Error
+          ? error.message
+          : 'Error al cargar operadores de la planta'
+      )
+    } finally {
+      setLoadingOperators(false)
+    }
+  }, [plantId])
 
   // Fetch operators for plant manager mode
   useEffect(() => {
     if (config.mode === 'plant_manager' && plantId) {
-      fetchOperators()
+      void fetchOperators()
     }
-  }, [config.mode, plantId])
-
-  const fetchOperators = async () => {
-    if (!plantId) return
-    
-    setLoadingOperators(true)
-    try {
-      const response = await fetch(`/api/operators/register?plant_id=${plantId}&role=OPERADOR`)
-      if (response.ok) {
-        const data = await response.json()
-        setOperators(data || [])
-      }
-    } catch (error) {
-      console.error('Error fetching operators:', error)
-    } finally {
-      setLoadingOperators(false)
-    }
-  }
+  }, [config.mode, plantId, fetchOperators])
 
   // Update parent when data changes
   useEffect(() => {
@@ -97,7 +125,7 @@ export function SecurityTalkSection({
     )
   }
 
-  const handleEvidenceChange = useCallback((sectionId: string, evidences: any[]) => {
+  const handleEvidenceChange = useCallback((_sectionId: string, evidences: any[]) => {
     setEvidenceData(evidences)
   }, [])
 
@@ -110,6 +138,7 @@ export function SecurityTalkSection({
   
   // Only require topic/reflection if attendance is marked (or attendance is not required)
   const shouldRequireDetails = !config.require_attendance || hasAttendance
+  const detailsLocked = config.require_attendance && !hasAttendance
   
   const hasRequiredData = 
     (!config.require_attendance || hasAttendance) &&
@@ -144,10 +173,24 @@ export function SecurityTalkSection({
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Cargando operadores...
                   </div>
+                ) : operatorsError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription className="space-y-2">
+                      <p>{operatorsError}</p>
+                      <button
+                        type="button"
+                        className="text-sm underline"
+                        onClick={() => void fetchOperators()}
+                        disabled={disabled}
+                      >
+                        Reintentar
+                      </button>
+                    </AlertDescription>
+                  </Alert>
                 ) : operators.length === 0 ? (
                   <Alert>
                     <AlertDescription>
-                      No se encontraron operadores en esta planta
+                      No se encontraron operadores en esta planta. Verifique que el activo tenga planta asignada y que existan operadores activos.
                     </AlertDescription>
                   </Alert>
                 ) : (
@@ -204,9 +247,17 @@ export function SecurityTalkSection({
               </div>
             )}
           </div>
+
+        {detailsLocked && (config.require_topic || config.require_reflection) && (
+          <p className="text-sm text-muted-foreground">
+            {isPlantManagerMode
+              ? 'Seleccione al menos un asistente para registrar el tema y la reflexión.'
+              : 'Marque su asistencia para registrar el tema y la reflexión.'}
+          </p>
+        )}
         
-        {/* Topic Section - Only show if attendance is marked or attendance is not required */}
-        {shouldRequireDetails && config.require_topic && (
+        {/* Topic Section */}
+        {config.require_topic && (
           <div className="space-y-2">
             <Label htmlFor={`topic-${sectionId}`}>
               Tema Cubierto <span className="text-red-500">*</span>
@@ -216,13 +267,13 @@ export function SecurityTalkSection({
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="Ej: Uso correcto de EPP, Procedimientos de seguridad en altura..."
-              disabled={disabled}
+              disabled={disabled || detailsLocked}
             />
           </div>
         )}
 
-        {/* Reflection Section - Only show if attendance is marked or attendance is not required */}
-        {shouldRequireDetails && config.require_reflection && (
+        {/* Reflection Section */}
+        {config.require_reflection && (
           <div className="space-y-2">
             <Label htmlFor={`reflection-${sectionId}`}>
               Reflexión <span className="text-red-500">*</span>
@@ -233,7 +284,7 @@ export function SecurityTalkSection({
               onChange={(e) => setReflection(e.target.value)}
               placeholder="Escriba su reflexión sobre la charla de seguridad..."
               rows={4}
-              disabled={disabled}
+              disabled={disabled || detailsLocked}
             />
           </div>
         )}
@@ -257,7 +308,7 @@ export function SecurityTalkSection({
                 }
               }}
               onEvidenceChange={handleEvidenceChange}
-              disabled={disabled}
+              disabled={disabled || detailsLocked}
               checklistId={`security-${sectionId}`}
             />
           </div>
@@ -284,4 +335,3 @@ export function SecurityTalkSection({
     </Card>
   )
 }
-
