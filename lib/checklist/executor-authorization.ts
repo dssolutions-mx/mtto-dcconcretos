@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { managedPlantIdsForOperatorActor } from '@/lib/auth/operator-scope'
 import type { ActorContext } from '@/lib/auth/server-authorization'
+import { expandAssetIdsForOperatorChecklists } from '@/lib/composite-operator-scope'
 import {
   executorRolesForModel,
   isPlantaAsset,
@@ -143,6 +144,11 @@ export function evaluateCompletionEligibilitySync(
     return { allowed: true, allowedExecutorRoles }
   }
 
+  // Operators complete checklists on their assigned assets regardless of executor_roles.
+  if (role === 'OPERADOR' && !planta) {
+    return { allowed: true, allowedExecutorRoles }
+  }
+
   const rolesForCheck = planta
     ? executorRolesForModel(asset.modelId, asset.maintenanceUnit)
     : executorRoles
@@ -200,17 +206,27 @@ async function hasActiveAssetOperatorAssignment(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from('asset_operators')
-    .select('id')
+    .select('asset_id')
     .eq('operator_id', userId)
-    .eq('asset_id', assetId)
     .eq('status', 'active')
-    .limit(1)
 
   if (error) {
     console.error('[executor-authorization] asset_operators lookup failed', error)
     return false
   }
-  return (data?.length ?? 0) > 0
+
+  const assignmentAssetIds = (data ?? [])
+    .map((row) => row.asset_id)
+    .filter(Boolean) as string[]
+  if (assignmentAssetIds.length === 0) return false
+
+  if (assignmentAssetIds.includes(assetId)) return true
+
+  const expanded = await expandAssetIdsForOperatorChecklists(
+    supabase,
+    assignmentAssetIds
+  )
+  return expanded.includes(assetId)
 }
 
 /**
@@ -251,7 +267,11 @@ export async function assertCanCompleteChecklistSchedule(
   return { allowed: true }
 }
 
-/** Filter operator-facing schedules: executor_roles must include OPERADOR. */
+/**
+ * Whether an operator may see a schedule on an assigned asset.
+ * Asset assignment (including composite scope) is the gate — not executor_roles
+ * or schedule.assigned_to technical assignment.
+ */
 export function scheduleVisibleToOperatorAssignment(
   schedule: {
     checklists?: { executor_roles?: string[] | null } | null
@@ -263,8 +283,7 @@ export function scheduleVisibleToOperatorAssignment(
   assignedAssetIds: Set<string>,
   scheduleAssetId: string
 ): boolean {
-  const executorRoles = schedule.checklists?.executor_roles
-  if (!roleInExecutorRoles('OPERADOR', executorRoles)) {
+  if (!assignedAssetIds.has(scheduleAssetId)) {
     return false
   }
 
@@ -273,11 +292,8 @@ export function scheduleVisibleToOperatorAssignment(
   const maintenanceUnit =
     asset?.equipment_models?.maintenance_unit ?? null
 
-  if (
-    isPlantaAsset({ modelId, maintenanceUnit }) &&
-    !assignedAssetIds.has(scheduleAssetId)
-  ) {
-    return false
+  if (isPlantaAsset({ modelId, maintenanceUnit })) {
+    return assignedAssetIds.has(scheduleAssetId)
   }
 
   return true

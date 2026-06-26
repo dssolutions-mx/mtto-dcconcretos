@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { loadActorContext } from '@/lib/auth/server-authorization'
 import {
   filterSchedulesForActor,
-  loadOperatorAssignedAssetIds,
+  loadOperatorExpandedAssignedAssetIds,
   type ScheduleVisibilityAsset,
 } from '@/lib/checklist/schedule-visibility'
 import { categorizeSchedulesByDate } from '@/lib/utils/date-utils'
@@ -22,26 +22,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user profile to verify they are an operator
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, role, plant_id, nombre, apellido, business_unit_id, managed_plant_ids, is_active')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
-    }
-
     const actor = await loadActorContext(supabase, user.id)
     if (!actor) {
-      return NextResponse.json({ error: 'Profile not found or inactive' }, { status: 403 })
+      return NextResponse.json({ error: 'Perfil no encontrado' }, { status: 404 })
     }
 
-    // Only allow OPERADOR and DOSIFICADOR roles
-    if (!['OPERADOR', 'DOSIFICADOR'].includes(profile.role)) {
+    if (!['OPERADOR', 'DOSIFICADOR'].includes(actor.profile.role)) {
       return NextResponse.json({ error: 'Access denied. Only operators can use this endpoint.' }, { status: 403 })
     }
+
+    const { data: profileDetails } = await supabase
+      .from('profiles')
+      .select('nombre, apellido')
+      .eq('id', user.id)
+      .single()
 
     // Get assets assigned to this operator
     const { data: assignedAssets, error: assignmentsError } = await supabase
@@ -75,7 +69,13 @@ export async function GET(request: NextRequest) {
     if (!assignedAssets || assignedAssets.length === 0) {
       return NextResponse.json({ 
         data: {
-          operator: profile,
+          operator: {
+            id: actor.profile.id,
+            nombre: profileDetails?.nombre ?? null,
+            apellido: profileDetails?.apellido ?? null,
+            role: actor.profile.role,
+            plant_id: actor.profile.plant_id,
+          },
           assigned_assets: [],
           today_checklists: [],
           overdue_checklists: [],
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Error fetching schedules' }, { status: 500 })
     }
 
-    const assignedAssetIdSet = await loadOperatorAssignedAssetIds(supabase, user.id)
+    const assignedAssetIdSet = await loadOperatorExpandedAssignedAssetIds(supabase, user.id)
 
     const assetById = new Map<string, ScheduleVisibilityAsset>()
     for (const row of allSchedules ?? []) {
@@ -187,11 +187,11 @@ export async function GET(request: NextRequest) {
 
     const processedData = {
       operator: {
-        id: profile.id,
-        nombre: profile.nombre,
-        apellido: profile.apellido,
-        role: profile.role,
-        plant_id: profile.plant_id
+        id: actor.profile.id,
+        nombre: profileDetails?.nombre ?? null,
+        apellido: profileDetails?.apellido ?? null,
+        role: actor.profile.role,
+        plant_id: actor.profile.plant_id,
       },
       assigned_assets: assignedAssets.map(a => ({
         ...a.assets,
