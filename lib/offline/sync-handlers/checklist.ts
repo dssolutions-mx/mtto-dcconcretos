@@ -209,6 +209,63 @@ async function resolveItemPhotoUrls(
   )
 }
 
+/** Resolve security_talk evidence photos stored offline via photo_id in security_data. */
+async function resolveSecurityTalkPhotoUrls(
+  securityData: Record<string, unknown> | undefined
+): Promise<Record<string, unknown> | undefined> {
+  if (!securityData || typeof securityData !== "object") return securityData
+
+  const resolved: Record<string, unknown> = {}
+
+  for (const [sectionId, sectionData] of Object.entries(securityData)) {
+    if (!sectionData || typeof sectionData !== "object" || Array.isArray(sectionData)) {
+      resolved[sectionId] = sectionData
+      continue
+    }
+
+    const section = sectionData as {
+      evidence?: Array<
+        { photo_id?: string; photoId?: string; preview?: string; photo_url?: string } & Record<
+          string,
+          unknown
+        >
+      >
+    } & Record<string, unknown>
+
+    if (!Array.isArray(section.evidence)) {
+      resolved[sectionId] = sectionData
+      continue
+    }
+
+    resolved[sectionId] = {
+      ...section,
+      evidence: await Promise.all(
+        section.evidence.map(async (item) => {
+          const photoId = item.photo_id ?? item.photoId
+          if (!photoId) {
+            if (
+              typeof item.photo_url === "string" &&
+              (item.photo_url.startsWith("blob:") || item.photo_url.startsWith("data:"))
+            ) {
+              const { photo_url: _drop, preview: _preview, ...rest } = item
+              return rest
+            }
+            return item
+          }
+          const photo = await db.photos.get(photoId)
+          if (photo?.uploaded && photo.uploadUrl) {
+            const { preview: _preview, photo_id: _pid, photoId: _legacy, ...rest } = item
+            return { ...rest, photo_url: photo.uploadUrl }
+          }
+          return item
+        })
+      ),
+    }
+  }
+
+  return resolved
+}
+
 export async function syncChecklistComplete(
   entry: OutboxEntry,
   accessToken?: string
@@ -231,6 +288,13 @@ export async function syncChecklistComplete(
   )
   if (resolvedPlantOps) {
     laneBFields.plant_operations_data = resolvedPlantOps
+  }
+
+  const resolvedSecurity = await resolveSecurityTalkPhotoUrls(
+    laneBFields.security_data
+  )
+  if (resolvedSecurity) {
+    laneBFields.security_data = resolvedSecurity
   }
 
   const headers: Record<string, string> = {

@@ -99,6 +99,11 @@ import {
   resolveExecutionSectionType,
 } from "@/lib/checklist/security-talk-validation"
 import {
+  sanitizeEvidenceMapForStorage,
+  sanitizeLocalChecklistDraft,
+  sanitizeSecurityTalkDataForStorage,
+} from "@/lib/offline/sanitize-draft"
+import {
   isChecklistScheduleDraftPayload,
   localDraftHasRestorableData,
   mergeSectionRecordMaps,
@@ -647,13 +652,8 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
   // Guardar en localStorage para recuperación
   const saveToLocalStorage = useCallback(() => {
     if (!checklist) return
-    
-    const lightEvidenceData: Record<string, any[]> = {}
-    for (const [sectionId, items] of Object.entries(evidenceData)) {
-      lightEvidenceData[sectionId] = (items as any[]).map(({ file, preview, ...rest }) => rest)
-    }
 
-    const saveData = {
+    const saveData = sanitizeLocalChecklistDraft({
       checklist,
       itemStatus,
       itemNotes,
@@ -663,14 +663,14 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
       signature,
       selectedItem,
       equipmentReadings,
-      evidenceData: lightEvidenceData,
-      securityData,
+      evidenceData: sanitizeEvidenceMapForStorage(evidenceData),
+      securityData: sanitizeSecurityTalkDataForStorage(securityData),
       plantOperationsData,
       tireReadingsData,
       sectionCollapsed,
-      timestamp: Date.now()
-    }
-    
+      timestamp: Date.now(),
+    })
+
     void offlineClient.saveDraft(id, saveData)
     setHasUnsavedChanges(false)
     hasUnsavedChangesRef.current = false
@@ -1282,17 +1282,18 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
 
   // Manejar cambios en datos de seguridad
   const handleSecurityDataChange = useCallback((sectionId: string, data: any) => {
-    if (draftRestorePromptRef.current) return
-    setSecurityData(prev => ({
+    const sanitized = sanitizeSecurityTalkDataForStorage({
+      [sectionId]: data,
+    })[sectionId] as typeof data
+    setSecurityData((prev) => ({
       ...prev,
-      [sectionId]: data
+      [sectionId]: sanitized ?? data,
     }))
     setLaneBDraftDirty(true)
     markAsUnsaved()
   }, [markAsUnsaved])
 
   const handlePlantOperationsDataChange = useCallback((sectionId: string, data: any) => {
-    if (draftRestorePromptRef.current) return
     setPlantOperationsData((prev) => {
       const existing = prev[sectionId]
       if (existing && data) {
@@ -2953,24 +2954,20 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                           </CardHeader>
                         </Card>
                       </CollapsibleTrigger>
-                      <CollapsibleContent>
+                      <CollapsibleContent className="data-[state=open]:animate-none">
                         <div className="mt-2">
-                          {draftRestorePrompt ? (
-                            <p className="px-4 py-6 text-sm text-muted-foreground">
-                              Continúe o descarte el borrador para editar esta sección.
-                            </p>
-                          ) : (
                             <SecurityTalkSection
                               key={`security-${section.id}-v${laneBMountVersion}`}
                               sectionId={section.id}
                               sectionTitle={section.title}
                               config={config}
                               plantId={plantId}
+                              checklistScheduleId={id}
                               onDataChange={handleSecurityDataChange}
                               initialData={sectionSecurityData}
                               disabled={submitting}
+                              embedded
                             />
-                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -3028,11 +3025,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="mt-2">
-                          {draftRestorePrompt ? (
-                            <p className="px-4 py-6 text-sm text-muted-foreground">
-                              Continúe o descarte el borrador para editar esta sección.
-                            </p>
-                          ) : (
                             <OperatorPunctualitySection
                               key={`punctuality-${section.id}-v${laneBMountVersion}`}
                               sectionId={section.id}
@@ -3043,7 +3035,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               initialData={sectionPunctualityData}
                               disabled={submitting}
                             />
-                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -3102,11 +3093,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                       </CollapsibleTrigger>
                       <CollapsibleContent>
                         <div className="mt-2">
-                          {draftRestorePrompt ? (
-                            <p className="px-4 py-6 text-sm text-muted-foreground">
-                              Continúe o descarte el borrador para editar esta sección.
-                            </p>
-                          ) : (
                             <BonusClosureSection
                               key={`bonus-${section.id}-v${laneBMountVersion}`}
                               sectionId={section.id}
@@ -3118,7 +3104,6 @@ export function ChecklistExecution({ id }: ChecklistExecutionProps) {
                               initialData={sectionBonusData}
                               disabled={submitting}
                             />
-                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>

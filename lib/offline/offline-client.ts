@@ -562,16 +562,20 @@ class OfflineClient {
   async saveDraft(scheduleId: string, data: unknown, id?: string): Promise<string> {
     await this.ensureReady()
     const draftId = id ?? scheduleId
+    const { sanitizeLocalChecklistDraft } = await import('./sanitize-draft')
+    const sanitizedData = JSON.parse(
+      JSON.stringify(sanitizeLocalChecklistDraft(data))
+    ) as Record<string, unknown>
     const draft: DraftEntry = {
       id: draftId,
       scheduleId,
-      data,
+      data: sanitizedData,
       updatedAt: Date.now(),
     }
     await db.drafts.put(draft)
 
     if (typeof navigator !== "undefined" && navigator.onLine) {
-      void this.syncServerDraftFromLocal(scheduleId, data)
+      void this.syncServerDraftFromLocal(scheduleId, sanitizedData)
     }
 
     return draftId
@@ -638,6 +642,11 @@ class OfflineClient {
 
   async savePhoto(photo: Omit<PhotoEntry, "createdAt" | "uploaded" | "retryCount">): Promise<void> {
     await this.ensureReady()
+    if (!(photo.blob instanceof Blob)) {
+      throw new TypeError(
+        "savePhoto requires a Blob instance — blob: URLs and strings cannot be stored in IndexedDB"
+      )
+    }
     await db.photos.put({
       ...photo,
       uploaded: false,

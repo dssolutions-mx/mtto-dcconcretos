@@ -267,12 +267,24 @@ export function EvidenceCaptureSection({
   useEffect(() => {
     if (evidences.length > 0) {
       try {
+        const serializable = evidences.map(({ file, preview, ...rest }) => {
+          const row = { ...rest } as Record<string, unknown>
+          if (
+            typeof row.photo_url === 'string' &&
+            !row.photo_url.startsWith('http://') &&
+            !row.photo_url.startsWith('https://')
+          ) {
+            delete row.photo_url
+          }
+          return row
+        })
         localStorage.setItem(storageKey, JSON.stringify({
-          evidences: evidences.map(({ file, preview, ...rest }) => rest),
+          evidences: serializable,
           timestamp: Date.now()
         }))
-      } catch (e: any) {
-        if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+      } catch (e: unknown) {
+        const err = e as { name?: string; code?: number }
+        if (err?.name === 'QuotaExceededError' || err?.code === 22) {
           console.warn('localStorage quota exceeded for evidence section — skipping persist')
         } else {
           console.error('Failed to save evidences to localStorage:', e)

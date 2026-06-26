@@ -149,7 +149,8 @@ export interface SecurityTalkData {
   topic?: string;
   reflection?: string;
   evidence?: Array<{
-    photo_url: string;
+    photo_url?: string;
+    photo_id?: string;
     category?: string;
     description?: string;
   }>;
